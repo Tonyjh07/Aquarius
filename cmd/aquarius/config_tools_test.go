@@ -34,3 +34,31 @@ func TestToolsMode(t *testing.T) {
 		}
 	}
 }
+
+func TestPtcLimits(t *testing.T) {
+	i := func(v int) *int { return &v }
+	// 缺省：四键全默认（D319 实测值）。
+	lim, err := ptcConfig{}.ptcLimits()
+	if err != nil || lim.MaxSteps != 200_000_000 || lim.MaxCalls != 256 ||
+		lim.MaxParallel != 10 || lim.ConfirmLimit != 8 {
+		t.Fatalf("lim = %+v err = %v, want 全默认", lim, err)
+	}
+	// 显式改大生效。
+	lim, err = ptcConfig{MaxCalls: i(1024), MaxSteps: i(500_000_000)}.ptcLimits()
+	if err != nil || lim.MaxCalls != 1024 || lim.MaxSteps != 500_000_000 {
+		t.Fatalf("lim = %+v err = %v, want 显式值", lim, err)
+	}
+	// 越界 fail-fast（下界与上界各一例）。
+	for _, tc := range []ptcConfig{
+		{MaxCalls: i(0)},
+		{MaxCalls: i(4097)},
+		{MaxSteps: i(999_999)},
+		{MaxSteps: i(2_000_000_001)},
+		{MaxParallel: i(65)},
+		{ConfirmLimit: i(0)},
+	} {
+		if _, err := tc.ptcLimits(); err == nil {
+			t.Fatalf("%+v: want 越界报错", tc)
+		}
+	}
+}

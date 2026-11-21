@@ -22,6 +22,39 @@ const MaxCallTimeoutSec = 3600
 // 只发这一个声明；toolrun 对它豁免 disabled 清单，starlarkrun 实现它。
 const RunCodeTool = "run_code"
 
+// ConfirmScope 一次脚本执行内的确认去重账本（D320）：同一次脚本里同参数（指纹）只问
+// 一遍，distinct 确认数超过上限后需要确认的调用按超限回值。native 路径不携带 scope，
+// 行为不变。实现方在 starlarkrun，toolrun 只读接口。
+type ConfirmScope interface {
+	// Recall 查重：命中返回上次结论（allow 与拒绝原因），未命中同时计入 distinct
+	// 询问数（一个指纹只计一次，无论后续是否超限）。
+	Recall(fingerprint string) (seen bool, allow bool, reason string)
+	// Remember 记录一次确认的结论（放行或拒绝及其原因）。
+	Remember(fingerprint string, allow bool, reason string)
+	// AskAllowed 上限判定：已计数的 distinct 询问是否还在允许范围内（第 N 次询问
+	// 放行、之后的 distinct 请求被上限拦下——上限语义在 scope，执行面只问这一句）。
+	// 返回当前上限值供报因带数字。
+	AskAllowed() (ok bool, limit int)
+}
+
+// ErrConfirmLimit 确认上限触达的报因前缀（D320）：toolrun 生成、starlarkrun 的
+// 脚本摘要按它统计 capped，不用裸字符串两头对。
+const ErrConfirmLimit = "confirmation limit reached"
+
+// confirmScopeKey ConfirmScope 的 ctx 键（私有类型防碰撞）。
+type confirmScopeKey struct{}
+
+// WithConfirmScope 把去重账本挂进 ctx（starlarkrun 的脚本内调用专用）。
+func WithConfirmScope(ctx context.Context, s ConfirmScope) context.Context {
+	return context.WithValue(ctx, confirmScopeKey{}, s)
+}
+
+// ConfirmScopeFrom 取 ctx 里的去重账本；native 路径（无人注入）返回 nil。
+func ConfirmScopeFrom(ctx context.Context) ConfirmScope {
+	s, _ := ctx.Value(confirmScopeKey{}).(ConfirmScope)
+	return s
+}
+
 // ToolRunner 工具执行门面：查找 + capability 校验 + Risk 确认 + 超时 + 结果裁剪。
 type ToolRunner interface {
 	Specs(ctx context.Context) ([]tool.Spec, error)

@@ -20,6 +20,15 @@ func (a *Agent) execTool(ctx context.Context, call tool.Call) (tool.Result, erro
 		// 不让空指针 panic、也不回填让模型空转。
 		return tool.Result{}, errors.New("tool execution is not configured in this build")
 	}
+	if call.Name == port.RunCodeTool {
+		// /code 留档（D320）：程序原文在确认与执行之前就记下——被拒绝的脚本也该看得到。
+		var m struct {
+			Code string `json:"code"`
+		}
+		if json.Unmarshal(call.Args, &m) == nil && m.Code != "" {
+			a.recordRunCode(m.Code, a.clock.Now())
+		}
+	}
 	res, err := a.tools.Execute(ctx, call)
 	if err != nil {
 		return tool.Result{}, err

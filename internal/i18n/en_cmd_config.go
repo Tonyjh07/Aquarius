@@ -143,6 +143,7 @@ var enCmdConfigTexts = map[string]string{
 	// config_audio.go
 	"cmd.config.err.clock_mode":      `clock.mode value not recognized: {value} (off / live / tree)`,
 	"cmd.config.err.tools_mode":      `tools.mode value not recognized: {value} (native / ptc)`,
+	"cmd.config.err.ptc_limits":      `tools.ptc.{key} value {value} out of range (allowed [{lo}, {hi}])`,
 	"cmd.config.err.input_language":  `input.language="{lang}" supports only auto | zh | en`,
 	"cmd.config.err.audio_kind":      `{name}.kind="{kind}" is not recognized (supported: {kinds})`,
 	"cmd.config.err.vad_threshold":   `audio.vad.threshold must be between {min} and {max} (currently {v})`,

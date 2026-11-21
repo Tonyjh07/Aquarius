@@ -138,6 +138,7 @@ var zhCmdConfigTexts = map[string]string{
 	// config_audio.go：语音
 	"cmd.config.err.clock_mode":         `clock.mode 取值不认识: {value}（可选 off / live / tree）`,
 	"cmd.config.err.tools_mode":         `tools.mode 取值不认识: {value}（可选 native / ptc）`,
+	"cmd.config.err.ptc_limits":         `tools.ptc.{key} 取值 {value} 越界（允许 [{lo}, {hi}]）`,
 	"cmd.config.err.input_language":     `input.language="{lang}" 仅支持 auto | zh | en`,
 	"cmd.config.err.audio_kind":         `{name}.kind="{kind}" 不认识（支持 {kinds}）`,
 	"cmd.config.err.vad_threshold":      `audio.vad.threshold 需在 {min}–{max} 之间（当前 {v}）`,

@@ -368,6 +368,8 @@ var enCmdTexts = map[string]string{
 
 	// /think
 	"cmd.think.desc":  "Master switch for native thinking (writes back to config; off wins over /effort)",
+	"cmd.code.usage":  "/code",
+	"cmd.code.desc":   "Show the latest run_code script (read-only)",
 	"cmd.think.usage": "[on|off]",
 
 	// /effort

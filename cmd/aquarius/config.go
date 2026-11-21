@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/starlarkrun"
 	"github.com/Tonyjh07/Aquarius/internal/app"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/plugin"
@@ -240,6 +241,56 @@ type toolsConfig struct {
 	// （缺省，键缺失同）；ptc = 模型面只发 run_code 一个声明，脚本内批量调工具。
 	// 词表外启动报错（toolsMode）。
 	Mode *string `json:"mode,omitempty"`
+	// PTC 脚本执行限额（D320，tools.ptc）：四键可配，缺省即 D319 实测值；区间外
+	// 启动报错（ptcLimits）。
+	PTC ptcConfig `json:"ptc,omitempty"`
+}
+
+// ptcConfig 脚本执行限额（D320）：写进 run_code 工具描述的数字与执行面同源。
+type ptcConfig struct {
+	MaxSteps     *int `json:"max_steps,omitempty"`
+	MaxCalls     *int `json:"max_calls,omitempty"`
+	MaxParallel  *int `json:"max_parallel,omitempty"`
+	ConfirmLimit *int `json:"confirm_limit,omitempty"`
+}
+
+// ptcLimits 解析并校验限额：指针区分「没写」与「写了」，区间外启动报错
+// （fail-fast，同 clockMode / toolsMode 口径）。
+func (c ptcConfig) ptcLimits() (starlarkrun.Limits, error) {
+	lim := starlarkrun.Limits{}
+	rules := []struct {
+		name string
+		p    *int
+		def  int
+		lo   int
+		hi   int
+	}{
+		{"max_steps", c.MaxSteps, 200_000_000, 1_000_000, 2_000_000_000},
+		{"max_calls", c.MaxCalls, 256, 1, 4096},
+		{"max_parallel", c.MaxParallel, 10, 1, 64},
+		{"confirm_limit", c.ConfirmLimit, 8, 1, 64},
+	}
+	for _, r := range rules {
+		v := r.def
+		if r.p != nil {
+			v = *r.p
+			if v < r.lo || v > r.hi {
+				return lim, errors.New(i18n.Tf("cmd.config.err.ptc_limits", "key", r.name,
+					"value", v, "lo", r.lo, "hi", r.hi))
+			}
+		}
+		switch r.name {
+		case "max_steps":
+			lim.MaxSteps = v
+		case "max_calls":
+			lim.MaxCalls = v
+		case "max_parallel":
+			lim.MaxParallel = v
+		case "confirm_limit":
+			lim.ConfirmLimit = v
+		}
+	}
+	return lim, nil
 }
 
 // toolsMode 解析呈现模式：*string 指针区分「没写」与「写了」（同 clockMode 的口径，

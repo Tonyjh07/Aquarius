@@ -754,6 +754,11 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 	if err != nil {
 		return err
 	}
+	// 脚本执行限额（D320，tools.ptc 四键）：工具描述里的预算数字随这份配置现取。
+	ptcLimits, err := w.cfg.Tools.PTC.ptcLimits()
+	if err != nil {
+		return err
+	}
 	w.runner = toolrun.New(toolrun.Options{
 		Tools:       builtinTools,
 		Disabled:    w.disabledTools.snapshot(),
@@ -771,7 +776,11 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 		// run_code 与 context_compact 同权经 Add 接入；脚本内调用回到 runner 自身
 		//（确认、裁剪、超时同一条链），stub 生成用全量声明快照（含 MCP 动态工具）。
 		w.runner.Add(starlarkrun.New(starlarkrun.Deps{
-			Inner: w.runner,
+			Inner:  w.runner,
+			Limits: ptcLimits,
+			Log: func(event, act string, kv ...any) {
+				w.note(logging.LevelInfo, logging.Boot, event, act, kv...)
+			},
 			AllSpecs: func() []tool.Spec {
 				specs, err := w.runner.AllSpecs(context.Background())
 				if err != nil {

@@ -193,7 +193,8 @@ func TestMissingCode(t *testing.T) {
 	}
 }
 
-// TestCtxCancel 父 ctx 取消（Ctrl+C / 硬超时）打断解释器，错误上抛路径收口成结果字段。
+// TestCtxCancel 父 ctx 取消（Ctrl+C / 硬超时）打断解释器：取消走 error 通道上抛
+// （Run 归类取消），不回 OK=false 让模型继续——D320 的口径。
 func TestCtxCancel(t *testing.T) {
 	f := runnerFixture()
 	f.delay = 10 * time.Second // 调用在途时取消：解释器必须被打断而不是等满
@@ -202,14 +203,11 @@ func TestCtxCancel(t *testing.T) {
 		time.Sleep(30 * time.Millisecond)
 		cancel()
 	}()
-	res, err := New(Deps{Inner: f, AllSpecs: specsFn(f)}).Execute(ctx,
+	_, err := New(Deps{Inner: f, AllSpecs: specsFn(f)}).Execute(ctx,
 		tool.Call{ID: "c1", Name: port.RunCodeTool,
 			Args: json.RawMessage(`{"code":` + quote(`r = tools.probe()`+"\n"+`return r`) + `}`)})
-	if err != nil {
-		t.Fatalf("execute: %v", err)
-	}
-	if res.OK || !strings.Contains(res.Err, "canceled") {
-		t.Fatalf("res = %+v, want 取消报因", res)
+	if err == nil || !strings.Contains(err.Error(), "canceled") {
+		t.Fatalf("err = %v, want 取消上抛", err)
 	}
 }
 

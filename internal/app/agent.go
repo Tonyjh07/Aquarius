@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
@@ -140,6 +141,10 @@ type Agent struct {
 	// 存在的原因只有一个——命令在回合间隙执行，拿不到「刚发出去的那份」。
 	lastSnap atomic.Pointer[contextSnapshot]
 	prevSnap atomic.Pointer[contextSnapshot] // D318：再上一份，前缀稳定性对比的参照
+	// lastRunCode 最近一次 run_code 脚本留档（/code 查看，D320）：覆盖式，跨轮存活。
+	// 这是**留档**不是模式特判——D319 否决的双调用路径特判指的是呈现模式分派，
+	// 这里只是把模型交来的程序原文给用户留个底。
+	lastRunCode atomic.Pointer[lastScript]
 	// prevSnap 再上一份实发快照（前缀稳定性对比的参照，D318）：saveLast 挪旧而来。
 	// wires 最近几次生成的原始响应留档（/raw，§7.1）：适配器收流结束时回调写入，
 	// 环形留 wireKeep 份，最旧在后。只在内存（`/raw full` 才写入磁盘）。
@@ -231,6 +236,22 @@ func (a *Agent) LoreFacts() (depth, budget, maxCtx int) {
 
 // setThink 切换原生思考三态（/think，D34）：nil = 键缺失态。
 func (a *Agent) setThink(v *bool) { a.think.Store(v) }
+
+// lastScript 最近一次 run_code 的程序原文（/code，D320）。
+type lastScript struct {
+	Code string
+	At   time.Time
+}
+
+// recordRunCode 留档最近一次脚本（execTool 在 run_code 调用到达时调用）。
+func (a *Agent) recordRunCode(code string, at time.Time) {
+	a.lastRunCode.Store(&lastScript{Code: code, At: at})
+}
+
+// runCodeState 最近一次脚本留档；nil = 本会话还没跑过脚本。
+func (a *Agent) runCodeState() *lastScript {
+	return a.lastRunCode.Load()
+}
 
 // clockState 当前时间感知档位（D317）：cfg 初值 + /clock 的会话内切换。
 func (a *Agent) clockState() string {

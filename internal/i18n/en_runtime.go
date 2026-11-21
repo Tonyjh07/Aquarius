@@ -22,6 +22,8 @@ var enRuntimeTexts = map[string]string{
 	"files.note.read_failed":   "could not read the original bytes of {name} ({err}); the local extraction is used",
 	"session.ingest.no_input":  "the text input is empty",
 	"clock.show":               "time perception mode: {mode} (switch with /clock off|live|tree; not persisted)",
+	"code.header":              "latest run_code script ({at}):",
+	"code.empty":               "no run_code script has run in this session yet.",
 	"clock.switched":           "time perception switched to {mode} (this session only; startup restores the configured mode)",
 
 	// 多模态输入：认不出 kinds 时说明当前支持面

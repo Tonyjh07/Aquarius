@@ -369,6 +369,8 @@ var zhCmdTexts = map[string]string{
 
 	// /think
 	"cmd.think.desc":  "原生思考总开关（写回配置；off 优先于 /effort）",
+	"cmd.code.usage":  "/code",
+	"cmd.code.desc":   "查看最近一次 run_code 脚本（只读）",
 	"cmd.think.usage": "[on|off]",
 
 	// /effort

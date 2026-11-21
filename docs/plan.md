@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-21 @ ff51621 -->
+<!-- docs-sync: 2026-11-21 @ ae1c772 -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -27,9 +27,10 @@
 每条动手前先补 [contracts.md](contracts.md) 的对应节与决策编号（新增命令、新增工具都算），
 本节只定范围与验收。
 
-### `v0.9.0`（在排，PTC-2；回收站、`/fork`、标签置顶、人读导出、服务端文件解析、DeepSeek 语音后端、时间感知、前缀稳定性对比与 PTC-1 已完成，见 [roadmap.md](roadmap.md)）
+### `v0.9.0`（在排，零条；回收站、`/fork`、标签置顶、人读导出、服务端文件解析、DeepSeek 语音后端、时间感知、前缀稳定性对比与 PTC-1 已完成，见 [roadmap.md](roadmap.md)）
 
 **PTC-2：脚本内确认去重 + 限额可配 + `/code` + 二段式 describe**（M，D320，实验性）
+已完成，见 [roadmap.md](roadmap.md)。拍板与口径：
 去重落在 toolrun 的确认点（`port.ConfirmScope` 经 ctx 由脚本执行携带，native 零差异）；
 `tools.ptc` 四键限额可配（缺省即 D319 实测值，fail-fast 区间校验，工具描述数字随取）；
 确认超限回值不中止；取消端到端补测试锁定；`/code` 只读查看上次脚本；
@@ -419,7 +420,7 @@ Python」）；**注入风险**——PTC 最有用的场景正是不可信内容
 
 - **PTC-1**（M~L，已完成，见 [roadmap.md](roadmap.md)）：`tools.mode: native | ptc` 呈现模式 + 解释器适配器（Starlark
   进程内）+ 绑定 + `parallel` 原语 + 限额 + 单测。验收见上文 `v0.9.0` 一节。
-- **PTC-2**（M，v0.9.0 在排，D320）：脚本内确认去重（toolrun 层、ctx 携带 scope）、限额可配
+- **PTC-2**（M，已完成，见 [roadmap.md](roadmap.md)）：脚本内确认去重（toolrun 层、ctx 携带 scope）、限额可配
   （`tools.ptc` 四键，缺省即 D319 实测值）、取消端到端锁定、事实落运行日志、`/code` 只读
   查看上次脚本、二段式 `tools.describe(name)`。验收见上文 `v0.9.0` 一节。
 - **PTC-3**（S，带前置判据）：Anthropic 原生 `allowed_callers`。判据是报文里真的出现 `caller`

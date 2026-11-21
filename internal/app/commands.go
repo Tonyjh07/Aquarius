@@ -325,6 +325,8 @@ func configCommands() []commandEntry {
 				Desc: "cmd.effort.p1.desc",
 			}},
 			Run: argsOnly((*Session).execEffort)},
+		{Names: []string{"code"}, Usage: "cmd.code.usage", Desc: "cmd.code.desc",
+			Run: argsOnly((*Session).execCode)},
 		{Names: []string{"clock"}, Usage: "cmd.clock.usage", Desc: "cmd.clock.desc",
 			Params: []port.CommandParam{{
 				Name: "cmd.clock.p1.name", Kind: port.ParamChoice, Values: []string{"off", "live", "tree"},

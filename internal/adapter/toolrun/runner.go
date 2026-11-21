@@ -11,6 +11,7 @@
 package toolrun
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -253,71 +254,128 @@ func (r *Runner) Execute(ctx context.Context, call tool.Call) (tool.Result, erro
 	decision, target, op, hasOp := r.decide(ctx, t, call)
 	// Assist 在决策模型接上之前（P4）与 Ask 同路：宁可多问一句，也不静默放行。
 	if decision != perm.Allow {
+		// 确认去重（D320）：脚本执行携带的 scope 里同指纹（工具名 + 操作 + 目标 +
+		// 规范参数）只问一遍，命中复用上次结论；distinct 询问数超上限按超限回值。
+		// native 路径无 scope（nil），行为与从前逐字节相同。
+		scope := port.ConfirmScopeFrom(ctx)
+		if scope != nil {
+			fp := confirmFingerprint(call.Name, op, target, call.Args)
+			if seen, allow, reason := scope.Recall(fp); seen {
+				if allow {
+					return r.executeAllowed(ctx, t, call, callTimeout)
+				}
+				return deniedResult(call, reason), nil
+			}
+			if ok, limit := scope.AskAllowed(); !ok {
+				return tool.Result{CallID: call.ID, OK: false,
+					Err: fmt.Sprintf("%s (%d per script); reduce distinct writes or reuse one call for repeated targets", port.ErrConfirmLimit, limit)}, nil
+			}
+			ans, err := r.confirmCall(ctx, t, call, spec, target, op, hasOp)
+			if err != nil {
+				return tool.Result{}, err
+			}
+			scope.Remember(fp, ans.Allow, strings.TrimSpace(ans.Reason))
+			if !ans.Allow {
+				return deniedResult(call, ans.Reason), nil
+			}
+			return r.executeAllowed(ctx, t, call, callTimeout)
+		}
 		if r.conf == nil {
 			return tool.Result{}, fmt.Errorf("tool %s requires confirmation but no Confirmer is configured", call.Name)
 		}
-		req := port.ConfirmRequest{
-			Origin:  port.OriginTool,
-			Tool:    call.Name,
-			Op:      op,
-			HasOp:   hasOp,
-			Target:  target,
-			Risk:    spec.Risk,
-			HasRisk: true,
-			Prompt:  confirmPrompt(call, target, spec),
-			// 硬名单里的目标放宽了也不会生效（decideAt 最后那一步照样降回询问），
-			// 所以不提供这个钮，而不是让用户点了之后发现还在问。
-			CanPersist: !perm.HardTarget(target, r.sensitive),
-		}
-		ans, err := r.conf.Confirm(ctx, req)
+		ans, err := r.confirmCall(ctx, t, call, spec, target, op, hasOp)
 		if err != nil {
-			return tool.Result{}, fmt.Errorf("confirm %s: %w", call.Name, err)
-		}
-		if lv := strings.TrimSpace(ans.Level); lv != "" {
-			// D282：用户在确认框里直选了档位。UI 只上报选了哪档，放不放行在这里算——
-			// 界面拿不到目标路径与 sandbox 判定，两套界面各写一遍矩阵迟早不一致。
-			allowed := false
-			if lvl, perr := perm.Parse(lv); perr == nil {
-				d, _, _, _ := r.decideAt(ctx, t, call, lvl)
-				allowed = d == perm.Allow
-			}
-			if allowed {
-				ans = port.ConfirmAnswer{Allow: true}
-			} else {
-				// 新档位判 Ask（或档名解析不出）：回到确认态，这一次仍要明确回答，
-				// **不替用户放行**。第二轮的 Level 不再重判——否则用户与新档位的分歧
-				// 会变成一个来回弹的圈，而用户其实只想对这一次表态。
-				req.Prompt = i18n.Tf("tool.confirm.level_still_asks", "level", lv) + "\n" + req.Prompt
-				if ans, err = r.conf.Confirm(ctx, req); err != nil {
-					return tool.Result{}, fmt.Errorf("confirm %s: %w", call.Name, err)
-				}
-				ans.Level = ""
-			}
+			return tool.Result{}, err
 		}
 		if !ans.Allow {
-			// D86：拒绝原因原样回传（用户自填文本，同用户消息规则不翻译）；200 rune
-			// 截断防失控粘贴——与 confirmPrompt 的参数预览同量级。
-			denied := "user denied " + call.Name
-			if reason := strings.TrimSpace(ans.Reason); reason != "" {
-				if r := []rune(reason); len(r) > 200 {
-					reason = string(r[:200]) + "..."
-				}
-				denied += ": " + reason
-			}
-			return tool.Result{CallID: call.ID, OK: false, Err: denied}, nil
-		}
-		// D282「以后都允许」：写策略表是**顺带**的，本次放行与写策略表无关——用户点的是允许，
-		// 写失败也不是拒绝的理由（装配根那边只记日志与审计）。
-		if ans.Persist {
-			r.persistAllow(req)
+			return deniedResult(call, ans.Reason), nil
 		}
 	}
+	return r.executeAllowed(ctx, t, call, callTimeout)
+}
 
-	// 硬超时执行（§10"工具执行同受 ctx 约束"；超时值 = Options 缺省、可被保留参数
-	// timeout_sec 逐次覆盖，D38）：部分工具（阻塞在慢盘/网络盘
-	// 上的文件 IO）不响应 ctx，故在旁路 goroutine 执行并 select 等待——超时立即回填
-	// OK=false 返回，不再等待底层调用；泄漏的 goroutine 随系统调用自行结束，其结果
-	// 写入带缓冲通道，无人接收也不阻塞。
+// confirmFingerprint 确认去重的指纹：工具名 + 操作 + 目标 + 规范化参数 JSON。
+// 参数经 json.Compact 去空白——同一组参数换个缩进也认得是同一次。
+func confirmFingerprint(name string, op perm.Op, target string, args json.RawMessage) string {
+	var canon bytes.Buffer
+	if err := json.Compact(&canon, args); err != nil {
+		canon.Reset()
+		canon.Write(args) // 非法 JSON：按原文参与指纹，交给工具自己的参数报错
+	}
+	return name + "|" + op.String() + "|" + target + "|" + canon.String()
+}
+
+// deniedResult 确认拒绝的结果回填：拒绝原因原样回传（用户自填文本，同用户消息规则
+// 不翻译）；200 rune 截断防失控粘贴——与 confirmPrompt 的参数预览同量级（D86）。
+func deniedResult(call tool.Call, reason string) tool.Result {
+	denied := "user denied " + call.Name
+	if reason = strings.TrimSpace(reason); reason != "" {
+		if r := []rune(reason); len(r) > 200 {
+			reason = string(r[:200]) + "..."
+		}
+		denied += ": " + reason
+	}
+	return tool.Result{CallID: call.ID, OK: false, Err: denied}
+}
+
+// confirmCall 确认请求 + 直选档位重判 + 「以后都允许」写表（D282）——scope 去重与
+// native 两条路共用，确认语义只有一份。
+func (r *Runner) confirmCall(ctx context.Context, t port.Tool, call tool.Call,
+	spec tool.Spec, target string, op perm.Op, hasOp bool) (port.ConfirmAnswer, error) {
+	req := port.ConfirmRequest{
+		Origin:  port.OriginTool,
+		Tool:    call.Name,
+		Op:      op,
+		HasOp:   hasOp,
+		Target:  target,
+		Risk:    spec.Risk,
+		HasRisk: true,
+		Prompt:  confirmPrompt(call, target, spec),
+		// 硬名单里的目标放宽了也不会生效（decideAt 最后那一步照样降回询问），
+		// 所以不提供这个钮，而不是让用户点了之后发现还在问。
+		CanPersist: !perm.HardTarget(target, r.sensitive),
+	}
+	ans, err := r.conf.Confirm(ctx, req)
+	if err != nil {
+		return port.ConfirmAnswer{}, fmt.Errorf("confirm %s: %w", call.Name, err)
+	}
+	if lv := strings.TrimSpace(ans.Level); lv != "" {
+		// D282：用户在确认框里直选了档位。UI 只上报选了哪档，放不放行在这里算——
+		// 界面拿不到目标路径与 sandbox 判定，两套界面各写一遍矩阵迟早不一致。
+		allowed := false
+		if lvl, perr := perm.Parse(lv); perr == nil {
+			d, _, _, _ := r.decideAt(ctx, t, call, lvl)
+			allowed = d == perm.Allow
+		}
+		if allowed {
+			ans = port.ConfirmAnswer{Allow: true}
+		} else {
+			// 新档位判 Ask（或档名解析不出）：回到确认态，这一次仍要明确回答，
+			// **不替用户放行**。第二轮的 Level 不再重判——否则用户与新档位的分歧
+			// 会变成一个来回弹的圈，而用户其实只想对这一次表态。
+			req.Prompt = i18n.Tf("tool.confirm.level_still_asks", "level", lv) + "\n" + req.Prompt
+			if ans, err = r.conf.Confirm(ctx, req); err != nil {
+				return port.ConfirmAnswer{}, fmt.Errorf("confirm %s: %w", call.Name, err)
+			}
+			ans.Level = ""
+		}
+	}
+	// D282「以后都允许」：写策略表是**顺带**的，本次放行与写策略表无关——用户点的是允许，
+	// 写失败也不是拒绝的理由（装配根那边只记日志与审计）。
+	if ans.Persist {
+		r.persistAllow(req)
+	}
+	return ans, nil
+}
+
+// executeAllowed 硬超时执行 + 结果裁剪（权限已过：Allow、确认放行或去重复用）。
+//
+// 硬超时执行（§10"工具执行同受 ctx 约束"；超时值 = Options 缺省、可被保留参数
+// timeout_sec 逐次覆盖，D38）：部分工具（阻塞在慢盘/网络盘
+// 上的文件 IO）不响应 ctx，故在旁路 goroutine 执行并 select 等待——超时立即回填
+// OK=false 返回，不再等待底层调用；泄漏的 goroutine 随系统调用自行结束，其结果
+// 写入带缓冲通道，无人接收也不阻塞。
+func (r *Runner) executeAllowed(ctx context.Context, t port.Tool, call tool.Call, callTimeout time.Duration) (tool.Result, error) {
 	runCtx := ctx
 	var cancel context.CancelFunc
 	if callTimeout > 0 {

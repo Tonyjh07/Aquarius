@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-11-21 @ fefa55a -->
+<!-- docs-sync: 2026-11-21 @ ae1c772 -->
 
 > **权威文档之一**：决策节于 2026-09 独立成篇，与 [contracts.md](contracts.md) 同级同权威
 > （该节 2026-10 从总设计文档删除，不再占节号）。编号**跨文件不变**
@@ -328,7 +328,7 @@
 | D317 | Agent 时间感知：`clock.mode` 三档（off 不注入 / live 每请求末尾一条时间戳 system / tree 再给历史 user 消息补各自 CreatedAt，不落节点）；戳装配时生成、带时区偏移与星期与本 Turn 已跑时长与上一批工具耗时；/clock 会话内切换不写配置；配置缺键 = live、app 零值 = off；latest_reminder 路径确认缓议 | 已完成（v0.9.0） |
 | D318 | 装配前缀稳定性对比：/context 概览加「与上一轮相比前 N 字符未变（x%）」——Agent 留两份快照（last 语义不变、新增 prev），按 sectionMark 摊平跳过 clock 段取最长公共前缀；跨会话与首次请求不出该行 | 已完成（v0.9.0） |
 | D319 | PTC-1：`tools.mode` 呈现模式（native/ptc，实验性）+ Starlark 进程内解释器；`run_code` 是普通 port.Tool、脚本内调用回同一 runtime 过权限矩阵；失败一律是结果字段 | 已完成（v0.9.0） |
-| D320 | PTC-2：脚本内确认去重（toolrun 层、ctx 携带 scope）+ 限额可配（tools.ptc 四键，修正 D319 写死）+ `/code` 只读留档 + 二段式 describe | 进行中（v0.9.0） |
+| D320 | PTC-2：脚本内确认去重（toolrun 层、ctx 携带 scope）+ 限额可配（tools.ptc 四键，修正 D319 写死）+ `/code` 只读留档 + 二段式 describe | 已完成（v0.9.0） |
 
 ## 记录
 
@@ -2515,4 +2515,4 @@
   4. **`/code` 可重跑**。执行路径只有模型的工具调用一条（过确认），命令侧重跑要再造
      一条执行通路，收益为零。
 
-- **状态**：进行中（v0.9.0）。
+- **状态**：已完成（v0.9.0）。

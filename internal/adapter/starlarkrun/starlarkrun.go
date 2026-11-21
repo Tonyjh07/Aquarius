@@ -26,18 +26,47 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// 限额（D319 决策 4）：写死在代码里，不开放配置——实验性阶段守边界的做法。
-// 同一组数字出现在工具描述里（modelText 的口径：模型要看得见预算才会主动分批）。
+// 缺省限额（D320：可配，tools.ptc 四键；缺省即 D319 首跑实测与验收用的那组）。
+// 同一组数字出现在工具描述里（模型要看得见预算才会主动分批），随 Limits 现取。
 const (
-	// maxSteps 单脚本执行步数上限（首跑实测口径：死循环 200M 步内必被掐断）。
-	maxSteps = 200_000_000
-	// maxCalls 单脚本工具调用配额（含失败与参数非法——按尝试计，防止失败重试刷穿）。
-	maxCalls = 256
-	// maxParallel parallel 原语的并发上限。
-	maxParallel = 10
+	// defaultMaxSteps 单脚本执行步数上限（首跑实测口径：死循环 200M 步内必被掐断）。
+	defaultMaxSteps = 200_000_000
+	// defaultMaxCalls 单脚本工具调用配额（含失败与参数非法——按尝试计，防止失败重试刷穿）。
+	defaultMaxCalls = 256
+	// defaultMaxParallel parallel 原语的并发上限。
+	defaultMaxParallel = 10
+	// defaultConfirmLimit 单脚本 distinct 确认上限（D320）。
+	defaultConfirmLimit = 8
 	// maxDescribe 确认面程序全文回显的截断点（确认弹窗要读到全文，超长标注原长）。
 	maxDescribe = 8000
 )
+
+// Limits 脚本执行限额（D320，tools.ptc 配置；零值 = 全缺省）。
+type Limits struct {
+	MaxSteps     int
+	MaxCalls     int
+	MaxParallel  int
+	ConfirmLimit int
+}
+
+func (l Limits) withDefaults() Limits {
+	if l.MaxSteps <= 0 {
+		l.MaxSteps = defaultMaxSteps
+	}
+	if l.MaxCalls <= 0 {
+		l.MaxCalls = defaultMaxCalls
+	}
+	if l.MaxParallel <= 0 {
+		l.MaxParallel = defaultMaxParallel
+	}
+	if l.ConfirmLimit <= 0 {
+		l.ConfirmLimit = defaultConfirmLimit
+	}
+	return l
+}
+
+// Log 脚本摘要行（D320：事实落运行日志，审计不动）；nil = 不记（测试）。
+type Log func(event, act string, kv ...any)
 
 // Deps 装配选项。
 type Deps struct {
@@ -47,16 +76,21 @@ type Deps struct {
 	// AllSpecs 全量工具声明（toolrun.AllSpecs 的快照口），stub 生成用；含 MCP 动态
 	// 工具。每次 Spec() 现取——插件刷新后下一帧声明就带上新工具。
 	AllSpecs func() []tool.Spec
+	// Limits 限额（tools.ptc；零值 = 全缺省）。
+	Limits Limits
+	// Log 运行日志回调（装配根给 w.logFrom 同款）；nil = 不记。
+	Log Log
 }
 
 type ptcTool struct {
-	d Deps
+	d   Deps
+	lim Limits
 }
 
 var _ port.Tool = (*ptcTool)(nil)
 
 // New 创建 run_code 工具（装配根在 toolrun.Runner 建好后 Add 进去）。
-func New(d Deps) port.Tool { return &ptcTool{d: d} }
+func New(d Deps) port.Tool { return &ptcTool{d: d, lim: d.Limits.withDefaults()} }
 
 // specParams 从工具 schema 取参数名（声明序不保证，排序后出 stub）。
 func specParams(spec tool.Spec) []string {
@@ -119,10 +153,12 @@ Dialect: a subset of Python. No while, no try/except, no recursion, no top-level
 Every tool result is a dict: {"ok": true, "output": "..."} or {"ok": false, "error": "..."}. Branch on "ok" — failed calls never raise.
 Use tools.parallel([{...}, ...]) to fan out; results come back in input order.
 Budgets (hard): at most `)
-	b.WriteString(strconv.Itoa(maxCalls))
+	b.WriteString(strconv.Itoa(t.lim.MaxCalls))
 	b.WriteString(` tool calls per script (counting failures), at most `)
-	b.WriteString(strconv.Itoa(maxParallel))
+	b.WriteString(strconv.Itoa(t.lim.MaxParallel))
 	b.WriteString(` concurrent calls in parallel. Return a JSON-able value (dict/list/string/number/bool); print() lines are appended after it.
+
+For full details of one tool (description and parameters) call tools.describe(name) — it does not count against the call budget.
 
 Available tools:
 `)
@@ -169,12 +205,78 @@ func wrap(code string) string {
 	return b.String()
 }
 
-// runtime 单次执行的活环境：共享配额与输出收集。
+// runtime 单次执行的活环境：共享配额、确认去重账本与输出收集。
 type runtime struct {
 	inner port.ToolRunner
+	lim   Limits
 	calls int
+	scope *confirmScope
 	mu    sync.Mutex
 	print []string
+}
+
+// confirmScope 一次脚本执行的确认去重账本（D320）：同指纹只问一遍，distinct 询问
+// 计数供 toolrun 判上限；命中复用与上限触达都计数，落脚本摘要日志。
+type confirmScope struct {
+	mu     sync.Mutex
+	mem    map[string]scopeAnswer
+	asked  int
+	hits   int
+	capped int
+	limit  int
+}
+
+// scopeAnswer 上次确认的结论（指纹 → 放行/拒绝 + 拒绝原因）。
+type scopeAnswer struct {
+	allow  bool
+	reason string
+}
+
+func newConfirmScope(limit int) *confirmScope {
+	return &confirmScope{mem: map[string]scopeAnswer{}, limit: limit}
+}
+
+func (s *confirmScope) Recall(fp string) (bool, bool, string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ans, seen := s.mem[fp]
+	if !seen {
+		s.asked++ // distinct 询问计数：一个指纹只计一次
+	} else {
+		s.hits++
+	}
+	return seen, ans.allow, ans.reason
+}
+
+func (s *confirmScope) Remember(fp string, allow bool, reason string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.mem[fp] = scopeAnswer{allow: allow, reason: reason}
+}
+
+func (s *confirmScope) AskAllowed() (bool, int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.asked <= s.limit, s.limit
+}
+
+// Hits 同参复用次数；Capped 上限触达次数（摘要日志用）。
+func (s *confirmScope) Hits() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.hits
+}
+
+func (s *confirmScope) CountCapped() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.capped++
+}
+
+func (s *confirmScope) Capped() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.capped
 }
 
 // bindResult 把 tool.Result 折成绑定形状 {"ok", "output"|"error"}。
@@ -199,15 +301,18 @@ func bindResult(res tool.Result) *starlark.Dict {
 func (rt *runtime) callOne(ctx context.Context, name string, args json.RawMessage) (starlark.Value, error) {
 	rt.mu.Lock()
 	rt.calls++
-	over := rt.calls > maxCalls
+	over := rt.calls > rt.lim.MaxCalls
 	rt.mu.Unlock()
 	if over {
-		return nil, fmt.Errorf("tool call quota exceeded (%d calls per script)", maxCalls)
+		return nil, fmt.Errorf("tool call quota exceeded (%d calls per script)", rt.lim.MaxCalls)
 	}
 	res, err := rt.inner.Execute(ctx, tool.Call{Name: name, Args: args})
 	if err != nil {
 		// 基础设施故障（父 ctx 取消、确认器缺失）按 §10 上抛，脚本立即中止。
 		return nil, err
+	}
+	if !res.OK && strings.HasPrefix(res.Err, port.ErrConfirmLimit) {
+		rt.scope.CountCapped() // 上限触达也是「按尝试计」的一部分
 	}
 	return bindResult(res), nil
 }
@@ -245,7 +350,7 @@ func parallelFn(ctx context.Context, rt *runtime) starlark.Value {
 			err error
 		}
 		out := make([]slot, calls.Len())
-		sem := make(chan struct{}, maxParallel)
+		sem := make(chan struct{}, rt.lim.MaxParallel)
 		var wg sync.WaitGroup
 		for i := 0; i < calls.Len(); i++ {
 			entry, ok := calls.Index(i).(*starlark.Dict)
@@ -292,6 +397,51 @@ func entryValue(d *starlark.Dict, key string) starlark.Value {
 		return starlark.String("")
 	}
 	return v
+}
+
+// describeFn 二段式目录（D320）：stub 每工具一行，细节按需展开——单个工具的完整
+// 描述与参数表。纯读、无副作用，不计调用配额；未知名字回 ok=false 让模型换名再试。
+func describeFn(specs []tool.Spec) starlark.Value {
+	return starlark.NewBuiltin("describe", func(t *starlark.Thread, b *starlark.Builtin,
+		args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+		var name string
+		if err := starlark.UnpackPositionalArgs("describe", args, kwargs, 1, &name); err != nil {
+			return nil, err
+		}
+		for _, s := range specs {
+			if s.Name != name {
+				continue
+			}
+			params := &starlark.Dict{}
+			var sch struct {
+				Properties map[string]struct {
+					Type        string `json:"type"`
+					Description string `json:"description"`
+				} `json:"properties"`
+			}
+			if err := json.Unmarshal(s.Schema, &sch); err == nil {
+				names := make([]string, 0, len(sch.Properties))
+				for n := range sch.Properties {
+					names = append(names, n)
+				}
+				sort.Strings(names)
+				for _, n := range names {
+					p := sch.Properties[n]
+					row := &starlark.Dict{}
+					row.SetKey(starlark.String("type"), starlark.String(p.Type))
+					row.SetKey(starlark.String("description"), starlark.String(p.Description))
+					params.SetKey(starlark.String(n), row)
+				}
+			}
+			out := &starlark.Dict{}
+			out.SetKey(starlark.String("ok"), starlark.Bool(true))
+			out.SetKey(starlark.String("name"), starlark.String(s.Name))
+			out.SetKey(starlark.String("description"), starlark.String(s.Description))
+			out.SetKey(starlark.String("params"), params)
+			return out, nil
+		}
+		return failDict("unknown tool: " + name), nil
+	})
 }
 
 func failDict(msg string) *starlark.Dict {
@@ -348,7 +498,10 @@ func (t *ptcTool) Execute(ctx context.Context, call tool.Call) (tool.Result, err
 			Err: "run_code needs a \"code\" argument (the Starlark program)"}, nil
 	}
 
-	rt := &runtime{inner: t.d.Inner}
+	// 确认去重账本（D320）：本脚本执行独立一份，经 ctx 带进 Inner.Execute——
+	// toolrun 的确认点查重、判上限；native 路径没有这份账本，行为不变。
+	rt := &runtime{inner: t.d.Inner, lim: t.lim, scope: newConfirmScope(t.lim.ConfirmLimit)}
+	ctx = port.WithConfirmScope(ctx, rt.scope)
 	pre := starlark.StringDict{
 		"tools": toolsStruct(ctx, rt, t.d.AllSpecs()),
 	}
@@ -360,7 +513,7 @@ func (t *ptcTool) Execute(ctx context.Context, call tool.Call) (tool.Result, err
 			rt.mu.Unlock()
 		},
 	}
-	thread.SetMaxExecutionSteps(maxSteps)
+	thread.SetMaxExecutionSteps(uint64(t.lim.MaxSteps))
 	// 墙钟/取消映射：父 ctx 取消（Ctrl+C）或 toolrun 硬超时 → 立即打断解释器。
 	stop := make(chan struct{})
 	go func() {
@@ -377,20 +530,26 @@ func (t *ptcTool) Execute(ctx context.Context, call tool.Call) (tool.Result, err
 	src := wrap(m.Code)
 	globals, err := starlark.ExecFile(thread, "script.star", []byte(src), pre)
 	if err != nil {
-		return tool.Result{CallID: call.ID, OK: false, Err: shiftLines(err.Error())}, nil
+		if ctx.Err() != nil { // 停止键/超时打断脚本：装配级取消上抛（§14），不是脚本失败
+			return tool.Result{}, ctx.Err()
+		}
+		return t.finish(call, rt, tool.Result{CallID: call.ID, OK: false, Err: shiftLines(err.Error())}), nil
 	}
 	run, ok := globals["_run"]
 	if !ok {
-		return tool.Result{CallID: call.ID, OK: false, Err: "script produced no _run"}, nil
+		return t.finish(call, rt, tool.Result{CallID: call.ID, OK: false, Err: "script produced no _run"}), nil
 	}
 	ret, err := starlark.Call(thread, run, nil, nil)
 	if err != nil {
-		return tool.Result{CallID: call.ID, OK: false, Err: shiftLines(err.Error())}, nil
+		if ctx.Err() != nil {
+			return tool.Result{}, ctx.Err()
+		}
+		return t.finish(call, rt, tool.Result{CallID: call.ID, OK: false, Err: shiftLines(err.Error())}), nil
 	}
 	out, jerr := encodeOrdered(ret)
 	if jerr != nil {
-		return tool.Result{CallID: call.ID, OK: false,
-			Err: fmt.Sprintf("return value is not JSON-able: %v", jerr)}, nil
+		return t.finish(call, rt, tool.Result{CallID: call.ID, OK: false,
+			Err: fmt.Sprintf("return value is not JSON-able: %v", jerr)}), nil
 	}
 	if ret == starlark.None {
 		out = "" // 空 return 走既有的 toolNoOutput 回填口径，不写一个裸 null
@@ -398,7 +557,22 @@ func (t *ptcTool) Execute(ctx context.Context, call tool.Call) (tool.Result, err
 	if logs := rt.snapshotPrints(); len(logs) > 0 {
 		out = strings.Join(append(logs, out), "\n")
 	}
-	return tool.Result{CallID: call.ID, OK: true, Output: out}, nil
+	return t.finish(call, rt, tool.Result{CallID: call.ID, OK: true, Output: out}), nil
+}
+
+// finish 脚本摘要落运行日志（D320：calls / dedup / capped），结果原样返回。
+func (t *ptcTool) finish(call tool.Call, rt *runtime, res tool.Result) tool.Result {
+	if t.d.Log != nil {
+		t.d.Log("log.boot.ptc_script", "log.act.ptc_script",
+			"calls", rt.snapshotCalls(), "dedup", rt.scope.Hits(), "capped", rt.scope.Capped())
+	}
+	return res
+}
+
+func (rt *runtime) snapshotCalls() int {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	return rt.calls
 }
 
 func (rt *runtime) snapshotPrints() []string {
@@ -436,6 +610,8 @@ func toolsStruct(ctx context.Context, rt *runtime, specs []tool.Spec) starlark.V
 		fields[s.Name] = callFn(ctx, rt, s.Name)
 	}
 	fields["parallel"] = parallelFn(ctx, rt)
+	fields["describe"] = describeFn(specs)
+	fields["describe"] = describeFn(specs)
 	return starlarkstruct.FromStringDict(starlarkstruct.Default, fields)
 }
 
