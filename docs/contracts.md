@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-21 @ f7cdcaa -->
+<!-- docs-sync: 2026-11-21 @ 0eea18d -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -465,6 +465,8 @@ API）；未实现或报错时 app 回落通用估算（③），并以服务端
   | TTS | `chat-audio`（缺省） | `mimotts` | `POST {base}/chat/completions`，Base64 音频在 `choices[0]` |
   | TTS | `vits` | `vitstts` | `GET {base}/voice/vits?text&id&format=wav`，返回 WAV |
   | TTS | `gptsovits` | `gptsovitstts` | `POST {base}/tts`，音色 = 参考音频路径 + 其文字 |
+  | ASR | `deepseek` | `asrdeepseek` | `POST {base}/tools/asr`，multipart 只带 `file`（D316：无语种参数，21 种语言自动识别；单段上限 120 秒 / 8 MiB） |
+  | TTS | `deepseek` | `ttsdeepseek` | `POST {base}/tools/tts`，JSON（D316：`voice_id` 只认 `stella` / `tide`，`format` 固定 `wav`，`filter_markdown` 固定开；超 10000 计费字符（汉字算 2）或 64 KiB 请求体明确报错） |
 
   `openai` 这一档覆盖一大片：OpenAI 官方、FunASR 的 `examples/openai_api`、whisper.cpp 的
   `whisper-server`、各类自建网关——各家实现的差别只有端点与模型名。
@@ -479,10 +481,15 @@ API）；未实现或报错时 app 回落通用估算（③），并以服务端
 - **不复用 LLM 装饰器链**（D179）：重试/降级/密钥池那套围绕流式生成写，音频调用是「一次请求一次响应」，
   只做单次请求 + 明确报错；密钥仍经同一把 `resolveAPIKey` 解析，不另存一份。
 - **音频只在内存与附件库之间流动**：合成结果落 `AttachmentStore`（可重播、可 GC），播放器从库里取；
-  录音的 Base64 上限由采集侧按秒数封顶（见 §7.2）。三个合成适配器都返回 WAV，播放器不必认多种容器。
+  录音的 Base64 上限由采集侧按秒数封顶（见 §7.2）。五个合成适配器都返回 WAV，播放器不必认多种容器。
 - **分段能力关掉就退回整段**：`audio.vad.enabled=false` 时采集器把整次录音当成一段交出去，
   上层看到的形状不变（仍然是一到多个 WAV 段，只是一次录音只会有一段）。这是给误判留的退路，
   不是第二套实现——两种模式共用同一条采集与入库路径。
+- **录音上限跟着后端走**（D316）：deepseek 识别单段上限 120 秒 / 8 MiB，选中该后端时采集器的
+  硬顶从 240 秒降到 120 秒，并在 VAD 关闭时给一行启动警告（整段模式最容易撞限）。适配器**绝不
+  静默切片**——切在词中间只会让转写更差，超限就明确报错。`input.language` 在该后端不起作用
+  （21 种语言按音频自动识别），配置词表照收但请求里根本不带。Style / Tags / Design 三项
+  deepseek 合成不认：配置了非空值启动即警告「已忽略」，运行期适配器不消费。
 
 ### 5.7 `ingest.go` —— 输入/输出方式端口
 

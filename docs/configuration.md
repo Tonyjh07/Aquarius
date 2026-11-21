@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-11-21 @ f7cdcaa -->
+<!-- docs-sync: 2026-11-21 @ 0eea18d -->
 
 > 本文按当前实现写成；**字段语义以本文为准**，端口与权限规则见 [contracts.md](contracts.md)。
 > 配置**以 profile 为隔离单位**：
@@ -358,12 +358,12 @@ DECIDE_ENDPOINT=http://127.0.0.1:11434 go test ./internal/adapter/decide -run Te
 | `audio.asr.base_url` | string | — | 自己的端点（如 `https://api.example.com/v1`）；空 = 借 `provider` 的 |
 | `audio.asr.api_key` | string | `secret:AQUARIUS_ASR_API_KEY` | 自己的密钥（`secret:` 引用或明文）；空 = 借 `provider` 的，都不借则回落此名 |
 | `audio.asr.model` | string | — | 转写模型名（`chat-audio` / `openai` 必填），如 `mimo-v2.5-asr` / `whisper-1` |
-| `audio.asr.kind` | string | `chat-audio` | 识别协议：`chat-audio` / `whisper` / `openai` / `funasr`，见下 |
+| `audio.asr.kind` | string | `chat-audio` | 识别协议：`chat-audio` / `whisper` / `openai` / `funasr` / `deepseek`，见下；`deepseek` 无需 model，**无语种参数**（`input.language` 不起作用，21 种语言自动识别），单段上限 120 秒 / 8 MiB，选中后录音硬顶自动降到 120 秒 |
 | `audio.asr.model_path` | string | — | 本地识别模型文件绝对路径，`kind=whisper` 必填 |
 | `audio.tts.provider` | string | — | 同上；缺省 = 不能播报 |
 | `audio.tts.base_url` | string | — | 同上（合成侧） |
 | `audio.tts.api_key` | string | `secret:AQUARIUS_TTS_API_KEY` | 同上（合成侧） |
-| `audio.tts.kind` | string | `chat-audio` | 合成协议：`chat-audio` / `vits` / `gptsovits` |
+| `audio.tts.kind` | string | `chat-audio` | 合成协议：`chat-audio` / `vits` / `gptsovits` / `deepseek`；`deepseek` 无需 model，`voice` 只认 `stella` / `tide`（填了别家的音色名启动报错），`design` / `style` / `tags` 不认（配了非空值启动警告「已忽略」），超 10000 计费字符（汉字算 2）或 64 KiB 请求体明确报错不合成 |
 | `audio.tts.model` | string | — | `mimo-v2.5-tts`（预置音色）/ `-voicedesign`（文本设计）/ `-voiceclone`（样本复刻）；仅 `chat-audio` 用 |
 | `audio.tts.voice` | string | — | 预置音色名（如 `冰糖`）/ VITS 的说话人 ID / GPT-SoVITS 的参考音频路径 |
 | `audio.tts.design` | string | — | voicedesign 模式的音色描述；`kind=gptsovits` 时是参考音频对应的文字 |

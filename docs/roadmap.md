@@ -1,5 +1,5 @@
 # Aquarius 里程碑进度（完成记录）
-<!-- docs-sync: 2026-11-21 @ f7cdcaa -->
+<!-- docs-sync: 2026-11-21 @ 0eea18d -->
 
 > **定位**：本文件是**进度档案**——只记「已经完成了什么、对应哪条决策」，以及里程碑基线。
 > 只记过去，不写未来：**要做什么、按什么顺序**看 [plan.md](plan.md)。
@@ -129,6 +129,13 @@ README 加 `trash/`。
 写进 doc 分片（本地提取文本照存），`openai-chat` 装配发 `{"type":"file","file_id":…}` 引用块；
 能力位不生效就照旧拍平本地文本（请求体一字节不差）；超限与上传失败明确报错、不做无谓重试；
 `files.ttl_seconds` 可配服务端自动过期，缺省不过期。
+
+第六条是**DeepSeek 语音后端**（D316）：`audio.asr` / `audio.tts` 的 `kind: "deepseek"`——识别
+`/v1/tools/asr` multipart 只带 `file`（无语种参数，21 种语言自动识别；单段 120 秒 / 8 MiB，选中后
+录音硬顶联动降到 120 秒、VAD 关时启动警告，绝不静默切片）；合成 `/v1/tools/tts` JSON（音色只认
+`stella` / `tide`，fail-fast；`format` 固定 wav，`filter_markdown` 固定开；Style/Tags/Design 配了
+启动警告「已忽略」；超 10000 计费字符或 64 KiB 请求体明确报错，不切分拼接）；`provider: "deepseek"`
+借默认 provider 的端点与密钥（D222），一把 key 跑对话、搜索与语音。
 
 ---
 

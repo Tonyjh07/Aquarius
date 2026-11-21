@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-11-21 @ f7cdcaa -->
+<!-- docs-sync: 2026-11-21 @ 0eea18d -->
 
 > **权威文档之一**：决策节于 2026-09 独立成篇，与 [contracts.md](contracts.md) 同级同权威
 > （该节 2026-10 从总设计文档删除，不再占节号）。编号**跨文件不变**
@@ -324,6 +324,7 @@
 | D313 | 会话标签与置顶：会话元数据加 `tags`（去重保序）与 `pinned`（缺字段零值，旧文件照读）；`/tag <会话> [名...]` 加删（`--rm`）、`/pin` 切换、`/list --tag` 过滤（多标签取交集）、置顶行带 `▲` 标记；排序权威在 `ConversationStore.List`（置顶在前，组内按更新时间），打标签与置顶不改更新时间；分叉不带走源会话的标签与置顶 | 已完成（v0.9.0） |
 | D314 | `/export --format md` 与 `--format html`：人读与可粘贴的导出——不是新的互通格式，是 openai 摊平结果的另一种呈现（同 Head 路径、同丢弃计数、同旁支注记）；`md` 正文原样可整份粘进新对话，角色标题跟随界面语言；`html` 同一份内容包单文件壳（内联样式、目录、时间戳，转义不渲染）；不做 Markdown 渲染、不进导入识别 | 已完成（v0.9.0） |
 | D315 | 文件交给服务端解析：DeepSeek Files API（`/v1/files` 上传拿 `file_id`，`openai-chat` 发 `{"type":"file"}` 引用块）；`files.purpose` 配置固定一档（text_recognition 缺省 / rich_layout_recognition / 空串关闭）、`files.ttl_seconds` 缺省不过期；doc 分片永远带本地提取文本，能力位不生效照旧拍平（请求体一字节不差）；上传候选限结构化文档，超限与失败明确报错、不做无谓重试 | 已完成（v0.9.0） |
+| D316 | DeepSeek 语音后端：`audio.asr` / `audio.tts` 的 `kind: "deepseek"`——识别 `/v1/tools/asr` multipart 只带 file（无语种参数，单段 120 秒 / 8 MiB，录音硬顶联动降 + VAD 关启动警告，绝不静默切片）；合成 `/v1/tools/tts` JSON（音色只认 stella/tide fail-fast，format 固定 wav，filter_markdown 固定开，Style/Tags/Design 启动警告已忽略；超限明确报错不切分拼接）；端点与密钥借默认 provider（D222） | 已完成（v0.9.0） |
 
 ## 记录
 
@@ -2367,5 +2368,34 @@
      （`ttl`），本地 GC 不该对它做任何事。
   3. **按文件类型自动选 purpose**。见决策 5；启发式猜错一次（扫描件交了 text 档）用户还要排查
      为什么没解出来，不如一开始就交给用户。
+
+- **状态**：已完成（v0.9.0）。
+### D316 · DeepSeek 语音后端：`kind: "deepseek"` 两个协议位
+
+- **背景**：`audio.asr` / `audio.tts` 已有 mimo / whisper / funasr / vits / gptsovits 五种后端；
+  DeepSeek 在 `/v1/tools/*` 家族里补了语音两端点，与 `webdeepseek` 同源——`provider: "deepseek"`
+  就能借默认 provider 的端点与密钥（D222 三形态本来就支持，缺的只是这两个 kind）。实测
+  （2026-11-18，25 条普通话 + 25 条英语）：中文 CER 1.9%、英文 WER 6.4%、单条延迟 1.2 秒、
+  $0.058 每小时；TTS 是预设音色里的二线水平，能带出情绪，超长文本略机械。
+
+- **决策**：
+  1. **识别不发语种**：21 种语言按音频自动识别，`input.language` 在该后端不起作用——配置词表
+     照收（别家还要用），但请求里根本不带；configuration 的 kind 行注明，不是静默忽略。
+  2. **录音硬顶联动**：识别单段上限 120 秒 / 8 MiB，而 VAD 关掉时 `wholeSegmenter` 会把整段
+     （最长 240 秒）当一条发——选中 deepseek 就把采集器硬顶降到 120 秒，并在 VAD 关闭时给一行
+     启动警告。**不在适配器里静默切片**：切在词中间只会让转写更差，超限明确报错。
+  3. **合成音色 fail-fast**：`voice_id` 只认 `stella` / `tide`，填了别家的音色名启动报错——
+     静默回落到缺省音色会让「我配的声音」和「听到的声音」悄悄不一致。
+  4. **Style / Tags / Design 不认就说**：deepseek 合成只吃 `voice_id` / `format` /
+     `filter_markdown`，三项风格字段配了非空值启动即警告「已忽略」——不静默吞掉。
+  5. **超限报错不切分**：合成上限 10000 计费字符（汉字算 2）与 64 KiB 请求体，超了明确报错。
+  6. **`filter_markdown` 固定开**：Markdown 列表与代码块播报不念符号是服务端职责，不加配置。
+
+- **否决**：
+  1. **按句切分再拼 PCM**（超长播报的另一半路）。DeepSeek TTS 是预设音色的二线档，为它做
+     拼接流水线（WAV 头拼接、段间停顿、失败重试语义）不值；真要长文播报，现成的 mimo 档在。
+  2. **把语音耗时/字数记进 `Usage`**。token 与时长是两套计价，混进一个结构会把「最近实测」的
+     语义搞乱；成本口径（ASR ¥0.39/小时、TTS ¥1.5/万计费字符）先在文档与运行日志里给数。
+  3. **加 `language` 参数照发**。发了服务端也不认，等于多一个 400 面；见决策 1。
 
 - **状态**：已完成（v0.9.0）。
