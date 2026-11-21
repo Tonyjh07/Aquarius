@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-11-21 @ c90aed2 -->
+<!-- docs-sync: 2026-11-21 @ 5c666be -->
 
 > **权威文档之一**：决策节于 2026-09 独立成篇，与 [contracts.md](contracts.md) 同级同权威
 > （该节 2026-10 从总设计文档删除，不再占节号）。编号**跨文件不变**
@@ -326,6 +326,7 @@
 | D315 | 文件交给服务端解析：DeepSeek Files API（`/v1/files` 上传拿 `file_id`，`openai-chat` 发 `{"type":"file"}` 引用块）；`files.purpose` 配置固定一档（text_recognition 缺省 / rich_layout_recognition / 空串关闭）、`files.ttl_seconds` 缺省不过期；doc 分片永远带本地提取文本，能力位不生效照旧拍平（请求体一字节不差）；上传候选限结构化文档，超限与失败明确报错、不做无谓重试 | 已完成（v0.9.0） |
 | D316 | DeepSeek 语音后端：`audio.asr` / `audio.tts` 的 `kind: "deepseek"`——识别 `/v1/tools/asr` multipart 只带 file（无语种参数，单段 120 秒 / 8 MiB，录音硬顶联动降 + VAD 关启动警告，绝不静默切片）；合成 `/v1/tools/tts` JSON（音色只认 stella/tide fail-fast，format 固定 wav，filter_markdown 固定开，Style/Tags/Design 启动警告已忽略；超限明确报错不切分拼接）；端点与密钥借默认 provider（D222） | 已完成（v0.9.0） |
 | D317 | Agent 时间感知：`clock.mode` 三档（off 不注入 / live 每请求末尾一条时间戳 system / tree 再给历史 user 消息补各自 CreatedAt，不落节点）；戳装配时生成、带时区偏移与星期与本 Turn 已跑时长与上一批工具耗时；/clock 会话内切换不写配置；配置缺键 = live、app 零值 = off；latest_reminder 路径确认缓议 | 已完成（v0.9.0） |
+| D318 | 装配前缀稳定性对比：/context 概览加「与上一轮相比前 N 字符未变（x%）」——Agent 留两份快照（last 语义不变、新增 prev），按 sectionMark 摊平跳过 clock 段取最长公共前缀；跨会话与首次请求不出该行 | 已完成（v0.9.0） |
 
 ## 记录
 
@@ -2433,5 +2434,25 @@
      多久」的总和视角；时钟段一处说清。
   3. **`/clock` 写回 config**。与 `/think`（持久）刻意不同：会话内试一档不合意就切走，重启复位，
      不留下意外的持久改动。
+
+- **状态**：已完成（v0.9.0）。
+### D318 · 装配前缀稳定性对比：给缓存命中一个体检表
+
+- **背景**：提示词缓存按前缀命中——装配结果每轮都变（哪怕只差一个字）缓存就全废。`/context`
+  能看装配结果，看不出「变没变」；省钱的第一处需要一张体检表。
+
+- **决策**：
+  1. **Agent 留两份快照**：`last`（最后一次实发，语义不变）+ `prev`（上一次）。`saveLast` 先挪
+     后覆盖，既有调用方零改动。
+  2. **比较按 sectionMark 摊平、跳过 clock 段**：时间感知戳每轮必变（D317 决策 2 的设计使然），
+     不排除它常态就是 0%——排除口径当时已排好。tree 档 user 段的 `[At:…]` 后缀由节点 CreatedAt
+     决定、逐轮相同，不需要排除。
+  3. **跨会话不比**：prev 不存在或两轮不是同一会话就不出这一行。跨会话比前缀只会得到一个
+     误导性的 0%；缺数据与数据差是两回事。
+
+- **否决**：
+  1. **按 token 计**。前缀命中按字符/字节判定，token 是估算值；报字符数与占比足够诊断。
+  2. **存渲染文本做对比**。快照里已有 Messages 与 marks，摊平现算即可——多存一份渲染文本
+     是第二份事实，迟早漂移。
 
 - **状态**：已完成（v0.9.0）。

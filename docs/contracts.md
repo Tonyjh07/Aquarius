@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-21 @ c90aed2 -->
+<!-- docs-sync: 2026-11-21 @ 5c666be -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -1784,6 +1784,12 @@ system（`characters.apply_post_history = false` 时不发）。因为 `Tail` �
 原时刻）。戳三段：日期时刻（时区偏移 + 星期）、本 Turn 已跑多久、第二轮起附上一批工具各自耗时
 （`runTools` 批前后计时、`execTool` 逐个计时）。`/clock [mode]` 查看与切换，**不写配置**（会话级）。
 `latest_reminder` 角色路径已确认缓议（端点家族未定，D317 决策 7），接入前一律走尾部 system。
+
+
+**装配前缀稳定性（D318）**：`/context` 概览给一行「与上一轮相比前 N 字符未变（x%）」——提示词
+缓存按前缀命中，前缀每轮都变等于缓存全废，这一行是它的体检表。口径：两份快照（last 与 prev）
+按 sectionMark 摊平、跳过 clock 段（时间感知戳每轮必变，D317 已排好），取最长公共前缀；prev
+不存在或两轮不是同一会话就不出这一行——缺数据与数据差是两回事。`last` 的语义不变。
 
 ### 7.2 摄取 / 输出管线
 
