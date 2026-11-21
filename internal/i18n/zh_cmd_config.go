@@ -144,6 +144,7 @@ var zhCmdConfigTexts = map[string]string{
 	"cmd.config.err.audio_endpoint":     `{name} 选了 {kind} 方式就要填端点（base_url 或引用一个服务）`,
 	"cmd.config.err.audio_model_path":   `{name}.model_path 不可为空（本地识别要指定 ggml 模型文件）`,
 	"cmd.config.err.audio_model":        `{name}.model 不可为空（配置了服务就要写明音频模型名）`,
+	"cmd.config.err.tts_voice":          `{name}.voice="{voice}" 该后端不认（只有 {voices} 两档；填了别家的音色名等于「我配的声音」和「听到的声音」悄悄不一致）`,
 	"cmd.config.err.audio_unknown":      `未知的语音能力 "{which}"`,
 	"cmd.config.err.audio_unconfigured": `未配置语音服务`,
 

@@ -152,6 +152,7 @@ var enCmdConfigTexts = map[string]string{
 		`(local recognition needs a ggml model file)`,
 	"cmd.config.err.audio_model": `{name}.model cannot be empty ` +
 		`(a configured service needs the audio model name)`,
+	"cmd.config.err.tts_voice":          `{name}.voice="{voice}" is not supported by this backend ({voices} only; silently falling back would make the configured and heard voices drift apart)`,
 	"cmd.config.err.audio_unknown":      `Unknown audio channel "{which}"`,
 	"cmd.config.err.audio_unconfigured": `No speech service configured`,
 

@@ -10,6 +10,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/acpgate"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/asrchat"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/asrdeepseek"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/asrfunasr"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/asropenai"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/asrwhisper"
@@ -34,6 +35,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/storejson"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolbuiltin"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolrun"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/ttsdeepseek"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/vadsilero"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/vitstts"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/zhconv"
@@ -410,7 +412,13 @@ func (w *wiring) buildPresenter() {
 // 配错（借的条目不存在、密钥取不到、本地模型读不到）只让该能力不可用——启动时已提示，
 // 不阻断对话。
 func (w *wiring) assembleAudio(ctx context.Context) {
-	w.recorder = micwin.New()
+	// D316：deepseek 识别单段上限 120 秒——录音硬顶联动降到同一根线，整段模式最长也
+	// 只能录到那里；其他后端保持 240 秒（VAD 关时的启动警告在 bootstrap_profile）。
+	recMax := time.Duration(0)
+	if w.cfg.Audio.ASR.Kind == kindDeepSeek {
+		recMax = deepseekSegmentCap
+	}
+	w.recorder = micwin.New(micwin.Options{MaxDuration: recMax})
 	w.player = audioplay.New()
 
 	if w.cfg.Audio.ASR.configured() {
@@ -507,6 +515,14 @@ func (w *wiring) buildASR(ctx context.Context) (port.Transcriber, string) {
 			return nil, err.Error()
 		}
 		return c, ""
+	case kindDeepSeek: // D316：multipart 只带 file，无语种参数
+		c, err := asrdeepseek.New(asrdeepseek.Config{
+			BaseURL: ep.BaseURL, APIKey: key, Blobs: w.blobs,
+		})
+		if err != nil {
+			return nil, err.Error()
+		}
+		return c, ""
 	default: // kindChatAudio
 		c, err := asrchat.New(asrchat.Config{
 			BaseURL: ep.BaseURL, APIKey: key, Model: ch.Model, Blobs: w.blobs,
@@ -548,6 +564,14 @@ func (w *wiring) buildTTS(ctx context.Context) (port.Synthesizer, string) {
 			return nil, err.Error()
 		}
 		return c, ""
+	case kindDeepSeek: // D316：音色只认 stella/tide（归一化已拦），JSON 裸字节响应
+		c, err := ttsdeepseek.New(ttsdeepseek.Config{
+			BaseURL: ep.BaseURL, APIKey: key, Blobs: w.blobs,
+		})
+		if err != nil {
+			return nil, err.Error()
+		}
+		return c, ""
 	default: // kindChatAudio
 		c, err := mimotts.New(mimotts.Config{
 			BaseURL: ep.BaseURL, APIKey: key, Model: ch.Model, Blobs: w.blobs,
@@ -558,6 +582,9 @@ func (w *wiring) buildTTS(ctx context.Context) (port.Synthesizer, string) {
 		return c, ""
 	}
 }
+
+// deepseekSegmentCap deepseek 识别单段上限 120 秒（D316）：录音硬顶联动到同一根线。
+const deepseekSegmentCap = 120 * time.Second
 
 // zhSimplifier 在识别结果上加一道繁转简（本地引擎默认输出繁体）。
 //

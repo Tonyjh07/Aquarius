@@ -18,20 +18,29 @@ const (
 	Bits       = 16
 )
 
-// MaxDuration 产品侧硬顶：MiMo 的 Base64 体积上限 10MB 反推约 4 分钟
+// defaultMaxDuration 产品侧缺省硬顶：MiMo 的 Base64 体积上限 10MB 反推约 4 分钟
 // （16kHz 单声道 16bit ≈ 32KB/s）。命令/界面最多录到这里。
-const MaxDuration = 4 * time.Minute
+const defaultMaxDuration = 4 * time.Minute
+
+// maxDurationFor 后端限段时的硬顶（D316）：识别单段上限 120 秒的后端（deepseek）传入
+// 120s——整段模式最长也只能录到那里，适配器侧就不用再撞 8 MiB 的墙。
+func maxDurationFor(d time.Duration) time.Duration {
+	if d <= 0 {
+		return defaultMaxDuration
+	}
+	return d
+}
 
 // DefaultDuration /mic 与语音键的缺省录音时长。
 const DefaultDuration = 60 * time.Second
 
-// clampDuration 把请求时长夹到 [1s, MaxDuration]；0 = 缺省。
-func clampDuration(d time.Duration) time.Duration {
+// clampDuration 把请求时长夹到 [1s, r.max]；0 = 缺省。
+func (r *Recorder) clampDuration(d time.Duration) time.Duration {
 	if d <= 0 {
 		return DefaultDuration
 	}
-	if d > MaxDuration {
-		return MaxDuration
+	if d > r.max {
+		return r.max
 	}
 	return d
 }

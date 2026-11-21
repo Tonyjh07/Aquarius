@@ -200,8 +200,8 @@ func TestAudioEndpointBorrowMissingNeedsOwnURL(t *testing.T) {
 	}
 }
 
-// TestNormalizeAudioKinds 两侧各认自己的协议位：识别认 whisper / openai / funasr，
-// 合成认 vits / gptsovits；写错的一律 fail-fast（永远不会生效的配置）。
+// TestNormalizeAudioKinds 两侧各认自己的协议位：识别认 whisper / openai / funasr / deepseek，
+// 合成认 vits / gptsovits / deepseek；写错的一律 fail-fast（永远不会生效的配置）。
 func TestNormalizeAudioKinds(t *testing.T) {
 	t.Parallel()
 	ok := []struct {
@@ -214,6 +214,8 @@ func TestNormalizeAudioKinds(t *testing.T) {
 		{"FunASR 原生", audioChannel{Kind: kindASRFunASR, BaseURL: "http://127.0.0.1:10095"}, audioChannel{}},
 		{"VITS", audioChannel{}, audioChannel{Kind: kindTTSVITS, BaseURL: "http://127.0.0.1:23456"}},
 		{"GPT-SoVITS", audioChannel{}, audioChannel{Kind: kindTTSGPTSovits, BaseURL: "http://127.0.0.1:9880"}},
+		{"DeepSeek 识别（无语种参数，无需 model）", audioChannel{Kind: kindDeepSeek, BaseURL: "https://api.deepseek.com/v1"}, audioChannel{}},
+		{"DeepSeek 合成 stella", audioChannel{}, audioChannel{Kind: kindDeepSeek, BaseURL: "https://api.deepseek.com/v1", Voice: "stella"}},
 	}
 	for _, c := range ok {
 		t.Run(c.name, func(t *testing.T) {
@@ -236,6 +238,7 @@ func TestNormalizeAudioKinds(t *testing.T) {
 		{"识别侧不认 vits", audioChannel{Kind: kindTTSVITS, BaseURL: "https://x", Model: "m"}, audioChannel{}, "audio.asr.kind"},
 		{"合成侧不认 funasr", audioChannel{}, audioChannel{Kind: kindASRFunASR, BaseURL: "https://x"}, "audio.tts.kind"},
 		{"whisper 缺模型路径", audioChannel{Kind: kindASRWhisper}, audioChannel{}, "model_path"},
+		{"DeepSeek 合成音色不认", audioChannel{}, audioChannel{Kind: kindDeepSeek, BaseURL: "https://x", Voice: "冰糖"}, "stella | tide"},
 	}
 	for _, c := range bad {
 		t.Run(c.name, func(t *testing.T) {

@@ -21,6 +21,8 @@ var zhLogTexts = map[string]string{
 	"log.act.continue":                 "照常继续，不影响对话",
 	"log.act.trash_kept_30d":           "删除的会话在回收站保留 30 天，/trash 可提前还原或清空",
 	"log.act.voice_off":                "本次不播报，文字照常",
+	"log.act.style_ignored":            "这些配置换回兼容后端即生效",
+	"log.act.recording_capped":         "录音时长按上限执行",
 	"log.act.voice_input_off":          "本次不识别语音，键入照常",
 	"log.act.use_whole_recording":      "本次按整段录音处理，语音照常可用",
 	"log.act.keep_raw":                 "保留原文，照常识别",
@@ -78,6 +80,8 @@ var zhLogTexts = map[string]string{
 	// 语音
 	"log.audio.tts_unconfigured":   "语音播报已开启，但{why}",
 	"log.audio.asr_unavailable":    "语音识别不可用：{why}",
+	"log.audio.tts_style_ignored":  "deepseek 合成不认这些风格项，已忽略：{detail}",
+	"log.audio.asr_cap_120s":       "deepseek 识别单段上限 120 秒：录音硬顶已降到 120 秒，VAD 关闭时整段录音最长也只到那里",
 	"log.audio.vad_fallback":       "按说话分段的参数不可用，本次按整段录音处理：{why}",
 	"log.audio.tts_unavailable":    "语音合成不可用：{why}",
 	"log.audio.zhconv_unavailable": "繁简转换不可用，识别结果保持原样：{err}",

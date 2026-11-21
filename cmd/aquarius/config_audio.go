@@ -144,12 +144,14 @@ const (
 
 	kindTTSVITS      = "vits"
 	kindTTSGPTSovits = "gptsovits"
+
+	kindDeepSeek = "deepseek" // D316：识别与合成同一家族的两个端点（/v1/tools/*）
 )
 
 // asrKinds / ttsKinds 两侧各自认识的协议位（报因时列出）。
 var (
-	asrKinds = []string{kindChatAudio, kindASRWhisper, kindASROpenAI, kindASRFunASR}
-	ttsKinds = []string{kindChatAudio, kindTTSVITS, kindTTSGPTSovits}
+	asrKinds = []string{kindChatAudio, kindASRWhisper, kindASROpenAI, kindASRFunASR, kindDeepSeek}
+	ttsKinds = []string{kindChatAudio, kindTTSVITS, kindTTSGPTSovits, kindDeepSeek}
 )
 
 // normalizeAudio 语音配置归一与校验（在 model.normalize 之后调用）。
@@ -231,7 +233,16 @@ func normalizeAudioChannel(name string, ch *audioChannel, kinds []string) error 
 		if ch.ModelPath == "" {
 			return fmt.Errorf("%s", i18n.Tf("cmd.config.err.audio_model_path", "name", name))
 		}
-	case kindASRFunASR, kindTTSVITS, kindTTSGPTSovits:
+	case kindASRFunASR, kindTTSVITS, kindTTSGPTSovits, kindDeepSeek:
+		if ch.Kind == kindDeepSeek && name == "audio.tts" {
+			// D316：音色只认 stella / tide，填了别家的音色名启动报错——静默回落会让
+			// 「我配的声音」和「听到的声音」悄悄不一致。Style/Tags/Design 三项该端点
+			// 不认：不在这里拦（警告走 deepseekStyleWarns，见 bootstrap_profile）。
+			if ch.Voice != "" && ch.Voice != "stella" && ch.Voice != "tide" {
+				return fmt.Errorf("%s", i18n.Tf("cmd.config.err.tts_voice", "name", name,
+					"voice", ch.Voice, "voices", "stella | tide"))
+			}
+		}
 		// FunASR 的模型由服务端启动参数决定；VITS 与 GPT-SoVITS 的「音色」是
 		// 说话人 ID / 参考音频。这三种都没有「模型名」这一层。
 	default:
@@ -240,6 +251,26 @@ func normalizeAudioChannel(name string, ch *audioChannel, kinds []string) error 
 		}
 	}
 	return nil
+}
+
+// deepseekStyleWarns deepseek 合成不认 Style / Tags / Design（D316 决策 4）：配了非空值
+// 就给一条「已忽略」的启动警告——不静默吞掉，也不拦启动（风格配置对别家后端照样有效，
+// 换后端就能用）。返回的每项是已本地化的字段清单。
+func (c *fileConfig) deepseekStyleWarns() []string {
+	ch := c.Audio.TTS
+	if ch.Kind != kindDeepSeek {
+		return nil
+	}
+	var fields []string
+	for _, pair := range [][2]string{{ch.Design, "design"}, {ch.Style, "style"}, {ch.Tags, "tags"}} {
+		if pair[0] != "" {
+			fields = append(fields, pair[1])
+		}
+	}
+	if len(fields) == 0 {
+		return nil
+	}
+	return []string{i18n.Tf("log.audio.tts_style_ignored", "fields", strings.Join(fields, ", "))}
 }
 
 // containsString 列表里有没有这一项（协议白名单用）。

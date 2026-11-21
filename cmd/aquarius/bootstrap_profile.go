@@ -164,6 +164,17 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 				"log.act.voice_input_off", "why", why)
 		}
 	}
+	// D316：deepseek 合成不认 Style/Tags/Design——配了就明说「已忽略」，不静默吞掉。
+	for _, msg := range cfg.deepseekStyleWarns() {
+		w.note(logging.LevelWarn, logging.Audio, "log.audio.tts_style_ignored",
+			"log.act.style_ignored", "detail", msg)
+	}
+	// D316：deepseek 识别单段上限 120 秒，VAD 关掉时 wholeSegmenter 会把整段（最长 240 秒）
+	// 当一条发出去——录音硬顶在装配处联动降（见 buildASR），这里提前说一句为什么。
+	if cfg.Audio.ASR.Kind == kindDeepSeek && !cfg.Audio.VAD.enabled() {
+		w.note(logging.LevelWarn, logging.Audio, "log.audio.asr_cap_120s",
+			"log.act.recording_capped", "kind", kindDeepSeek)
+	}
 	w.cfg = cfg
 	primary := cfg.Model.primaryProvider()
 	w.primary = primary

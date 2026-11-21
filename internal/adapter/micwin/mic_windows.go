@@ -78,11 +78,17 @@ type waveHdr struct {
 
 // Recorder 默认输入设备的录音器（同一时刻只允许一次录音）。
 type Recorder struct {
-	mu sync.Mutex
+	mu  sync.Mutex
+	max time.Duration // 录音硬顶（构造期定，D316 可按后端收紧）
+}
+
+// Options 构造选项：MaxDuration 空 = 缺省硬顶（240s）；识别后端限段时传小值（D316）。
+type Options struct {
+	MaxDuration time.Duration
 }
 
 // New 创建录音器（不打开设备；Record 时才检查有没有设备）。
-func New() *Recorder { return &Recorder{} }
+func New(opts Options) *Recorder { return &Recorder{max: maxDurationFor(opts.MaxDuration)} }
 
 // Record 连续采集，把音频按 port.FrameBytes 一帧推给 sink，直到 ctx 取消（用户松手）、
 // 到达 max、或 sink 表示不再需要。
@@ -102,7 +108,7 @@ func (r *Recorder) Record(ctx context.Context, max time.Duration, sink port.Fram
 	if n, _, _ := procGetNumDevs.Call(); n == 0 {
 		return errors.New(i18n.T("audio.rec.err_no_device"))
 	}
-	max = clampDuration(max)
+	max = r.clampDuration(max)
 
 	event, _, _ := procCreateEvent.Call(0, 0, 0, 0)
 	if event == 0 {

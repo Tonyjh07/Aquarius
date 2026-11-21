@@ -93,6 +93,8 @@ var testDataLiterals = map[string][]string{
 	// 服务端文件解析测试：文件名与本地提取文本是**测试数据**（分片字段断言核对的就是它）。
 	"internal/app/session_files_test.go":     {"扫描件.pdf", "本地文本", "本地提取文本", "提取文本"},
 	"internal/adapter/llm/wire_file_test.go": {"看看这份扫描件", "你好"},
+	// DeepSeek 语音测试：服务端应答文本与录音文件名是**测试数据**（转写/上传断言核对的就是它）。
+	"internal/adapter/asrdeepseek/asrdeepseek_test.go": {"你好世界", "录音.wav"},
 	// 会话标题测试：模型输出（服务端生成的标题原样进会话元数据），断言的正是这些串——
 	// 换成英文等于换了被测对象（D309）。
 	"internal/adapter/llm/title_test.go": {"北京明天天气", "北京天气"},

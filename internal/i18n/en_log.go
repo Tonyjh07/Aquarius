@@ -18,6 +18,8 @@ var enLogTexts = map[string]string{
 	"log.act.continue":                 "carried on as usual; the conversation is unaffected",
 	"log.act.trash_kept_30d":           "deleted conversations stay in the trash for 30 days; /trash restores or empties early",
 	"log.act.voice_off":                "no playback this run; text is unaffected",
+	"log.act.style_ignored":            "the settings take effect again on a compatible backend",
+	"log.act.recording_capped":         "recordings follow the lowered cap",
 	"log.act.voice_input_off":          "no speech input this run; typing is unaffected",
 	"log.act.use_whole_recording":      "recording as one segment this run; voice still works",
 	"log.act.keep_raw":                 "kept the original text and transcribed as usual",
@@ -72,10 +74,12 @@ var enLogTexts = map[string]string{
 	"log.llm.chain_narrowed":        "the fallback chain is narrower than the current model",
 
 	// 语音
-	"log.audio.tts_unconfigured": "speech playback is on, but {why}",
-	"log.audio.asr_unavailable":  "speech recognition is unavailable: {why}",
-	"log.audio.vad_fallback":     "speech segmentation parameters are unusable; recording as one segment: {why}",
-	"log.audio.tts_unavailable":  "speech synthesis is unavailable: {why}",
+	"log.audio.tts_unconfigured":  "speech playback is on, but {why}",
+	"log.audio.asr_unavailable":   "speech recognition is unavailable: {why}",
+	"log.audio.tts_style_ignored": "deepseek synthesis does not accept these style fields, ignored: {detail}",
+	"log.audio.asr_cap_120s":      "deepseek recognition caps a segment at 120s: the recording hard cap is lowered to 120s, so whole-recording mode cannot exceed it either",
+	"log.audio.vad_fallback":      "speech segmentation parameters are unusable; recording as one segment: {why}",
+	"log.audio.tts_unavailable":   "speech synthesis is unavailable: {why}",
 	"log.audio.zhconv_unavailable": "traditional-to-simplified conversion is unavailable; " +
 		"transcripts stay as they are: {err}",
 	"log.audio.zhconv_failed":     "traditional-to-simplified conversion failed: {err}",
