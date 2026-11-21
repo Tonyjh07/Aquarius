@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-21 @ 89b0f64 -->
+<!-- docs-sync: 2026-11-21 @ f8e3872 -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -27,7 +27,11 @@
 每条动手前先补 [contracts.md](contracts.md) 的对应节与决策编号（新增命令、新增工具都算），
 本节只定范围与验收。
 
-### `v0.9.0`（在排，零条；回收站、`/fork`、标签置顶、人读导出、服务端文件解析、DeepSeek 语音后端、时间感知、前缀稳定性对比、PTC-1 与 PTC-2 已完成，见 [roadmap.md](roadmap.md)）
+### `v0.9.0`（在排一条：DeepSeek 导入；回收站、`/fork`、标签置顶、人读导出、服务端文件解析、DeepSeek 语音后端、时间感知、前缀稳定性对比、PTC-1 与 PTC-2 已完成，见 [roadmap.md](roadmap.md)）
+
+1. **DeepSeek 会话导入**（L，D321 已拍板）：按「会话导入：DeepSeek 导出」一节实做——路径级
+   识别 + 流式解包、清单与 `--all`、100 条分块、sidecar 去重、附件默认带（`--no-files` 可关）；
+   GUI 勾选面板的搜索框另批。验收：样例包全链路、全量包重导 0 新建、Ctrl-C 不留半个会话。
 
 ---
 

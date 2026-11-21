@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-11-21 @ ae1c772 -->
+<!-- docs-sync: 2026-11-21 @ f8e3872 -->
 
 > **权威文档之一**：决策节于 2026-09 独立成篇，与 [contracts.md](contracts.md) 同级同权威
 > （该节 2026-10 从总设计文档删除，不再占节号）。编号**跨文件不变**
@@ -329,6 +329,7 @@
 | D318 | 装配前缀稳定性对比：/context 概览加「与上一轮相比前 N 字符未变（x%）」——Agent 留两份快照（last 语义不变、新增 prev），按 sectionMark 摊平跳过 clock 段取最长公共前缀；跨会话与首次请求不出该行 | 已完成（v0.9.0） |
 | D319 | PTC-1：`tools.mode` 呈现模式（native/ptc，实验性）+ Starlark 进程内解释器；`run_code` 是普通 port.Tool、脚本内调用回同一 runtime 过权限矩阵；失败一律是结果字段 | 已完成（v0.9.0） |
 | D320 | PTC-2：脚本内确认去重（toolrun 层、ctx 携带 scope）+ 限额可配（tools.ptc 四键，修正 D319 写死）+ `/code` 只读留档 + 二段式 describe | 已完成（v0.9.0） |
+| D321 | DeepSeek 导出导入：整库 ZIP 只认不写（路径级识别 + 流式解包、清单 `--all`/`--pick`、100 条分块、`import-sources` sidecar 按 updated_at 去重、附件默认带 `--no-files` 可关、status 映射 Outcome）；搜索轨迹全丢计数、非图片文件丢弃、不建 persona 首节点（§5.16） | 进行中（v0.9.0） |
 
 ## 记录
 
@@ -2516,3 +2517,49 @@
      一条执行通路，收益为零。
 
 - **状态**：已完成（v0.9.0）。
+
+### D321 · DeepSeek 会话导入：整库容器只认不写
+
+- **背景**：`/import` 现有四档互通格式都面向「一次一条会话」，DeepSeek 网页端给的是**整库
+  容器**（官方只有「导出账号下全部会话」一个动作）：2274 个会话、56 MB 正文、377 MB 包体。
+  这是本仓第一个真实世界量级的导入——读法、上限、进度、重复导出去重都要按这个量级重新设计。
+
+- **决策**：
+  1. **只认不写**：官方没有导入入口，写出一份没人能读的格式是空转；`NoExport` 与
+     openwebui 同档。
+  2. **路径级识别 + 流式解包**：ZIP 的条目名在中央目录（文件末尾），`Detect` 只看 64 KB
+     文件头够不着。加可选接口 `PathDetector`（`DetectPath(path, head)`，消费方断言，端口
+     签名不动）：`*os.File` 满足 `io.ReaderAt`，`zip.NewReader` 读中央目录，见
+     `manifest.json` 的 `export_format_version` 与 `chat_sessions/` 即判 deepseek；
+     `Import` 对 `io.ReaderAt` 断言成功即流式解包（377 MB 不进内存），失败回落读内存老路。
+  3. **清单与选择**：清单序 = `chat_session_index.json` 按 `updated_at` 倒序；不带 `--all`
+     或 `--pick` 只列清单不全导——「塞 2274 条进左栏」不该是一条命令的默认结果。
+  4. **分块导入**：app 按 100 条一块调 `Import` → 逐条落盘，块内失败只回滚本块；顺带得到
+     进度行与可中断。
+  5. **去重 sidecar**：官方只能全量导出，重导是常态。`<profile>/import-sources/deepseek.json`
+     记「源会话 id → {conversation_id, updated_at}」；同 id 且 `updated_at` 未变跳过，变了
+     导成**新会话**（不做增量合并），回执写「跳过 N、另存 M」。文件不入库，删掉只是下次重导。
+  6. **附件默认带，`--no-files` 可关**：会话完整性优先；只有图片带字节（源包按 `export_path`
+     提供），非图片文件（498 个）源包不含字节，计入丢弃。
+  7. **映射**（顺序只认 `parent_id` 与 `fragments` 数组序，assistant 的 `inserted_at` 早于
+     对应 user 消息几毫秒，按时间排会把整棵树排反）：THINK → thinking 分片；
+     TEMPLATE_RESPONSE 如实当正文；多根（首条消息反复编辑的版本组）全挂 Root 做兄弟；
+     空节点跳过接最近祖先；`status` 映射 `Outcome`（FINISHED→done、INCOMPLETE→cancelled、
+     TIMEOUT/CONTENT_FILTER→error）；`accumulated_token_usage` 丢弃（累计值与本仓「本条」
+     不同口径）。
+  8. **搜索轨迹全丢 + 计数**：`READ_LINK` 的加密态换个会话回传只会被拒，`TOOL_OPEN` 多数
+     只有 `status`；留着没有可用性，只会让续写多出无法验证的块。回执写「搜索 N 次、读页
+     M 个」。
+  9. **人格**：不建 persona 首节点（与 chatgpt/openwebui/openai 三档同形态），续写按当前
+     配置人格（D144 兜底）；回执固定一行「历史由 DeepSeek 默认人格生成」。
+
+- **否决**：
+  1. **保留搜索轨迹原文**。加密态与空 url 的占位块对续写无用，见决策 8。
+  2. **增量合并**。本仓没有会话内合并的通路，为导入造一条远超本项范围；变了导成新会话
+     足够（用户可自行删旧）。
+  3. **`Detect` 头部猜测 deepseek**。ZIP 头就是 PK 魔数，与 aqx 无法区分；条目名不在
+     文件头里，头部结构扫描注定误判，路径级识别是唯一可靠入口。
+  4. **去重 sidecar 晚做**。它是「官方只能全量导出」的直接后果，晚做等于先教用户重导一遍
+     2274 条重复。
+
+- **状态**：进行中（v0.9.0）。

@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-21 @ fefa55a -->
+<!-- docs-sync: 2026-11-21 @ f8e3872 -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -841,10 +841,50 @@ system 比伪装成用户更诚实；SillyTavern 侧对应 `is_system`）。
 - **导入侧 `tool` / `function` 角色读成注入节点**（与 `chatgpt` 同一套规则）；`developer` 读成 system；
   其余不认的角色计入回执。
 
-**导入**：`Detect` 看扩展名与文件头，认 `aqx`（ZIP 魔数或扩展名）、`chatgpt`（顶层数组首项带
-`mapping` 键）、`openwebui`（顶层 `chat` 键的值是对象）、`sillytavern`（首行带 `mes` 或 `user_name`
-一类字段的 `.jsonl`）、`openai`（顶层 `messages` 键的值是数组）。顺序按形状特异度排，`messages`
-最后——这个键太常见，连 Open WebUI 的会话都得先按 `chat` 这层外壳认出来才轮到 `messages` 这一形状。
+**`deepseek`（整库容器，只认不写，D321）**：DeepSeek 网页端「导出账号下全部会话」给的是一
+份 ZIP（官方没有导入入口，本程序也不产出这套格式）：
+
+```
+manifest.json                 {"export_format_version":3}
+chat_sessions/<uuid>.json     会话：扁平消息表 + parent_id
+chat_sessions/<uuid>_files/   附件字节（只有图片带）
+chat_session_index.json       清单：id / title / pinned / message_count / 时间
+user.json                     账号资料 —— 不读、不落库、不进日志
+```
+
+**路径级识别**：ZIP 的条目名在中央目录（文件末尾），64 KB 文件头只够看到 PK 魔数，与 aqx
+无法区分。`Detect` 之外多一个可选接口 `PathDetector`（`DetectPath(path, head)`，消费方断言，
+端口签名不动）：`*os.File` 满足 `io.ReaderAt`，`zip.NewReader` 读中央目录，见 `manifest.json`
+的 `export_format_version` 与 `chat_sessions/` 即判 deepseek；`Import` 对 `io.ReaderAt` 断言
+成功即 `zip.NewReader` 流式解包（整包不进内存），失败回落读内存老路。deepseek 的导入上限：
+清单条目 10000、单会话 JSON 64 MB、包体不设限（流式）、单附件 32 MB、单会话附件总量 512 MB。
+
+**清单与顺序**：清单序 = `chat_session_index.json` 按 `updated_at` **倒序**（与网页端一致）。
+命令面不带 `--all` 或 `--pick` 时**只列清单不全导**——「塞两千条进左栏」不该是一条命令的默认
+结果；显式 `--all` 才全导。分块导入：app 按 100 条一块调 `Import` → 逐条落盘，块内失败只回滚
+本块，顺带得到进度行与可中断。
+
+**映射**（照代码写死的规则）：**顺序只认 `parent_id` 与 `fragments` 数组序**——assistant 的
+`inserted_at` 比与之对应的 user 消息早几毫秒（生成前先落占位），按时间排会把整棵树排反。
+`REQUEST`/`RESPONSE`/`TEMPLATE_RESPONSE` → text 分片；`THINK` → thinking 分片（`elapsed_secs`
+丢弃）；`FILE` 且 `is_image` → image 分片 + 字节按 `export_path` 从包里取（附件库按内容去重）；
+非图片文件源包不含字节，计入丢弃；`CONTENT_RISK`（界面横幅）与搜索轨迹（`TOOL_SEARCH` /
+`TOOL_OPEN` / `TOOL_FIND` / `PARTIAL_FILE_READ` / `READ_LINK`）丢弃并按会话计数——搜索的加密态
+换个会话回传只会被拒，多数 `TOOL_OPEN` 连 url 都没有，留着只会让续写多出无法验证的块；
+`accumulated_token_usage` 丢弃（累计值与本仓「本条」不同口径）；`status` 映射节点 `Outcome`
+（`FINISHED`→done、`INCOMPLETE`→cancelled、`TIMEOUT`/`CONTENT_FILTER`→error）。多根（首条消息
+反复编辑的版本组）全挂 Root 做兄弟；空节点（无任何分片）跳过，子节点顺父指针接到最近收下的
+祖先。不建 persona 首节点，续写按当前配置人格；回执固定一行「历史由 DeepSeek 默认人格生成」。
+
+**重导去重 sidecar**：官方只能全量导出，重导是常态。`<profile>/import-sources/deepseek.json`
+记「源会话 id → {conversation_id, updated_at}」：同 id 且 `updated_at` 未变跳过，变了导成
+**新会话**（不做增量合并），回执写「跳过 N、另存 M」。这份文件不入库，删掉只是下次重导。
+
+**导入**：先走路径级识别（`PathDetector`，deepseek 一档），再落 `Detect`——看扩展名与文件头，
+认 `aqx`（ZIP 魔数或扩展名）、`chatgpt`（顶层数组首项带 `mapping` 键）、`openwebui`（顶层 `chat`
+键的值是对象）、`sillytavern`（首行带 `mes` 或 `user_name` 一类字段的 `.jsonl`）、`openai`（顶层
+`messages` 键的值是数组）。顺序按形状特异度排，`messages` 最后——这个键太常见，连 Open WebUI 的
+会话都得先按 `chat` 这层外壳认出来才轮到 `messages` 这一形状。
 
 判的是**容器形状，不是子串**：文件头读 64 KB，扫结构时跳过字符串内容。子串判断两头都会错——正文
 提到 chat 一词的普通消息数组会被认成 Open WebUI（再报「这份会话是空的」，把认错格式包装成「文件
@@ -865,7 +905,8 @@ Open WebUI 与 ChatGPT 同为树形，共用一套节点/边读取和同一份�
 - **同一份文件导两次结构相同**：源里的节点表是 map 时按 ID 排序后再建，边也按父 ID 排序输出。
 
 **命令面**：`/export [--format <name>] [--path <文件>] [--all | --ids <id>[,<id>…]]`（缺省 `aqx`）、
-`/import [--pick <序号>]… <文件>`。**界面出口、保存框的档位选择与批量勾选见**
+`/import [--all | --pick <序号>]… [--no-files] <文件>`（容器格式不带 `--all`/`--pick` 只列清单；
+`--no-files` 跳过附件入库）。**界面出口、保存框的档位选择与批量勾选见**
 [gui-design.md](gui-design.md)（左栏两颗钮、`nFilterIndex` 取档、勾选面板）——那一面只拿路径与序号，
 壳内不解析容器（铁律 5），投的是同一条命令。
 
