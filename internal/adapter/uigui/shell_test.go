@@ -21,16 +21,17 @@ import (
 func TestLogoMenuItems(t *testing.T) {
 	t.Parallel()
 	items := logoMenuItems("strict", true, true)
+	// D324 重排：置顶 / 无人值守两个切换项相邻成组（托盘菜单同款编排）。
 	want := []struct {
 		id    uintptr
 		label string
 	}{
 		{cmdNew, i18n.T("ui.menu.new_chat")},
-		{0, i18n.T("ui.menu.permission")},
+		{cmdTopMost, i18n.T("ui.menu.topmost")},
 		{cmdUnattended, i18n.T("ui.menu.unattended")},
+		{0, i18n.T("ui.menu.permission")},
 		{cmdHistory, i18n.T("ui.menu.msg_history")},
 		{cmdSettings, i18n.T("ui.menu.settings")},
-		{cmdTopMost, i18n.T("ui.menu.topmost")},
 		{cmdToggle, i18n.T("ui.menu.hide")},
 		{0, ""},
 		{cmdExit, i18n.T("ui.menu.quit")},
@@ -44,7 +45,7 @@ func TestLogoMenuItems(t *testing.T) {
 				i, items[i].id, items[i].label, w.id, w.label)
 		}
 	}
-	if !items[5].checked {
+	if !items[1].checked {
 		t.Fatal("置顶项应勾选（平台 TopMost 传入为真）")
 	}
 	if !items[2].checked {
@@ -54,7 +55,7 @@ func TestLogoMenuItems(t *testing.T) {
 		t.Fatal("无人值守关闭时不应勾选")
 	}
 	// 权限二级菜单：四档 id = cmdPermBase+i、文案同 permLevels，当前档打勾。
-	sub := items[1].sub
+	sub := items[3].sub
 	if len(sub) != len(permLevels) {
 		t.Fatalf("权限子项数 = %d, want %d", len(sub), len(permLevels))
 	}
@@ -258,21 +259,27 @@ func TestMenuDispatchBubble(t *testing.T) {
 		t.Fatal("inCh 未收到 /respond")
 	}
 
-	// 项集 user/assistant 同集七项 + 「生成响应」「分叉新会话」（D183/D312：节点目标动作
-	// 与图侧同一落点——气泡项组末尾；kind 参数留 thinking/chip 差异化）。
+	// 项集 user/assistant（D324 分层）：顶层 复制/引用/编辑/重新生成 + 「更多」子菜单
+	// （编辑并转移历史/编辑并复制历史/查看原文/生成响应）+ 顶层末尾「分叉新会话」。
 	want := []struct {
 		id    uintptr
 		label string
 	}{
-		{cmdBubbleEdit, i18n.T("ui.common.edit")},
-		{cmdBubbleEditKeep, i18n.T("ui.menu.edit_keep")},
-		{cmdBubbleEditCopy, i18n.T("ui.menu.edit_copy")},
-		{cmdBubbleRegen, i18n.T("ui.menu.regen")},
 		{cmdBubbleCopy, i18n.T("ui.common.copy")},
 		{cmdBubbleQuote, i18n.T("ui.menu.quote")},
+		{cmdBubbleEdit, i18n.T("ui.common.edit")},
+		{cmdBubbleRegen, i18n.T("ui.menu.regen")},
+		{0, i18n.T("ui.menu.more")},
+		{cmdNodeFork, i18n.T("ui.menu.fork")},
+	}
+	wantSub := []struct {
+		id    uintptr
+		label string
+	}{
+		{cmdBubbleEditKeep, i18n.T("ui.menu.edit_keep")},
+		{cmdBubbleEditCopy, i18n.T("ui.menu.edit_copy")},
 		{cmdBubbleRaw, i18n.T("ui.menu.raw")},
 		{cmdNodeRespond, i18n.T("ui.menu.respond")},
-		{cmdNodeFork, i18n.T("ui.menu.fork")},
 	}
 	for _, kind := range []blockKind{blockUser, blockAssistant} {
 		items := bubbleMenuItems(kind, true)
@@ -284,9 +291,23 @@ func TestMenuDispatchBubble(t *testing.T) {
 				t.Fatalf("%v 菜单项[%d] = {%d %q}, want {%d %q}", kind, i, items[i].id, items[i].label, w.id, w.label)
 			}
 		}
-		// 拿不到节点 ID（实时草稿等）时不给「生成响应」「分叉新会话」：动作点了没反应不如不给。
-		if got := bubbleMenuItems(kind, false); len(got) != len(want)-2 {
-			t.Fatalf("%v 无 ID 项数 = %d, want %d", kind, len(got), len(want)-2)
+		sub := items[4].sub
+		if len(sub) != len(wantSub) {
+			t.Fatalf("%v 更多子菜单项数 = %d, want %d", kind, len(sub), len(wantSub))
+		}
+		for i, w := range wantSub {
+			if sub[i].id != w.id || sub[i].label != w.label {
+				t.Fatalf("%v 更多子项[%d] = {%d %q}, want {%d %q}", kind, i, sub[i].id, sub[i].label, w.id, w.label)
+			}
+		}
+		// 拿不到节点 ID（实时草稿等）时：「生成响应」从子菜单撤下、「分叉新会话」不给
+		// ——动作点了没反应不如不给。
+		got := bubbleMenuItems(kind, false)
+		if len(got) != len(want)-1 {
+			t.Fatalf("%v 无 ID 项数 = %d, want %d", kind, len(got), len(want)-1)
+		}
+		if n := len(got[4].sub); n != len(wantSub)-1 {
+			t.Fatalf("%v 无 ID 更多子项数 = %d, want %d", kind, n, len(wantSub)-1)
 		}
 	}
 }
@@ -435,35 +456,53 @@ func TestToggleTopMost(t *testing.T) {
 // TestNodeMenuItemsContract 图侧节点菜单项序/文案契约（D132；D139 加「转到」；
 // D152 加「插入摘要」，仅对可插目标出项；2026-10-19 用户批注改掉删除项文案、缩短「转到」、
 // 撤掉「装下整树」；D312 加「分叉新会话」，贴在「删除该节点及子树」之前）：
-// user/assistant 节点 = 气泡七项 + 分隔线 + 图侧五项；root/system 节点只给复制/查看原文；
-// 无正文节点只剩图侧部分；不可插目标（会话根 / 会话首节点人格）少「插入摘要」一项。
+// user/assistant 节点 = 气泡四项 + 更多子菜单 + 分叉 + 分隔 + 节点/危险两个子菜单（D324
+// 分层）；root/system 节点只给复制/查看原文；无正文节点只剩图侧部分；不可插目标
+// （会话根 / 会话首节点人格）少「插入摘要」一项。对照按拍平序列（子菜单展开）比对。
 func TestNodeMenuItemsContract(t *testing.T) {
 	t.Parallel()
 	bubble := []menuIt{
-		{id: cmdBubbleEdit, label: i18n.T("ui.common.edit")},
-		{id: cmdBubbleEditKeep, label: i18n.T("ui.menu.edit_keep")},
-		{id: cmdBubbleEditCopy, label: i18n.T("ui.menu.edit_copy")},
-		{id: cmdBubbleRegen, label: i18n.T("ui.menu.regen")},
 		{id: cmdBubbleCopy, label: i18n.T("ui.common.copy")},
 		{id: cmdBubbleQuote, label: i18n.T("ui.menu.quote")},
-		{id: cmdBubbleRaw, label: i18n.T("ui.menu.raw")},
+		{id: cmdBubbleEdit, label: i18n.T("ui.common.edit")},
+		{id: cmdBubbleRegen, label: i18n.T("ui.menu.regen")},
 	}
-	// 「生成响应」贴在气泡项组末尾、分隔线之前（2026-10-25 用户批注，任何非根节点都给）。
+	// 「生成响应」任何非根节点都给（2026-10-25 用户批注；D324 起收进「更多」子菜单）。
 	respond := menuIt{id: cmdNodeRespond, label: i18n.T("ui.menu.respond")}
-	graph := []menuIt{
-		{id: cmdNodeCopyID, label: i18n.T("ui.menu.copy_id")},
-		{id: cmdNodeSummary, label: i18n.T("ui.menu.insert_summary")},
-		{id: cmdNodeFork, label: i18n.T("ui.menu.fork")},
-		{id: cmdNodeRm, label: i18n.T("ui.menu.delete_subtree")},
-		{id: cmdNodeGoto, label: i18n.T("ui.menu.goto")},
+	// D324 分层：顶层 复制/引用/编辑/重新生成 + 「更多 ▸」 + 分叉新会话 + 分隔线 +
+	// 「节点 ▸」（复制 ID / 插入摘要 / 转到） + 「危险 ▸」（删除该节点及子树）。
+	fork := menuIt{id: cmdNodeFork, label: i18n.T("ui.menu.fork")}
+	more := menuIt{label: i18n.T("ui.menu.more"), sub: []menuIt{
+		{id: cmdBubbleEditKeep, label: i18n.T("ui.menu.edit_keep")},
+		{id: cmdBubbleEditCopy, label: i18n.T("ui.menu.edit_copy")},
+		{id: cmdBubbleRaw, label: i18n.T("ui.menu.raw")},
+		respond,
+	}}
+	nodeSub := func(withSummary bool) []menuIt {
+		sub := []menuIt{{id: cmdNodeCopyID, label: i18n.T("ui.menu.copy_id")}}
+		if withSummary {
+			sub = append(sub, menuIt{id: cmdNodeSummary, label: i18n.T("ui.menu.insert_summary")})
+		}
+		return append(sub, menuIt{id: cmdNodeGoto, label: i18n.T("ui.menu.goto")})
 	}
-	graphNoSummary := append(append([]menuIt{}, graph[:1]...), graph[2:]...)
-	full := append(append([]menuIt{}, bubble...), respond)
-	full = append(full, menuIt{})
-	full = append(full, graph...)
+	danger := menuIt{label: i18n.T("ui.menu.danger"), sub: []menuIt{
+		{id: cmdNodeRm, label: i18n.T("ui.menu.delete_subtree")},
+	}}
 
+	nodeParent := func(sub []menuIt) menuIt { return menuIt{label: i18n.T("ui.menu.node"), sub: sub} }
+	// 拍平对照（子菜单展开进序列，分隔线保留）——项集契约锁「flattened 顺序与 id/label」。
+	flatten := func(items []menuIt) []menuIt {
+		var out []menuIt
+		for _, it := range items {
+			out = append(out, it)
+			out = append(out, it.sub...)
+		}
+		return out
+	}
 	for _, kind := range []blockKind{blockUser, blockAssistant} {
-		got := nodeMenuItems(kind, true, true, false)
+		got := flatten(nodeMenuItems(kind, true, true, false))
+		full := append(append([]menuIt{}, bubble...), more, fork, menuIt{}, nodeParent(nodeSub(true)), danger)
+		full = flatten(full)
 		if len(got) != len(full) {
 			t.Fatalf("%v 图菜单项数 = %d, want %d", kind, len(got), len(full))
 		}
@@ -474,10 +513,11 @@ func TestNodeMenuItemsContract(t *testing.T) {
 			}
 		}
 	}
-	// root/system（blockPlain）：不给编辑三方式与重新生成，但仍给「生成响应」（从系统
-	// 节点续写也合法；根节点整份菜单在图侧另拦，不在此处）。
-	got := nodeMenuItems(blockPlain, true, true, false)
-	want := append([]menuIt{{id: cmdBubbleCopy, label: i18n.T("ui.common.copy")}, {id: cmdBubbleRaw, label: i18n.T("ui.menu.raw")}, respond, {}}, graph...)
+	// root/system（blockPlain）：不给编辑组，仍给「生成响应」（从系统节点续写也合法；
+	// 根节点整份菜单在图侧另拦，不在此处）。
+	plainHead := []menuIt{{id: cmdBubbleCopy, label: i18n.T("ui.common.copy")}, {id: cmdBubbleRaw, label: i18n.T("ui.menu.raw")}, respond, fork, menuIt{}}
+	got := flatten(nodeMenuItems(blockPlain, true, true, false))
+	want := flatten(append(append([]menuIt{}, plainHead...), nodeParent(nodeSub(true)), danger))
 	if len(got) != len(want) {
 		t.Fatalf("root/system 项数 = %d, want %d", len(got), len(want))
 	}
@@ -487,8 +527,8 @@ func TestNodeMenuItemsContract(t *testing.T) {
 		}
 	}
 	// 无正文节点：只剩「生成响应」 + 图侧项（不拿空文本预填编辑框）。
-	got = nodeMenuItems(blockUser, false, true, false)
-	want = append([]menuIt{respond, {}}, graph...)
+	got = flatten(nodeMenuItems(blockUser, false, true, false))
+	want = flatten([]menuIt{respond, fork, menuIt{}, nodeParent(nodeSub(true)), danger})
 	if len(got) != len(want) {
 		t.Fatalf("无正文项数 = %d, want %d", len(got), len(want))
 	}
@@ -498,8 +538,8 @@ func TestNodeMenuItemsContract(t *testing.T) {
 		}
 	}
 	// 不可插目标（会话根 / 会话首节点人格）：少「插入摘要」，其余不变。
-	got = nodeMenuItems(blockPlain, true, false, false)
-	want = append([]menuIt{{id: cmdBubbleCopy, label: i18n.T("ui.common.copy")}, {id: cmdBubbleRaw, label: i18n.T("ui.menu.raw")}, respond, {}}, graphNoSummary...)
+	got = flatten(nodeMenuItems(blockPlain, true, false, false))
+	want = flatten(append(append([]menuIt{}, plainHead...), nodeParent(nodeSub(false)), danger))
 	if len(got) != len(want) {
 		t.Fatalf("不可插目标项数 = %d, want %d", len(got), len(want))
 	}
@@ -518,11 +558,15 @@ func TestNodeMenuRouting(t *testing.T) {
 	u.inCh = make(chan port.UserInput, 8)
 	u.bubbleMenu.Store(&bubbleMenuCtx{id: "u1", kind: blockUser, copy: "正文", graph: true, canSummary: true})
 	items := u.menuItems(platform.MenuBubble)
-	if len(items) != 14 {
-		t.Fatalf("图侧项数 = %d, want 14（气泡七项 + 生成响应 + 分隔 + 图侧五项）", len(items))
+	// D324 分层：顶层 9 项（气泡四项 + 更多 + 分叉 + 分隔 + 节点 ▸ + 危险 ▸）。
+	if len(items) != 9 {
+		t.Fatalf("图侧项数 = %d, want 9", len(items))
 	}
-	if items[len(items)-1].Label != i18n.T("ui.menu.goto") {
-		t.Fatalf("末项 = %q, want 转到", items[len(items)-1].Label)
+	if items[len(items)-1].Label != i18n.T("ui.menu.danger") {
+		t.Fatalf("末项 = %q, want 危险", items[len(items)-1].Label)
+	}
+	if got := items[len(items)-2].Sub; len(got) != 3 || got[len(got)-1].Label != i18n.T("ui.menu.goto") {
+		t.Fatalf("节点子菜单 = %+v, want 末项转到", got)
 	}
 	for _, it := range items {
 		if it.Label == i18n.T("ui.history.fit_tree") {

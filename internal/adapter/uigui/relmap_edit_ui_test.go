@@ -36,36 +36,51 @@ func TestNodeMenuFrozenGreysStructural(t *testing.T) {
 
 	items := nodeMenuItems(blockUser, true, true, true)
 	seenGrey, seenOpen := 0, 0
-	for _, it := range items {
-		if it.id == 0 {
-			continue // 分隔线
-		}
-		switch {
-		case frozenLabels[it.label]:
-			if !it.disabled {
-				t.Fatalf("编辑期「%s」应置灰", it.label)
+	var walk func(items []menuIt)
+	walk = func(items []menuIt) { // D324：项在子菜单里，遍历要走进去
+		for _, it := range items {
+			if it.sub != nil {
+				walk(it.sub)
+				continue // 分组父项（更多/节点/危险）不归类
 			}
-			seenGrey++
-		case openLabels[it.label]:
-			if it.disabled {
-				t.Fatalf("编辑期「%s」是只读项，不该置灰", it.label)
+			if it.id == 0 {
+				continue // 分隔线
 			}
-			seenOpen++
-		default:
-			t.Fatalf("菜单里出现了未归类的项「%s」——置灰规则要跟着项集走", it.label)
+			switch {
+			case frozenLabels[it.label]:
+				if !it.disabled {
+					t.Fatalf("编辑期「%s」应置灰", it.label)
+				}
+				seenGrey++
+			case openLabels[it.label]:
+				if it.disabled {
+					t.Fatalf("编辑期「%s」是只读项，不该置灰", it.label)
+				}
+				seenOpen++
+			default:
+				t.Fatalf("菜单里出现了未归类的项「%s」——置灰规则要跟着项集走", it.label)
+			}
 		}
 	}
+	walk(items)
 	if seenGrey != len(frozenLabels) || seenOpen != len(openLabels) {
 		t.Fatalf("项数 = 灰 %d / 亮 %d, want %d / %d",
 			seenGrey, seenOpen, len(frozenLabels), len(openLabels))
 	}
 
-	// 非编辑期：一项都不灰。
-	for _, it := range nodeMenuItems(blockUser, true, true, false) {
-		if it.disabled {
-			t.Fatalf("非编辑期「%s」不该置灰", it.label)
+	// 非编辑期：一项都不灰（含子菜单）。
+	var noGrey func(items []menuIt)
+	noGrey = func(items []menuIt) {
+		for _, it := range items {
+			if it.disabled {
+				t.Fatalf("非编辑期「%s」不该置灰", it.label)
+			}
+			if it.sub != nil {
+				noGrey(it.sub)
+			}
 		}
 	}
+	noGrey(nodeMenuItems(blockUser, true, true, false))
 }
 
 // TestFrozenMenuItemsReachPlatform 置灰位要一路走到平台 DTO（否则 Windows 侧永远不灰）。
@@ -74,16 +89,24 @@ func TestFrozenMenuItemsReachPlatform(t *testing.T) {
 	u := newFrameUI()
 	u.bubbleMenu.Store(&bubbleMenuCtx{id: "u1", kind: blockUser, graph: true, frozen: true})
 	var greyed, lit int
-	for _, it := range u.menuItems(platform.MenuBubble) {
-		if it.ID == 0 {
-			continue
-		}
-		if it.Disabled {
-			greyed++
-		} else {
-			lit++
+	var walk func(items []platform.MenuItem)
+	walk = func(items []platform.MenuItem) { // D324：子菜单里的置灰位也要走到
+		for _, it := range items {
+			if it.Sub != nil {
+				walk(it.Sub)
+				continue
+			}
+			if it.ID == 0 {
+				continue
+			}
+			if it.Disabled {
+				greyed++
+			} else {
+				lit++
+			}
 		}
 	}
+	walk(u.menuItems(platform.MenuBubble))
 	if greyed == 0 || lit == 0 {
 		t.Fatalf("置灰位未传到平台: 灰 %d / 亮 %d", greyed, lit)
 	}

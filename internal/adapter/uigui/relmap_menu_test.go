@@ -126,8 +126,9 @@ func TestRelGraphRightClickMenu(t *testing.T) {
 	// 项集 = 气泡七项 + 生成响应 + 分隔线 + 图侧四项（D139 加「转到」；D152 加「插入摘要」；
 	// 2026-10-25 加「生成响应」，贴气泡项组末尾、分隔线之前）
 	items := u.menuItems(platform.MenuBubble)
-	wantLabels := []string{i18n.T("ui.common.edit"), i18n.T("ui.menu.edit_keep"), i18n.T("ui.menu.edit_copy"), i18n.T("ui.menu.regen"), i18n.T("ui.common.copy"),
-		i18n.T("ui.menu.quote"), i18n.T("ui.menu.raw"), i18n.T("ui.menu.respond"), "", i18n.T("ui.menu.copy_id"), i18n.T("ui.menu.insert_summary"), i18n.T("ui.menu.fork"), i18n.T("ui.menu.delete_subtree"), i18n.T("ui.menu.goto")}
+	// D324 分层：顶层 复制/引用/编辑/重新生成/更多/分叉/分隔/节点 ▸/危险 ▸。
+	wantLabels := []string{i18n.T("ui.common.copy"), i18n.T("ui.menu.quote"), i18n.T("ui.common.edit"), i18n.T("ui.menu.regen"),
+		i18n.T("ui.menu.more"), i18n.T("ui.menu.fork"), "", i18n.T("ui.menu.node"), i18n.T("ui.menu.danger")}
 	if len(items) != len(wantLabels) {
 		t.Fatalf("项数 = %d, want %d", len(items), len(wantLabels))
 	}
@@ -318,7 +319,8 @@ func TestRelGraphMenuNoBodyNode(t *testing.T) {
 		t.Fatalf("无正文节点上下文 = %+v, want copy 为空", ctx)
 	}
 	items := u.menuItems(platform.MenuBubble)
-	want := []string{i18n.T("ui.menu.respond"), "", i18n.T("ui.menu.copy_id"), i18n.T("ui.menu.insert_summary"), i18n.T("ui.menu.fork"), i18n.T("ui.menu.delete_subtree"), i18n.T("ui.menu.goto")}
+	// D324 分层：无正文节点 = 生成响应 / 分叉 / 分隔 / 节点 ▸ / 危险 ▸。
+	want := []string{i18n.T("ui.menu.respond"), i18n.T("ui.menu.fork"), "", i18n.T("ui.menu.node"), i18n.T("ui.menu.danger")}
 	if len(items) != len(want) {
 		t.Fatalf("无正文节点项数 = %d, want %d", len(items), len(want))
 	}
