@@ -128,6 +128,14 @@ var enCmdTexts = map[string]string{
 	"cmd.rmconv.p1.name": "<id prefix>",
 	"cmd.rmconv.p1.desc": "unique prefix of each conversation to delete; several are allowed and one confirmation covers them all",
 
+	// /fork
+	"cmd.fork.desc":    "Take a node and its whole subtree into a new conversation (Head lands on the fork node; the source stays untouched)",
+	"cmd.fork.usage":   "<node id> [title]",
+	"cmd.fork.p1.name": "<node id>",
+	"cmd.fork.p1.desc": "unique prefix of the node to fork from (/branch shows them; the conversation root cannot be forked)",
+	"cmd.fork.p2.name": "[title]",
+	"cmd.fork.p2.desc": "title of the new conversation; omitted means the source title carries over",
+
 	// /trash
 	"cmd.trash.desc":    "Conversation trash: no args lists it; restore puts conversations back; empty clears it (asks for confirmation)",
 	"cmd.trash.usage":   "[restore <id prefix>… | empty]",

@@ -10,6 +10,7 @@ var zhTreeTexts = map[string]string{
 	"usage.switch":    "用法: /switch <id 前缀>（/list 查看可用会话，支持唯一前缀）",
 	"usage.title":     "用法: /title [--id <id 前缀>] [<标题>]（--id 改非当前会话标题，/list 查看）",
 	"usage.rmconv":    "用法: /rmconv <id 前缀> [<id 前缀>…]（删除整个会话——移进回收站，二次确认；/list 查看可用会话）",
+	"usage.fork":      "用法: /fork <节点 id> [标题]（把该节点及其整棵子树摘成新会话；节点 id 用 /branch 查看，支持唯一前缀）",
 	"usage.trash":     "用法: /trash（列出回收站）｜/trash restore <id 前缀> [<id 前缀>…]（还原回原 ID）｜/trash empty（清空，二次确认）",
 	"usage.goto":      "用法: /goto <id>（id 可用 /branch 查看，支持唯一前缀）",
 	"usage.branch":    "用法: /branch [id]（缺省取当前 Head）",
@@ -53,6 +54,10 @@ var zhTreeTexts = map[string]string{
 	"tree.trash.empty_confirm": "确认清空回收站？{n} 个会话将彻底删除，此操作不可恢复",
 	"tree.trash.canceled":      "已取消清空",
 	"tree.trash.emptied":       "已清空回收站（{n} 个会话）",
+
+	// /fork
+	"tree.fork.root": "会话根不可分叉——整会话带走请用 /export，树内复制请用 /edit --copy",
+	"tree.fork.done": "已分叉出会话 {id}（{title}）：从节点 {from} 起整棵子树，Head 落在分叉节点；原会话未改动",
 
 	// 标题清单（批量删除回执用）
 	"tree.titles.sep":  "、",
@@ -120,6 +125,8 @@ var zhTreeTexts = map[string]string{
 	"err.restore_conversation":        "还原会话",
 	"err.confirm_empty_trash":         "确认清空回收站",
 	"err.empty_trash":                 "清空回收站",
+	"err.save_fork":                   "保存分叉会话",
+	"err.fork_structure":              "分叉子树结构",
 	"err.save_successor":              "保存继任会话",
 	"err.move_head":                   "移动 Head",
 	"err.confirm_delete":              "确认删除",

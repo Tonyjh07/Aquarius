@@ -165,6 +165,12 @@ func sessionCommands() []commandEntry {
 		{Names: []string{"rmconv"}, Usage: "cmd.rmconv.usage", Desc: "cmd.rmconv.desc",
 			Params: []port.CommandParam{{Name: "cmd.rmconv.p1.name", Kind: port.ParamText, Repeatable: true, Desc: "cmd.rmconv.p1.desc"}},
 			Run:    (*Session).execRmconv},
+		{Names: []string{"fork"}, Usage: "cmd.fork.usage", Desc: "cmd.fork.desc",
+			Params: []port.CommandParam{
+				{Name: "cmd.fork.p1.name", Kind: port.ParamText, Desc: "cmd.fork.p1.desc"},
+				{Name: "cmd.fork.p2.name", Kind: port.ParamText, Desc: "cmd.fork.p2.desc"},
+			},
+			Run: (*Session).execFork},
 		{Names: []string{"trash"}, Usage: "cmd.trash.usage", Desc: "cmd.trash.desc",
 			Params: []port.CommandParam{
 				{Name: "cmd.trash.p1.name", Kind: port.ParamChoice, Values: []string{"restore", "empty"}, Desc: "cmd.trash.p1.desc"},

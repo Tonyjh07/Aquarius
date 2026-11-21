@@ -130,6 +130,14 @@ var zhCmdTexts = map[string]string{
 	"cmd.rmconv.p1.name": "<id 前缀>",
 	"cmd.rmconv.p1.desc": "要删的会话 id 唯一前缀；可给多个，一次确认全部删除",
 
+	// /fork
+	"cmd.fork.desc":    "把某节点及其整棵子树摘成一份新会话（Head 落在分叉节点，原会话不动）",
+	"cmd.fork.usage":   "<节点 id> [标题]",
+	"cmd.fork.p1.name": "<节点 id>",
+	"cmd.fork.p1.desc": "要分叉的节点 id 唯一前缀（/branch 查看；会话根不可摘）",
+	"cmd.fork.p2.name": "[标题]",
+	"cmd.fork.p2.desc": "新会话的标题；不给就沿用原会话标题",
+
 	// /trash
 	"cmd.trash.desc":    "会话回收站：无参列出；restore 还原回原 ID；empty 清空（二次确认）",
 	"cmd.trash.usage":   "[restore <id 前缀>… | empty]",

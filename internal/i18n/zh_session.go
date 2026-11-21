@@ -235,4 +235,5 @@ var zhSessionTexts = map[string]string{
 	"replay.verb.switched":        "已切换到",
 	"replay.verb.branch_switched": "已切换分支至",
 	"replay.verb.imported":        "已导入",
+	"replay.verb.forked":          "已分叉到",
 }

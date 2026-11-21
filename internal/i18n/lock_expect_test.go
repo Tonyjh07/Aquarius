@@ -83,6 +83,8 @@ var testDataLiterals = map[string][]string{
 	// 回收站测试：会话 ID 与标题都用中文短串（「甲」）——ID 与标题是**测试数据**，
 	// 删除/还原断言按文件名（<id>.json）与列表文本核对的就是这些串本身。
 	"internal/app/session_cmd_trash_test.go": {"甲", "乙"},
+	// 分叉测试：标题实参是**用户输入**（/fork 的第二个参数），断言的就是它本身。
+	"internal/app/session_cmd_fork_test.go": {"新题目"},
 	// 会话标题测试：模型输出（服务端生成的标题原样进会话元数据），断言的正是这些串——
 	// 换成英文等于换了被测对象（D309）。
 	"internal/adapter/llm/title_test.go": {"北京明天天气", "北京天气"},

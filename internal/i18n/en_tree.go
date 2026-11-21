@@ -9,6 +9,7 @@ var enTreeTexts = map[string]string{
 	"usage.switch":    "Usage: /switch <id prefix> (/list shows the available conversations; a unique prefix is enough)",
 	"usage.title":     "Usage: /title [--id <id prefix>] [<text>] (--id retitles another conversation; /list shows them)",
 	"usage.rmconv":    "Usage: /rmconv <id prefix> [<id prefix>…] (deletes whole conversations into the trash after a confirmation; /list shows the available ones)",
+	"usage.fork":      "Usage: /fork <node id> [title] (takes the node and its whole subtree into a new conversation; ids read as in /branch, a unique prefix is enough)",
 	"usage.trash":     "Usage: /trash (list the trash) | /trash restore <id prefix> [<id prefix>…] (restore to the original ids) | /trash empty (empty it, after a confirmation)",
 	"usage.goto":      "Usage: /goto <id> (/branch shows the ids; a unique prefix is enough)",
 	"usage.branch":    "Usage: /branch [id] (the current Head by default)",
@@ -52,6 +53,10 @@ var enTreeTexts = map[string]string{
 	"tree.trash.empty_confirm": "Empty the trash? {n} conversations will be deleted for good, and this cannot be undone",
 	"tree.trash.canceled":      "Cancelled emptying the trash",
 	"tree.trash.emptied":       "Emptied the trash ({n} conversations)",
+
+	// /fork
+	"tree.fork.root": "the conversation root cannot be forked — to take the whole conversation use /export, to copy inside the tree use /edit --copy",
+	"tree.fork.done": "Forked conversation {id} ({title}): the whole subtree from node {from}, Head on the fork node; the source conversation is untouched",
 
 	// 标题清单（批量删除回执用）
 	"tree.titles.sep":  ", ",
@@ -119,6 +124,8 @@ var enTreeTexts = map[string]string{
 	"err.restore_conversation":        "restore the conversation",
 	"err.confirm_empty_trash":         "confirm emptying the trash",
 	"err.empty_trash":                 "empty the trash",
+	"err.save_fork":                   "save the forked conversation",
+	"err.fork_structure":              "forked subtree structure",
 	"err.save_successor":              "save the successor conversation",
 	"err.move_head":                   "move Head",
 	"err.confirm_delete":              "confirm the deletion",

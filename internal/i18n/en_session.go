@@ -231,4 +231,5 @@ var enSessionTexts = map[string]string{
 	"replay.verb.switched":        "Switched to",
 	"replay.verb.branch_switched": "Switched branch to",
 	"replay.verb.imported":        "Imported",
+	"replay.verb.forked":          "Forked into",
 }
