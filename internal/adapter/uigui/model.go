@@ -180,7 +180,7 @@ func (m *model) addNote(text string) {
 	m.flushThink() // 时序：提示在思维链之后
 	if n := len(m.blocks); n > 0 && m.blocks[n-1].kind == blockCommand {
 		b := &m.blocks[n-1]
-		if k := len(b.cmds) - 1; k >= 0 && b.cmds[k].out == "" && b.cmds[k].note == "" {
+		if k := len(b.cmds) - 1; k >= 0 && b.cmds[k].out == "" && b.cmds[k].note == "" && b.cmds[k].err == "" {
 			b.cmds[k].note = text // 紧跟在命令回显后 = 这次操作的附注
 			return
 		}
@@ -189,6 +189,22 @@ func (m *model) addNote(text string) {
 	}
 	m.blocks = append(m.blocks, block{
 		kind: blockCommand, part: -1, cmds: []cmdEntry{{note: text}},
+	})
+}
+
+// addErr 错误进折叠条（D323）：错误也是运行输出——反复失败（重试、批量命令）的整宽
+// 红卡是转写区里最占位置的东西，而错误详情只在排障时才需要全文。归进末尾的折叠条
+// （紧邻时与命令/回执同条），没有归属就自成一条「错误条」；展开后用错误色渲染，
+// 收起态头行报错误数并转红。
+func (m *model) addErr(text string) {
+	m.flushThink() // 时序：错误在思维链之后
+	if n := len(m.blocks); n > 0 && m.blocks[n-1].kind == blockCommand {
+		b := &m.blocks[n-1]
+		b.cmds = append(b.cmds, cmdEntry{err: text})
+		return
+	}
+	m.blocks = append(m.blocks, block{
+		kind: blockCommand, part: -1, cmds: []cmdEntry{{err: text}},
 	})
 }
 
@@ -228,7 +244,7 @@ func (m *model) attachNoteOut(s string) bool {
 func (m *model) attachCommandOut(s string) bool {
 	if n := len(m.blocks); n > 0 && m.blocks[n-1].kind == blockCommand {
 		b := &m.blocks[n-1]
-		if k := len(b.cmds) - 1; k >= 0 && b.cmds[k].out == "" && b.cmds[k].note == "" {
+		if k := len(b.cmds) - 1; k >= 0 && b.cmds[k].out == "" && b.cmds[k].note == "" && b.cmds[k].err == "" {
 			b.cmds[k].out = s
 			m.pendingCmd = ""
 			return true
@@ -282,7 +298,8 @@ func (m *model) handleEvent(ev port.Event) {
 	case port.HistoryEvent:
 		m.replay(e.Message) // 启动历史回放（D40/§7.4）：按节点角色定稿渲染
 	case port.ErrorEvent:
-		m.add(blockError, "error: "+sanitizeControl(e.Err.Error())) // 服务端错误片段可携带注入序列
+		// D323：错误收进折叠条（服务端错误片段可携带注入序列，先消毒）。
+		m.addErr(sanitizeControl(e.Err.Error()))
 	case port.NoticeEvent:
 		// D267：回执收进折叠条；改变了本轮上下文预期的才留在转写里当一行提示。
 		if e.Attention {

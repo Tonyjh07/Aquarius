@@ -120,6 +120,7 @@ var enGuiChatTexts = map[string]string{
 	// ── 命令折叠条与补全浮层
 	"ui.cmd.header_commands": "{n} commands collapsed",
 	"ui.cmd.header_notes":    "{n} notices",
+	"ui.cmd.header_errors":   "{n} errors",
 	"ui.cmd.expand":          "Click to expand",
 	"ui.cmd.collapse":        "Click to collapse",
 	"ui.cmd.more_hint":       "{n} more — keep typing to filter",

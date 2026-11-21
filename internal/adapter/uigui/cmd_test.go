@@ -4,6 +4,7 @@ package uigui
 // 冒充用户气泡；连续的命令合成一条淡灰圆角条，默认只留一行「折叠 N 条命令 · 点击展开」。
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -18,21 +19,28 @@ import (
 func TestCmdHeaderText(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		cmd, note int
-		open      bool
-		want      string
+		cmd, note, err int
+		open           bool
+		want           string
 	}{
 		{cmd: 1, open: false, want: i18n.Tf("ui.cmd.header_commands", "n", 1) + " · " + i18n.T("ui.cmd.expand")},
 		{cmd: 3, open: false, want: i18n.Tf("ui.cmd.header_commands", "n", 3) + " · " + i18n.T("ui.cmd.expand")},
 		{cmd: 3, open: true, want: i18n.Tf("ui.cmd.header_commands", "n", 3) + " · " + i18n.T("ui.cmd.collapse")},
-		// 一条命令带一项回执：仍报 1 条（按命令行数，不按条目数）。
-		{cmd: 1, note: 2, open: false, want: i18n.Tf("ui.cmd.header_commands", "n", 1) + " · " + i18n.T("ui.cmd.expand")},
+		// 一条命令带两项回执：命令按命令行数报 1，回执段也如实报（D323 起按构成计数）。
+		{cmd: 1, note: 2, open: false, want: i18n.Tf("ui.cmd.header_commands", "n", 1) + " · " +
+			i18n.Tf("ui.cmd.header_notes", "n", 2) + " · " + i18n.T("ui.cmd.expand")},
 		{note: 1, open: false, want: i18n.Tf("ui.cmd.header_notes", "n", 1) + " · " + i18n.T("ui.cmd.expand")},
 		{note: 2, open: true, want: i18n.Tf("ui.cmd.header_notes", "n", 2) + " · " + i18n.T("ui.cmd.collapse")},
+		// D323：错误按构成计数，只报非零段；命令 + 错误同条时两段都在。
+		{err: 1, open: false, want: i18n.Tf("ui.cmd.header_errors", "n", 1) + " · " + i18n.T("ui.cmd.expand")},
+		{cmd: 1, err: 2, open: false, want: i18n.Tf("ui.cmd.header_commands", "n", 1) + " · " +
+			i18n.Tf("ui.cmd.header_errors", "n", 2) + " · " + i18n.T("ui.cmd.expand")},
+		{note: 1, err: 1, open: true, want: i18n.Tf("ui.cmd.header_notes", "n", 1) + " · " +
+			i18n.Tf("ui.cmd.header_errors", "n", 1) + " · " + i18n.T("ui.cmd.collapse")},
 	}
 	for _, c := range cases {
-		if got := cmdHeaderText(c.cmd, c.note, c.open); got != c.want {
-			t.Fatalf("cmdHeaderText(%d, %d, %v) = %q, want %q", c.cmd, c.note, c.open, got, c.want)
+		if got := cmdHeaderText(c.cmd, c.note, c.err, c.open); got != c.want {
+			t.Fatalf("cmdHeaderText(%d, %d, %d, %v) = %q, want %q", c.cmd, c.note, c.err, c.open, got, c.want)
 		}
 	}
 }
@@ -216,8 +224,8 @@ func TestNoticeFoldsIntoStrip(t *testing.T) {
 	if got := m.blocks[0].cmds; len(got) != 1 || got[0].note == "" || got[0].cmd != "" {
 		t.Fatalf("cmds = %+v, want 一条只有 note 的条目", got)
 	}
-	if nCmd, nNote := cmdCounts(m.blocks[0].cmds); nCmd != 0 || nNote != 1 {
-		t.Fatalf("cmdCounts = (%d, %d), want (0, 1)", nCmd, nNote)
+	if nCmd, nNote, nErr := cmdCounts(m.blocks[0].cmds); nCmd != 0 || nNote != 1 || nErr != 0 {
+		t.Fatalf("cmdCounts = (%d, %d, %d), want (0, 1, 0)", nCmd, nNote, nErr)
 	}
 
 	// 再来一条回执照旧并入同一条（连续提示共用一枚窄条）。
@@ -233,6 +241,38 @@ func TestNoticeFoldsIntoStrip(t *testing.T) {
 	tail := last.cmds[len(last.cmds)-1]
 	if tail.cmd != "/model x" || tail.note == "" {
 		t.Fatalf("cmds = %+v（命令回显后的回执应挂在该命令上）", last.cmds)
+	}
+}
+
+// TestErrorFoldsIntoStrip 错误收进折叠条（D323）：独立错误自成一条；紧邻命令条时并入
+// 同一条（同一次操作的失败跟在其回执后）；错误与回执不同格——回执不再挤占错误的位置。
+func TestErrorFoldsIntoStrip(t *testing.T) {
+	t.Parallel()
+	m, _ := newTestModel(t)
+
+	m.handleEvent(port.ErrorEvent{Err: errors.New("boom-1")})
+	if len(m.blocks) != 1 || m.blocks[0].kind != blockCommand {
+		t.Fatalf("blocks = %+v, want 一条错误条", m.blocks)
+	}
+	if nCmd, nNote, nErr := cmdCounts(m.blocks[0].cmds); nCmd != 0 || nNote != 0 || nErr != 1 {
+		t.Fatalf("cmdCounts = (%d, %d, %d), want (0, 0, 1)", nCmd, nNote, nErr)
+	}
+
+	// 紧邻的命令条：命令与后续错误都并进同一条（错误条就是命令条的同一条）。
+	m.addCommand("/tree-edit")
+	m.handleEvent(port.ErrorEvent{Err: errors.New("boom-2")})
+	if len(m.blocks) != 1 {
+		t.Fatalf("blocks = %d, want 错误并入命令条", len(m.blocks))
+	}
+	if nCmd, _, nErr := cmdCounts(m.blocks[0].cmds); nCmd != 1 || nErr != 2 {
+		t.Fatalf("cmdCounts = (%d, %d), want (1, 2)", nCmd, nErr)
+	}
+
+	// 连续错误：各自成条目（全文逐条可读），不合并成一句。
+	m.handleEvent(port.ErrorEvent{Err: errors.New("boom-3")})
+	last := m.blocks[len(m.blocks)-1]
+	if len(last.cmds) != 4 || last.cmds[3].err != "boom-3" {
+		t.Fatalf("cmds = %+v, want 四个条目", last.cmds)
 	}
 }
 

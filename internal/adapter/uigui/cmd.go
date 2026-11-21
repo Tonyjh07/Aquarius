@@ -17,6 +17,7 @@ package uigui
 import (
 	"image"
 	"image/color"
+	"strings"
 
 	"gioui.org/layout"
 	"gioui.org/op"
@@ -27,11 +28,13 @@ import (
 
 // cmdEntry 命令折叠条里的一条：命令行原文（"" = 只有输出，历史装配的兜底）与其返回文本。
 // 两者都是运行输出，展开后命令行就是「这条结果是谁产生的」的出处。note = 一条操作回执
-// （D267）：没有命令行、也不是命令输出，与命令同行时为「这次操作的附注」。
+// （D267）：没有命令行、也不是命令输出，与命令同行时为「这次操作的附注」。err = 一条
+// 错误（D323）：错误也是运行输出，同样收进折叠条——展开后用错误色渲染，头行报数。
 type cmdEntry struct {
 	cmd  string
 	out  string
 	note string
+	err  string
 }
 
 // cmdClick 折叠行的点击控件 get-or-create（与 thinkClick 同规则：按块序缓存，
@@ -47,26 +50,32 @@ func (u *UI) cmdClick(i int) *widget.Clickable {
 // 清屏复位（与 chipOpen/thinkOpen 同规则）。
 func (u *UI) cmdIsOpen(i int) bool { return u.cmdOpen[i] }
 
-// cmdHeaderText 折叠行文案：条数 + 动作提示。整条文字居中，所以不带 ▸/▾ 箭头——
+// cmdHeaderText 折叠行文案：按构成计数 + 动作提示。整条文字居中，所以不带 ▸/▾ 箭头——
 // 箭头一居中就歪，点击语义由「点击展开/收起」这半句说清。
 //
-// 条数按**命令行**数（nCmd）算，不按条目数：一条命令常常带一项输出或一条回执，
-// 按条目数会报成「2 条命令」，而屏幕上只有一条命令（D266 起条宽贴合文案，报错
-// 更容易被看见）。没有命令行（nCmd=0）= 这条只装着操作回执 → 说「N 条提示」。
-func cmdHeaderText(nCmd, nNote int, open bool) string {
-	what := i18n.Tf("ui.cmd.header_commands", "n", nCmd)
-	if nCmd == 0 {
-		what = i18n.Tf("ui.cmd.header_notes", "n", nNote)
+// 条数各按自己的种类算（D323）：命令按**命令行**数（一条命令常常带一项输出或一条回执，
+// 按条目数会报成「2 条命令」而屏幕上只有一条）、回执按 note 数、错误按 err 数；只报
+// 非零段，用「 · 」连起来。没有命令行（nCmd=0）= 这条只装着回执/错误。
+func cmdHeaderText(nCmd, nNote, nErr int, open bool) string {
+	var parts []string
+	if nCmd > 0 {
+		parts = append(parts, i18n.Tf("ui.cmd.header_commands", "n", nCmd))
+	}
+	if nNote > 0 {
+		parts = append(parts, i18n.Tf("ui.cmd.header_notes", "n", nNote))
+	}
+	if nErr > 0 {
+		parts = append(parts, i18n.Tf("ui.cmd.header_errors", "n", nErr))
 	}
 	act := i18n.T("ui.cmd.expand")
 	if open {
 		act = i18n.T("ui.cmd.collapse")
 	}
-	return what + " · " + act
+	return strings.Join(parts, " · ") + " · " + act
 }
 
-// cmdCounts 折叠条里的命令行数与回执数。
-func cmdCounts(es []cmdEntry) (nCmd, nNote int) {
+// cmdCounts 折叠条里的命令行数、回执数与错误数。
+func cmdCounts(es []cmdEntry) (nCmd, nNote, nErr int) {
 	for _, e := range es {
 		if e.cmd != "" {
 			nCmd++
@@ -74,8 +83,11 @@ func cmdCounts(es []cmdEntry) (nCmd, nNote int) {
 		if e.note != "" {
 			nNote++
 		}
+		if e.err != "" {
+			nErr++
+		}
 	}
-	return nCmd, nNote
+	return nCmd, nNote, nErr
 }
 
 // cmdHeadColor 折叠行文字色（D266）：工具灰再退一档（半透明）——条本身已经退成一层

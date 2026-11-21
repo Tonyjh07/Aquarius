@@ -37,6 +37,7 @@ func allText(m *model) string {
 			b.WriteString(e.cmd)
 			b.WriteByte('\n')
 			b.WriteString(e.out)
+			b.WriteString(e.err)
 			b.WriteByte('\n')
 		}
 		if c := blk.chip; c != nil { // D67：chip 的参数/问答/结果一并纳入消毒与合并断言
@@ -526,7 +527,7 @@ func TestEventsAndCommit(t *testing.T) {
 		t.Fatalf("chip = %+v", c)
 	}
 	got := allText(m)
-	for _, want := range []string{"file_read", "内容", "提示行", "error: boom", "压缩摘要"} {
+	for _, want := range []string{"file_read", "内容", "提示行", "boom", "压缩摘要"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("缺 %q: %q", want, got)
 		}

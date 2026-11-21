@@ -375,14 +375,16 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, rs *rowSel) (layout.Widg
 				return l.Layout(gtx)
 			}, 0, image.Point{}, image.Point{})
 		}, tok().cardSystem, cardR, false, false
-	default: // blockPlain（Say/命令输出/提示）：底板浅白、正文默认色
+	default: // blockPlain（Say/命令输出/提示，D323）：运行痕迹退底板——命令条同款
+		// 深色薄层 + 暗色文字，不再用助手气泡的白卡冒充发言。
 		return func(gtx layout.Context) layout.Dimensions {
 			return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				s := material.Body2(u.th, it.text)
+				s.Color = tok().textDim
 				s.State = rs.sel(0)
 				return s.Layout(gtx)
 			}, 0, image.Point{}, image.Point{})
-		}, tok().pillBg, cardR, false, false
+		}, tok().cardCmd, cardR, false, false
 	}
 }
 
@@ -392,9 +394,12 @@ func (u *UI) commandRowStyle(gtx layout.Context, it blockView, rs *rowSel, cardR
 	open := u.cmdIsOpen(it.bi)
 	plain := func(gtx layout.Context) layout.Dimensions {
 		head := func(gtx layout.Context) layout.Dimensions {
-			nCmd, nNote := cmdCounts(it.cmds)
-			s := material.Caption(u.th, cmdHeaderText(nCmd, nNote, open))
+			nCmd, nNote, nErr := cmdCounts(it.cmds)
+			s := material.Caption(u.th, cmdHeaderText(nCmd, nNote, nErr, open))
 			s.Color = cmdHeadColor()
+			if nErr > 0 { // D323：条里出过错，收起态也要一眼看到
+				s.Color = tok().textError
+			}
 			return s.Layout(gtx)
 		}
 		// 折叠：条宽贴合文案（居中由 paintRow 摆整条）；展开：铺满容器、标题居中。
@@ -447,6 +452,17 @@ func (u *UI) commandRowStyle(gtx layout.Context, it blockView, rs *rowSel, cardR
 					return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						s := material.Caption(u.th, e.note)
 						s.Color = tok().textDim
+						s.State = rs.sel(2*k + 1)
+						return s.Layout(gtx)
+					}, 2*k+1, off, image.Point{})
+				})
+			}
+			if e.err != "" { // 错误（D323）：错误色全文——排障时才读，读时要醒目
+				off := image.Pt(0, vs.y)
+				vs.add(func(gtx layout.Context) layout.Dimensions {
+					return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						s := material.Body2(u.th, e.err)
+						s.Color = tok().textError
 						s.State = rs.sel(2*k + 1)
 						return s.Layout(gtx)
 					}, 2*k+1, off, image.Point{})

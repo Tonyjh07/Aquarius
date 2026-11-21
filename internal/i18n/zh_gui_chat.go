@@ -122,6 +122,7 @@ var zhGuiChatTexts = map[string]string{
 	// ── 命令折叠条与补全浮层（cmd.go / compl.go / compl_args.go）
 	"ui.cmd.header_commands": "折叠 {n} 条命令",
 	"ui.cmd.header_notes":    "{n} 条提示",
+	"ui.cmd.header_errors":   "{n} 条错误",
 	"ui.cmd.expand":          "点击展开",
 	"ui.cmd.collapse":        "点击收起",
 	"ui.cmd.more_hint":       "还有 {n} 条，继续输入过滤",
