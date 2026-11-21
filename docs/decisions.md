@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-11-21 @ 5c666be -->
+<!-- docs-sync: 2026-11-21 @ 1b78484 -->
 
 > **权威文档之一**：决策节于 2026-09 独立成篇，与 [contracts.md](contracts.md) 同级同权威
 > （该节 2026-10 从总设计文档删除，不再占节号）。编号**跨文件不变**
@@ -327,6 +327,7 @@
 | D316 | DeepSeek 语音后端：`audio.asr` / `audio.tts` 的 `kind: "deepseek"`——识别 `/v1/tools/asr` multipart 只带 file（无语种参数，单段 120 秒 / 8 MiB，录音硬顶联动降 + VAD 关启动警告，绝不静默切片）；合成 `/v1/tools/tts` JSON（音色只认 stella/tide fail-fast，format 固定 wav，filter_markdown 固定开，Style/Tags/Design 启动警告已忽略；超限明确报错不切分拼接）；端点与密钥借默认 provider（D222） | 已完成（v0.9.0） |
 | D317 | Agent 时间感知：`clock.mode` 三档（off 不注入 / live 每请求末尾一条时间戳 system / tree 再给历史 user 消息补各自 CreatedAt，不落节点）；戳装配时生成、带时区偏移与星期与本 Turn 已跑时长与上一批工具耗时；/clock 会话内切换不写配置；配置缺键 = live、app 零值 = off；latest_reminder 路径确认缓议 | 已完成（v0.9.0） |
 | D318 | 装配前缀稳定性对比：/context 概览加「与上一轮相比前 N 字符未变（x%）」——Agent 留两份快照（last 语义不变、新增 prev），按 sectionMark 摊平跳过 clock 段取最长公共前缀；跨会话与首次请求不出该行 | 已完成（v0.9.0） |
+| D319 | PTC-1：`tools.mode` 呈现模式（native/ptc，实验性）+ Starlark 进程内解释器；`run_code` 是普通 port.Tool、脚本内调用回同一 runtime 过权限矩阵；失败一律是结果字段 | 进行中（v0.9.0） |
 
 ## 记录
 
@@ -2456,3 +2457,31 @@
      是第二份事实，迟早漂移。
 
 - **状态**：已完成（v0.9.0）。
+### D319 · PTC-1：`tools.mode` 呈现模式与 Starlark 解释器（实验性）
+
+- **背景**：程序化工具调用（PTC）的调研（见 plan.md「程序化工具调用」节）已完成三轮排期外观察，
+  首跑通过率实测（6 题 × 4 组 × 3 个 flash 级模型，语义通过率 ≥ 92%）确认 Starlark 方言摩擦
+  小且可自纠。三个待拍板落定：形态取 `tools.mode` 呈现模式；语言与隔离取 Starlark 进程内；
+  排进 v0.9.0，范围是 PTC-1 最小闭环。
+
+- **决策**：
+  1. **呈现模式而非新增并列工具**：`tools.mode: native | ptc`（缺省 native，实验性——模板不生成、
+     不进设置窗）。ptc 档模型面的工具清单只有 `run_code` 一个；不开就是现在的多工具路径，
+     请求形状逐字节不变。
+  2. **`run_code` 是普通 `port.Tool`**：与 `context_compact` 同权经 `runner.Add` 接入，`Risk=Confirm`，
+     `Describe` 回显程序全文——确认弹窗在程序开跑前读到全文。脚本内每次工具调用回到同一个
+     tool runtime（权限矩阵、确认、输出裁剪、超时全复用），脚本不能绕过权限——行业共识。
+  3. **Starlark 进程内**：确定性步数上限、无 I/O 由语言保证、体积增量最小（+1.65 MB）。实测
+     「带/不带方言限制说明通过率相同」→ 限制写进 `run_code` 的工具描述，不占系统提示。
+  4. **失败一律是结果字段**（`OK=false` + 带行列号的错误文本），不 panic、不上抛；限额（步数、
+     单脚本调用配额、parallel 并发上限）写进工具描述让模型看得见。
+  5. **PTC-2 边界**：确认去重、取消打磨、`/code`、UI chip、目录二段式 `describe` 都是独立后续批；
+     本批 Confirm 级工具在脚本内逐次弹确认（语义最严）。
+
+- **否决**：
+  1. **sobek + 子进程起步**。模型首跑通过率上 Starlark 不落后；换它的只剩「真撞表达力墙」一条理由。
+  2. **直接用 codemode-go**。v0.x、单人维护、绑死 JS，要吃下一整套外来错误规则。
+  3. **app 层特判 run_code**。呈现模式在 toolrun 的 Specs 过滤层实现，app 对模式无感知——
+     两套调用方式并存、目录成本翻倍的坑就这样避开。
+
+- **状态**：进行中（v0.9.0）。

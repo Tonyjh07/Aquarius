@@ -211,7 +211,8 @@ internal/adapter/    llm（含 llm/tokenizer 精确计数）、toolbuiltin（mem
                      ingestfile、ingestclip、notify、atomicfile、decorate（横切装饰器）、
                      mcpgate（MCP client → port 投影，D30）、uitui（bubbletea TUI，D33）、
                      uigui（Gio 悬浮球 GUI，D43/§15）、screencap、asrchat/asrwhisper/asropenai/
-                     asrfunasr、mimotts/vitstts/gptsovitstts、zhconv（繁转简，内嵌 OpenCC 词典）、
+                     asrfunasr、mimotts/vitstts/gptsovitstts、starlarkrun（run_code 脚本解释器，D319）、
+                     zhconv（繁转简，内嵌 OpenCC 词典）、
                      outputtts、micwin、ingestmic、audioplay、secretbin、probe、skillfs、
                      webbrave/webchain/webdeepseek/webfetchlocal
 待建：                pluginapi/v1、plugingo（后移出 M4，D29）

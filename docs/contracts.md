@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-21 @ 5c666be -->
+<!-- docs-sync: 2026-11-21 @ 1b78484 -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -254,6 +254,7 @@
 | `delegate` | 把一件复杂任务**整个**交给外部 ACP 代理（D244/D261，§5.18）：派活即返句柄，报告晚些经注入到达，只收回**报告 + 一行摘要**。ESC → `session/cancel`；每会话 2 路、全局 4 | Confirm |
 | `delegate_wait` | 等一次转交到终态并回填报告（本轮就要结果时用）。**不吃默认工具超时**（时长由对方决定） | Safe |
 | `delegate_kill` | 停止一次转交（`session/cancel` → 等 `cancelled` → 宽限后杀进程组），按任务分路 | Safe |
+| `run_code` | 程序化工具调用（D319，实验性，`tools.mode=ptc` 才注册）：执行一段 Starlark 脚本，脚本内经绑定批量调工具、中间结果不进上下文。Risk=Confirm，确认面读到程序全文 | Confirm |
 
 - 文件工具是**裸通用文件操作**：没有 cwd 工作区、项目根、索引、监听。路径权限按 **§9 权限等级矩阵**：
   读全盘免确认，写按等级格（`rw` 格免确认，其余逐次确认）——D22 取代 D6。
@@ -286,6 +287,14 @@
 - **联网工具（D197）**：`web_search` 与 `web_fetch` 都是 `Safe`（读网络没有副作用，与 `file_read`
   同一套规则：读操作不该被逐次确认打断）；能力边界由配置的有序提供商列表决定，端口、降级链与安全门禁
   见 §5.14。**未配置也照常注册**（工具清单稳定），执行时明确报「未配置提供商」，不给静默空结果。
+- **程序化工具调用（D319，实验性）**：`tools.mode=ptc` 时模型面只发 `run_code` 一个声明（保留传输，
+  不受 `tools.disabled` 约束——关掉 ptc 的正确方式是不开 mode），其余工具声明不发但**执行面照常可达**：
+  脚本绑定 `tools.<name>(args)` 直接回到同一个 tool runtime，权限矩阵、确认、`tool_output_chars` 裁剪、
+  超时与 native 档同一条链。绑定结果形状固定 `{"ok": bool, "output"|"error": string}`；
+  `tools.parallel([{tool, args}, ...])` 由 Go 宿主并发执行、按序返回。限额（步数、单脚本调用配额、
+  并发上限）写进 `run_code` 描述；方言限制（无 while/try、顶层禁 for/if）同写进描述，不占系统提示。
+  失败一律是结果字段：解析错（带行列号）、超步数、返回值不可 JSON 化都回 `OK=false`，不上抛。
+  native 档请求形状逐字节不变。
 
 ### 4.4 记忆文档
 
