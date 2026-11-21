@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-21 @ e1a6ff7 -->
+<!-- docs-sync: 2026-11-21 @ ee798a0 -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -27,13 +27,7 @@
 每条动手前先补 [contracts.md](contracts.md) 的对应节与决策编号（新增命令、新增工具都算），
 本节只定范围与验收。
 
-### `v0.9.0`（在排，七条；回收站与 `/fork` 已完成，见 [roadmap.md](roadmap.md)）
-
-**会话标签与置顶**（M）
-`/list` 只有时间序。会话元数据加 `tags` 与 `pinned`（缺字段即零值，旧文件照常读），
-配 `/tag <id> <名...>`、`/list --tag <名>`、`/pin <id>`。
-验收：打标签后 `/list --tag` 只列该标签的会话；置顶排在最前且有标记；不加字段的旧会话照常
-打开；标签能加能删。
+### `v0.9.0`（在排，六条；回收站、`/fork` 与会话标签置顶已完成，见 [roadmap.md](roadmap.md)）
 
 **人读与可粘贴的导出（HTML / Markdown）**（M）
 `/export --format html` 与 `--format md`。现有四种格式都是给机器或别的产品吃的；这两种是
