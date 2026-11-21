@@ -9,6 +9,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -235,6 +236,24 @@ type toolsConfig struct {
 	// → 默认推导（兼容 model.think_tool=true 则空集，否则 ["think"]——D34 现行为）。
 	// 只在设置窗动开关时写键（推导态不写盘）。
 	Disabled []string `json:"disabled,omitempty"`
+	// Mode 工具呈现模式（D319，实验性，模板不生成这一段）：native = 全量声明逐轮发
+	// （缺省，键缺失同）；ptc = 模型面只发 run_code 一个声明，脚本内批量调工具。
+	// 词表外启动报错（toolsMode）。
+	Mode *string `json:"mode,omitempty"`
+}
+
+// toolsMode 解析呈现模式：*string 指针区分「没写」与「写了」（同 clockMode 的口径，
+// D317）——键缺失 = native，非法值启动报错。
+func (c toolsConfig) toolsMode() (string, error) {
+	if c.Mode == nil {
+		return "native", nil
+	}
+	mode := strings.ToLower(strings.TrimSpace(*c.Mode))
+	switch mode {
+	case "native", "ptc":
+		return mode, nil
+	}
+	return "", errors.New(i18n.Tf("cmd.config.err.tools_mode", "value", mode))
 }
 
 // skillsConfig 技能配置（D201）：dirs = 追加技能根。

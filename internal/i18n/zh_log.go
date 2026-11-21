@@ -11,6 +11,8 @@ var zhLogTexts = map[string]string{
 	// 处置（跨上下文复用）
 	"log.act.skip":                     "已跳过",
 	"log.act.skip_missing":             "已跳过缺失引用，其余模块照常展开",
+	"log.act.mode":                     "当前档位: {mode}",
+	"log.boot.ptc_experimental":        "tools.mode=ptc 是实验性功能：模型改用脚本批量调工具，限额与确认语义以后可能调整",
 	"log.act.skip_key_this_run":        "本次启动跳过该密钥",
 	"log.act.start_without_key":        "没有密钥也照常启动，发消息时才报因",
 	"log.act.fallback_skipped":         "已跳过这条降级链，主链照常启动",

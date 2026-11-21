@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-11-21 @ 1b78484 -->
+<!-- docs-sync: 2026-11-21 @ 57d459b -->
 
 > **权威文档之一**：决策节于 2026-09 独立成篇，与 [contracts.md](contracts.md) 同级同权威
 > （该节 2026-10 从总设计文档删除，不再占节号）。编号**跨文件不变**
@@ -327,7 +327,7 @@
 | D316 | DeepSeek 语音后端：`audio.asr` / `audio.tts` 的 `kind: "deepseek"`——识别 `/v1/tools/asr` multipart 只带 file（无语种参数，单段 120 秒 / 8 MiB，录音硬顶联动降 + VAD 关启动警告，绝不静默切片）；合成 `/v1/tools/tts` JSON（音色只认 stella/tide fail-fast，format 固定 wav，filter_markdown 固定开，Style/Tags/Design 启动警告已忽略；超限明确报错不切分拼接）；端点与密钥借默认 provider（D222） | 已完成（v0.9.0） |
 | D317 | Agent 时间感知：`clock.mode` 三档（off 不注入 / live 每请求末尾一条时间戳 system / tree 再给历史 user 消息补各自 CreatedAt，不落节点）；戳装配时生成、带时区偏移与星期与本 Turn 已跑时长与上一批工具耗时；/clock 会话内切换不写配置；配置缺键 = live、app 零值 = off；latest_reminder 路径确认缓议 | 已完成（v0.9.0） |
 | D318 | 装配前缀稳定性对比：/context 概览加「与上一轮相比前 N 字符未变（x%）」——Agent 留两份快照（last 语义不变、新增 prev），按 sectionMark 摊平跳过 clock 段取最长公共前缀；跨会话与首次请求不出该行 | 已完成（v0.9.0） |
-| D319 | PTC-1：`tools.mode` 呈现模式（native/ptc，实验性）+ Starlark 进程内解释器；`run_code` 是普通 port.Tool、脚本内调用回同一 runtime 过权限矩阵；失败一律是结果字段 | 进行中（v0.9.0） |
+| D319 | PTC-1：`tools.mode` 呈现模式（native/ptc，实验性）+ Starlark 进程内解释器；`run_code` 是普通 port.Tool、脚本内调用回同一 runtime 过权限矩阵；失败一律是结果字段 | 已完成（v0.9.0） |
 
 ## 记录
 
@@ -2484,4 +2484,4 @@
   3. **app 层特判 run_code**。呈现模式在 toolrun 的 Specs 过滤层实现，app 对模式无感知——
      两套调用方式并存、目录成本翻倍的坑就这样避开。
 
-- **状态**：进行中（v0.9.0）。
+- **状态**：已完成（v0.9.0）。

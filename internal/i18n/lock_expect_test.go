@@ -88,6 +88,8 @@ var testDataLiterals = map[string][]string{
 	// 标签与置顶测试：会话标题与标签值都是**测试数据**（用户手打的组织标记），
 	// 过滤与行尾展示断言核对的就是这些串本身。
 	"internal/app/session_cmd_tag_test.go": {"甲", "乙", "工作", "重要", "[工作 重要]"},
+	// app ptc_test：脚本流喂给模型的收尾正文（模型输出，原样回放断言）。
+	"internal/app/ptc_test.go": {"脚本说 hi"},
 	// 人读导出测试：正文里的字面串是**写入导出文件的测试数据**（原样性/转义性断言核对的就是它）。
 	"internal/adapter/exchange/md_test.go": {"第一行", "第二行"},
 	// 服务端文件解析测试：文件名与本地提取文本是**测试数据**（分片字段断言核对的就是它）。

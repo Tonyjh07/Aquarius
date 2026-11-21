@@ -4,8 +4,11 @@ package filesapi
 // （purpose 先于 file）、expires_after 形状、超限与失败路径明确报因、错误不重试。
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -19,16 +22,29 @@ import (
 func filesServer(t *testing.T, wantStatus int, wantBody string, seen *[]string) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := r.ParseMultipartForm(1 << 20); err != nil {
-			t.Errorf("parse multipart: %v", err)
+		// 字段序：purpose（与 expires_after）必须在 file 之前——服务端对文档类强制。
+		// 用原始 reader 逐 part 读，保住到达序（ParseMultipartForm 的 Value/File 是
+		// map，遍历序随机，首版实现碰运气过的）。
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read body: %v", err)
 			return
 		}
-		// 字段序：purpose（与 expires_after）必须在 file 之前——服务端对文档类强制。
-		for key := range r.MultipartForm.Value {
-			*seen = append(*seen, key)
-		}
-		for _, f := range r.MultipartForm.File {
-			*seen = append(*seen, f[0].Filename)
+		mr := multipart.NewReader(bytes.NewReader(body), r.Header.Get("Content-Type")[len("multipart/form-data; boundary="):])
+		for {
+			p, err := mr.NextPart()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				t.Errorf("next part: %v", err)
+				return
+			}
+			if p.FileName() == "" {
+				*seen = append(*seen, p.FormName())
+				continue
+			}
+			*seen = append(*seen, p.FileName())
 		}
 		w.WriteHeader(wantStatus)
 		fmt.Fprint(w, wantBody)

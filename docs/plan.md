@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-21 @ 1b78484 -->
+<!-- docs-sync: 2026-11-21 @ 57d459b -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -27,7 +27,7 @@
 每条动手前先补 [contracts.md](contracts.md) 的对应节与决策编号（新增命令、新增工具都算），
 本节只定范围与验收。
 
-### `v0.9.0`（在排，一条；回收站、`/fork`、标签置顶、人读导出、服务端文件解析、DeepSeek 语音后端、时间感知与前缀稳定性对比已完成，见 [roadmap.md](roadmap.md)）
+### `v0.9.0`（在排，零条；回收站、`/fork`、标签置顶、人读导出、服务端文件解析、DeepSeek 语音后端、时间感知、前缀稳定性对比与 PTC-1 已完成，见 [roadmap.md](roadmap.md)）
 
 **PTC-1：`tools.mode` 呈现模式 + Starlark 解释器**（M~L，D319，实验性）
 形态、语言、排期已拍板（见下文「程序化工具调用」节与 D319）：`tools.mode: native | ptc`，
@@ -406,7 +406,7 @@ Python」）；**注入风险**——PTC 最有用的场景正是不可信内容
 
 ### 批次（已拍板，D319；PTC-1 排进 v0.9.0）
 
-- **PTC-1**（M~L，本版在排）：`tools.mode: native | ptc` 呈现模式 + 解释器适配器（Starlark
+- **PTC-1**（M~L，已完成，见 [roadmap.md](roadmap.md)）：`tools.mode: native | ptc` 呈现模式 + 解释器适配器（Starlark
   进程内）+ 绑定 + `parallel` 原语 + 限额 + 单测。验收见上文 `v0.9.0` 一节。
 - **PTC-2**（M）：确认去重（同工具同参数只问一次、单脚本确认上限 8、无人值守失败回值）、取消
   （停止键要能打断脚本与在途调用）、审计行、UI 可展开 chip、`/code` 查看上次脚本。

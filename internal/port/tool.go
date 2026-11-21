@@ -18,6 +18,10 @@ type Tool interface {
 // 模型可逐次覆盖 limits.tool_timeout_sec（允许高于 config），但不超过此上限。
 const MaxCallTimeoutSec = 3600
 
+// RunCodeTool 程序化工具调用的保留传输名（D319，实验性）：tools.mode=ptc 时模型面
+// 只发这一个声明；toolrun 对它豁免 disabled 清单，starlarkrun 实现它。
+const RunCodeTool = "run_code"
+
 // ToolRunner 工具执行门面：查找 + capability 校验 + Risk 确认 + 超时 + 结果裁剪。
 type ToolRunner interface {
 	Specs(ctx context.Context) ([]tool.Spec, error)

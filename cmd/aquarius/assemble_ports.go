@@ -32,6 +32,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/probe"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/screencap"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/skillfs"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/starlarkrun"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/storejson"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolbuiltin"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolrun"
@@ -42,6 +43,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/app"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
+	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/logging"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -747,6 +749,11 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 	}) // S6/D143：内置工具禁用集（config tools.disabled 推导；启动期定值，运行期经
 	// toolsAdmin.SetBuiltinEnabled 热更——不再装配期摘 think）。
 	w.disabledTools = newDisabledHolder(w.builtinDisabled())
+	// 呈现模式（D319，实验性）：词表外启动报错；ptc 档模型面只发 run_code 一个声明。
+	toolsMode, err := w.cfg.Tools.toolsMode()
+	if err != nil {
+		return err
+	}
 	w.runner = toolrun.New(toolrun.Options{
 		Tools:       builtinTools,
 		Disabled:    w.disabledTools.snapshot(),
@@ -758,7 +765,23 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 		SandboxPath: w.sandboxDir,
 		Timeout:     toolTimeout,
 		MaxOutput:   maxOutput,
+		PTC:         toolsMode == "ptc",
 	})
+	if toolsMode == "ptc" {
+		// run_code 与 context_compact 同权经 Add 接入；脚本内调用回到 runner 自身
+		//（确认、裁剪、超时同一条链），stub 生成用全量声明快照（含 MCP 动态工具）。
+		w.runner.Add(starlarkrun.New(starlarkrun.Deps{
+			Inner: w.runner,
+			AllSpecs: func() []tool.Spec {
+				specs, err := w.runner.AllSpecs(context.Background())
+				if err != nil {
+					return nil
+				}
+				return specs
+			},
+		}))
+		w.note(logging.LevelWarn, logging.Boot, "log.boot.ptc_experimental", "log.act.mode", toolsMode)
+	}
 	return nil
 }
 

@@ -8,6 +8,8 @@ var enLogTexts = map[string]string{
 	// 处置（跨上下文复用）
 	"log.act.skip":                     "skipped",
 	"log.act.skip_missing":             "skipped the missing reference; the rest expanded as usual",
+	"log.act.mode":                     "current mode: {mode}",
+	"log.boot.ptc_experimental":        "tools.mode=ptc is experimental: the model now batches tool calls in scripts; limits and confirmation semantics may change",
 	"log.act.skip_key_this_run":        "skipped this key for this run",
 	"log.act.start_without_key":        "started without a key; the reason is reported when a message is sent",
 	"log.act.fallback_skipped":         "skipped this fallback chain; the primary chain still starts",

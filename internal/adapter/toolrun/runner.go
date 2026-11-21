@@ -52,6 +52,10 @@ type Options struct {
 	Timeout time.Duration
 	// MaxOutput 结果裁剪上限（rune）；<=0 = 不裁剪。
 	MaxOutput int
+	// PTC 程序化工具调用的呈现模式（D319，实验性）：Specs 只出 run_code 一个声明，
+	// 其余工具声明不发但执行面照常可达（脚本绑定回到 Execute）。run_code 豁免
+	// disabled 清单——关掉 ptc 的正确方式是不开 mode。
+	PTC bool
 }
 
 // Runner port.ToolRunner 实现（注册表 + 判定 + 执行门面）。
@@ -74,6 +78,7 @@ type Runner struct {
 	sandbox   string
 	timeout   time.Duration
 	maxOut    int
+	ptc       bool
 }
 
 var (
@@ -93,6 +98,7 @@ func New(opts Options) *Runner {
 		sandbox:   opts.SandboxPath,
 		timeout:   opts.Timeout,
 		maxOut:    opts.MaxOutput,
+		ptc:       opts.PTC,
 	}
 	if r.level == nil {
 		r.level = func() perm.Level { return perm.DefaultLevel }
@@ -133,13 +139,15 @@ func (r *Runner) Disabled() map[string]bool {
 }
 
 // Add 注册工具（同名覆盖，注册序保持首次出现位置）；装配期与插件刷新期均可调。
+// t.Spec() 在锁外取：Spec 允许回头读注册表（run_code 的声明要按全量清单生成 stub，
+// D319），锁内调就是自己等自己。
 func (r *Runner) Add(t port.Tool) {
 	if t == nil {
 		return
 	}
+	name := t.Spec().Name
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	name := t.Spec().Name
 	if _, ok := r.byName[name]; !ok {
 		r.order = append(r.order, name)
 	}
@@ -173,14 +181,35 @@ func toolsOf(order []string, m map[string]port.Tool) []port.Tool {
 	return out
 }
 
-// Specs 返回全部工具声明（按注册序，供装配进 Prompt；禁用集之外的，S6/D143）。
+// Specs 返回模型可见的工具声明（按注册序）。呈现模式（D319）：native 全量（禁用集之外的，
+// S6/D143）；ptc 只出 run_code 一个声明——其余工具声明不发，但 Execute 照常可达（脚本绑定）。
 func (r *Runner) Specs(context.Context) ([]tool.Spec, error) {
+	if r.ptc {
+		r.mu.Lock()
+		t, ok := r.byName[port.RunCodeTool]
+		r.mu.Unlock()
+		if !ok {
+			return nil, nil
+		}
+		return []tool.Spec{t.Spec()}, nil
+	}
+	return r.AllSpecs(context.Background())
+}
+
+// AllSpecs 返回全量工具声明（禁用集之外，**不含 run_code**）——呈现模式的 stub 生成
+// 与设置窗管理面用。run_code 豁免 disabled、不可被脚本调用，也不该进任何管理面清单；
+// 排除它还是递归防线：它的 Spec 要按这份清单生成 stub，锁内互调会绕回自身（D319）。
+func (r *Runner) AllSpecs(context.Context) ([]tool.Spec, error) {
 	r.mu.Lock()
 	tools := append([]port.Tool(nil), r.tools...)
 	disabled := r.disabled
+	runCode := r.byName[port.RunCodeTool]
 	r.mu.Unlock()
 	out := make([]tool.Spec, 0, len(tools))
 	for _, t := range tools {
+		if t == runCode {
+			continue
+		}
 		if disabled[t.Spec().Name] {
 			continue // 禁用工具不出现在模型可见的工具面（与未注册不可区分）
 		}
@@ -198,7 +227,9 @@ func (r *Runner) Execute(ctx context.Context, call tool.Call) (tool.Result, erro
 	t, ok := r.byName[call.Name]
 	disabled := r.disabled
 	r.mu.Unlock()
-	if !ok || disabled[call.Name] {
+	if !ok || (disabled[call.Name] && call.Name != port.RunCodeTool) {
+		// 禁用工具按 unknown 拒绝（S6/D143：与未注册不可区分——模型拿到的工具面一致）；
+		// run_code 豁免（D319）：脚本调用面不受 disabled 约束，呈现模式的开关是 tools.mode。
 		// 禁用工具按 unknown 拒绝（S6/D143：与未注册不可区分——模型拿到的工具面一致）。
 		return tool.Result{CallID: call.ID, OK: false, Err: fmt.Sprintf("unknown tool %q", call.Name)}, nil
 	}
