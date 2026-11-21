@@ -89,3 +89,34 @@ func TestPickFilterHidesRows(t *testing.T) {
 		t.Fatalf("清空过滤后勾了 %d 个, want 3", d.count())
 	}
 }
+
+// TestPickToggleAll 全选/全不选钮（左栏批量选择同款一颗钮管两头）：缺省全勾时点 = 全不选，
+// 再点 = 全选；只翻**可见行**——过滤态下点它，被滤掉的行的勾选原样保留。
+func TestPickToggleAll(t *testing.T) {
+	t.Parallel()
+	_, st := newPickUI(t, &fakeIndexer{entries: pickEntries()})
+	st.openImportPick(`C:\备份.aqx`, pickEntries())
+	d := st.pick
+
+	if !d.allChecked() {
+		t.Fatal("缺省未全勾")
+	}
+	d.toggleAll() // 全不选
+	if d.count() != 0 {
+		t.Fatalf("全不选后勾了 %d 个, want 0", d.count())
+	}
+	d.toggleAll() // 全选
+	if d.count() != 3 {
+		t.Fatalf("全选后勾了 %d 个, want 3", d.count())
+	}
+
+	// 过滤态：可见行只有乙。点钮 = 乙的全不选（可见行已全勾），甲丙的勾选不受影响。
+	d.filt.SetText("乙")
+	d.applyFilter()
+	d.toggleAll()
+	d.filt.SetText("")
+	d.applyFilter()
+	if d.count() != 2 {
+		t.Fatalf("过滤态全不选后勾了 %d 个, want 2（甲丙保留）", d.count())
+	}
+}

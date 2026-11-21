@@ -55,7 +55,10 @@ type importPickDialog struct {
 	rows   []widget.Bool
 	ok     widget.Clickable
 	cancel widget.Clickable
-	focus  bool
+	// all 全选/全不选钮（左栏批量选择同款一颗钮管两头）：只翻**过滤后可见**的行——
+	// 被滤掉的行不在「全选」的全里（与勾选只数可见行同一口径）。
+	all   widget.Clickable
+	focus bool
 	// entries 清单快照（序号 / 标题 / 条数）；只供呈现与拼 --pick。
 	entries []port.ExchangeEntry
 	// filt/viewIdx 过滤框（D322）：对清单做客户端过滤（标题或源 ID 命中，不分大小写），
@@ -98,6 +101,24 @@ func (d *importPickDialog) picked() []int {
 
 // count 已勾几个（动作条与按钮文案用）。
 func (d *importPickDialog) count() int { return len(d.picked()) }
+
+// allChecked 可见行是否已全勾（决定那枚钮显示「全选」还是「取消全选」）。
+func (d *importPickDialog) allChecked() bool {
+	for _, i := range d.viewIdx {
+		if !d.rows[i].Value {
+			return false
+		}
+	}
+	return true
+}
+
+// toggleAll 全选/全不选：已全勾 = 全不选，否则全选；只作用**可见行**（D322）。
+func (d *importPickDialog) toggleAll() {
+	set := !d.allChecked()
+	for _, i := range d.viewIdx {
+		d.rows[i].Value = set
+	}
+}
 
 // applyFilter 过滤框每帧生效（D322）：标题或源 ID 含查询子串（不分大小写）的条目可见。
 // 空查询 = 全量可见。
@@ -160,6 +181,10 @@ func (st *historyState) importPickFrame(gtx layout.Context, th *material.Theme, 
 	// 先收动作再画（顺序即语义：一次点击只算一件事）。
 	if d.cancel.Clicked(gtx) {
 		st.closeImportPick()
+		return layout.Dimensions{}
+	}
+	if d.all.Clicked(gtx) {
+		d.toggleAll()
 		return layout.Dimensions{}
 	}
 	if d.ok.Clicked(gtx) {
@@ -240,10 +265,22 @@ func importPickCard(gtx layout.Context, th *material.Theme, d *importPickDialog)
 				return l.Layout(gtx)
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				l := material.Label(th, paperMicroSp(th),
-					i18n.Tf("ui.history.import_pick_hint", "n", len(d.entries)))
-				l.Color = pp.text3
-				return l.Layout(gtx)
+				// 全选 / 取消全选（一颗钮管两头，左栏批量选择同款）：放在说明行右端，
+				// 与它管的整列复选框隔着一行过滤框，误触不到行勾选。钮名随状态翻面
+				// （可见行已全勾 = 提供退路「取消全选」）。
+				allLabel := i18n.T("ui.history.select_all")
+				if d.allChecked() {
+					allLabel = i18n.T("ui.history.select_none")
+				}
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+						l := material.Label(th, paperMicroSp(th),
+							i18n.Tf("ui.history.import_pick_hint", "n", len(d.entries)))
+						l.Color = pp.text3
+						return l.Layout(gtx)
+					}),
+					layout.Rigid(histTextBtn(th, &d.all, allLabel)),
+				)
 			}),
 			layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 			// 过滤框（D322）：条目多时（DeepSeek 整库 2274 条）没有它挑不动。
