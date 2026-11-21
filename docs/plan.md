@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-21 @ 57d459b -->
+<!-- docs-sync: 2026-11-21 @ ff51621 -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -27,10 +27,21 @@
 每条动手前先补 [contracts.md](contracts.md) 的对应节与决策编号（新增命令、新增工具都算），
 本节只定范围与验收。
 
-### `v0.9.0`（在排，零条；回收站、`/fork`、标签置顶、人读导出、服务端文件解析、DeepSeek 语音后端、时间感知、前缀稳定性对比与 PTC-1 已完成，见 [roadmap.md](roadmap.md)）
+### `v0.9.0`（在排，PTC-2；回收站、`/fork`、标签置顶、人读导出、服务端文件解析、DeepSeek 语音后端、时间感知、前缀稳定性对比与 PTC-1 已完成，见 [roadmap.md](roadmap.md)）
+
+**PTC-2：脚本内确认去重 + 限额可配 + `/code` + 二段式 describe**（M，D320，实验性）
+去重落在 toolrun 的确认点（`port.ConfirmScope` 经 ctx 由脚本执行携带，native 零差异）；
+`tools.ptc` 四键限额可配（缺省即 D319 实测值，fail-fast 区间校验，工具描述数字随取）；
+确认超限回值不中止；取消端到端补测试锁定；`/code` 只读查看上次脚本；
+`tools.describe(name)` 按需展开单个工具的完整描述。
+
+验收：脚本里 `file_write` 同一文件写三次只确认一次（native 档确认次数不变）；
+distinct 确认数超 `confirm_limit` 后回值报因、Safe 级照常、脚本拿到部分结果；
+`tools.ptc.max_calls` 改配置后 `run_code` 描述里的数字跟着变；停止键打断脚本不留半截结果；
+`/code` 显示上次脚本全文与空态；PTC-1 全量测试照过。
 
 **PTC-1：`tools.mode` 呈现模式 + Starlark 解释器**（M~L，D319，实验性）
-形态、语言、排期已拍板（见下文「程序化工具调用」节与 D319）：`tools.mode: native | ptc`，
+已完成，见 [roadmap.md](roadmap.md)。形态、语言、排期拍板记录（见下文「程序化工具调用」节与 D319）：`tools.mode: native | ptc`，
 缺省 native 请求形状逐字节不变；ptc 档模型面只发 `run_code` 一个声明，脚本内经绑定回到同一
 tool runtime 过权限矩阵。范围是 PTC-1 最小闭环——解释器适配器、绑定与 `parallel` 原语、限额、
 配置与启动实验性提示；确认去重、`/code`、UI chip、目录二段式 `describe` 留 PTC-2。
@@ -408,8 +419,9 @@ Python」）；**注入风险**——PTC 最有用的场景正是不可信内容
 
 - **PTC-1**（M~L，已完成，见 [roadmap.md](roadmap.md)）：`tools.mode: native | ptc` 呈现模式 + 解释器适配器（Starlark
   进程内）+ 绑定 + `parallel` 原语 + 限额 + 单测。验收见上文 `v0.9.0` 一节。
-- **PTC-2**（M）：确认去重（同工具同参数只问一次、单脚本确认上限 8、无人值守失败回值）、取消
-  （停止键要能打断脚本与在途调用）、审计行、UI 可展开 chip、`/code` 查看上次脚本。
+- **PTC-2**（M，v0.9.0 在排，D320）：脚本内确认去重（toolrun 层、ctx 携带 scope）、限额可配
+  （`tools.ptc` 四键，缺省即 D319 实测值）、取消端到端锁定、事实落运行日志、`/code` 只读
+  查看上次脚本、二段式 `tools.describe(name)`。验收见上文 `v0.9.0` 一节。
 - **PTC-3**（S，带前置判据）：Anthropic 原生 `allowed_callers`。判据是报文里真的出现 `caller`
   字段，否则登记不做。
 

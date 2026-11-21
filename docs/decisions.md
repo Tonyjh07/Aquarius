@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-11-21 @ 57d459b -->
+<!-- docs-sync: 2026-11-21 @ fefa55a -->
 
 > **权威文档之一**：决策节于 2026-09 独立成篇，与 [contracts.md](contracts.md) 同级同权威
 > （该节 2026-10 从总设计文档删除，不再占节号）。编号**跨文件不变**
@@ -328,6 +328,7 @@
 | D317 | Agent 时间感知：`clock.mode` 三档（off 不注入 / live 每请求末尾一条时间戳 system / tree 再给历史 user 消息补各自 CreatedAt，不落节点）；戳装配时生成、带时区偏移与星期与本 Turn 已跑时长与上一批工具耗时；/clock 会话内切换不写配置；配置缺键 = live、app 零值 = off；latest_reminder 路径确认缓议 | 已完成（v0.9.0） |
 | D318 | 装配前缀稳定性对比：/context 概览加「与上一轮相比前 N 字符未变（x%）」——Agent 留两份快照（last 语义不变、新增 prev），按 sectionMark 摊平跳过 clock 段取最长公共前缀；跨会话与首次请求不出该行 | 已完成（v0.9.0） |
 | D319 | PTC-1：`tools.mode` 呈现模式（native/ptc，实验性）+ Starlark 进程内解释器；`run_code` 是普通 port.Tool、脚本内调用回同一 runtime 过权限矩阵；失败一律是结果字段 | 已完成（v0.9.0） |
+| D320 | PTC-2：脚本内确认去重（toolrun 层、ctx 携带 scope）+ 限额可配（tools.ptc 四键，修正 D319 写死）+ `/code` 只读留档 + 二段式 describe | 进行中（v0.9.0） |
 
 ## 记录
 
@@ -2485,3 +2486,33 @@
      两套调用方式并存、目录成本翻倍的坑就这样避开。
 
 - **状态**：已完成（v0.9.0）。
+### D320 · PTC-2：确认去重、限额可配、`/code` 与二段式 describe
+
+- **背景**：PTC-1（D319）的脚本内调用走完整确认链——Confirm 级工具同参重复时反复弹窗，
+  批处理体验差；且限额写死不可调，规模化场景（大目录批处理）没有出口。
+
+- **决策**：
+  1. **去重落在 toolrun 层、状态经 ctx 携带**：`port.ConfirmScope`（Recall / Remember /
+     AskedCount）由 starlarkrun 每次脚本执行创建并注入 ctx，toolrun 在确认前按指纹
+     （工具名 + 操作 + 目标 + 规范参数 JSON）查重——命中直接复用上次结论，native 路径
+     无 scope 行为不变。去重是「同一次脚本里只问一遍」，不跨脚本、不跨会话。
+  2. **单脚本 distinct 确认上限可配，缺省 8**：触限后需要确认的调用回 `OK=false`（报因
+     带上限数字），脚本继续跑、Safe 级不受影响——与调用配额同构，模型拿得到部分结果。
+  3. **限额全部可配**（修正 D319 决策 4 的「写死」）：`tools.ptc.max_steps / max_calls /
+     max_parallel / confirm_limit` 四键，缺省即 D319 的实测值，fail-fast 区间校验；
+     工具描述里的预算数字随配置现取——模型看得见的承诺与执行面同源。
+  4. **去重事实落运行日志**（`log.boot.ptc_script`：calls / dedup / capped）：审计文件
+     不动——run_code 本身的工具行已在审计；不为几个数字改跨层契约。
+  5. **`/code` 查看上次脚本（只读）**：Agent 按 `port.RunCodeTool` 留档（atomic 指针，
+     同 lastSnap 先例）；这是留档不是模式特判——D319 否决的是双调用路径特判。
+
+- **否决**：
+  1. **去重做在 starlarkrun 绑定层**。native 路径覆盖不到，且要自己处理 parallel 并发；
+     toolrun 的确认点本来就是唯一汇聚处。
+  2. **去重事实扩审计行**。统计数据要从 starlarkrun 穿透 tool.Result 到 audit 装饰器，
+     为几个数字改跨层契约，运行日志已够诊断。
+  3. **超限中止整个脚本**。模型拿不到部分结果，与配额的处理口径不一致。
+  4. **`/code` 可重跑**。执行路径只有模型的工具调用一条（过确认），命令侧重跑要再造
+     一条执行通路，收益为零。
+
+- **状态**：进行中（v0.9.0）。

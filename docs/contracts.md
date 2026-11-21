@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-21 @ 1b78484 -->
+<!-- docs-sync: 2026-11-21 @ fefa55a -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -295,6 +295,13 @@
   并发上限）写进 `run_code` 描述；方言限制（无 while/try、顶层禁 for/if）同写进描述，不占系统提示。
   失败一律是结果字段：解析错（带行列号）、超步数、返回值不可 JSON 化都回 `OK=false`，不上抛。
   native 档请求形状逐字节不变。
+- **脚本内确认去重与限额（D320）**：去重在 toolrun 的确认点按指纹（工具名 + 操作 + 目标 +
+  规范参数）做，scope 经 ctx 由脚本执行携带——同一次脚本里同参数只问一遍，命中复用上次结论；
+  distinct 确认数超过 `tools.ptc.confirm_limit`（缺省 8）后需要确认的调用回 `OK=false`，
+  脚本继续。`tools.ptc.max_steps / max_calls / max_parallel / confirm_limit` 四键可配
+  （缺省 200M / 256 / 10 / 8，fail-fast 区间校验），工具描述里的预算数字随配置现取。
+  脚本摘要（调用数 / 去重 / 上限触达）落运行日志；`/code` 只读查看上次脚本；
+  `tools.describe(name)` 绑定给出单个工具的完整描述与参数（不计调用配额）。
 
 ### 4.4 记忆文档
 

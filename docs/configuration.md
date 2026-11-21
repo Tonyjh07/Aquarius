@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-11-21 @ 1b78484 -->
+<!-- docs-sync: 2026-11-21 @ fefa55a -->
 
 > 本文按当前实现写成；**字段语义以本文为准**，端口与权限规则见 [contracts.md](contracts.md)。
 > 配置**以 profile 为隔离单位**：
@@ -351,8 +351,20 @@ DECIDE_ENDPOINT=http://127.0.0.1:11434 go test ./internal/adapter/decide -run Te
 - 方言是 Starlark（Python 方言的子集）：没有 while、没有 try/except、顶层不能直接写 for/if，
   工具结果带 `ok` 字段供分支。这些限制同样写在 `run_code` 的描述里，模型自己看得见。
 
+`tools.ptc` 子对象调脚本执行限额（不写 = 全默认；实验性阶段的数字仍要 fail-fast，
+区间外启动报错）：
+
+| 键 | 默认 | 区间 | 说明 |
+|---|---|---|---|
+| `tools.ptc.max_steps` | 200000000 | `[1_000_000, 2_000_000_000]` | 解释器步数上限 |
+| `tools.ptc.max_calls` | 256 | `[1, 4096]` | 单脚本工具调用配额（含失败按尝试计） |
+| `tools.ptc.max_parallel` | 10 | `[1, 64]` | `tools.parallel` 并发上限 |
+| `tools.ptc.confirm_limit` | 8 | `[1, 64]` | 单脚本 distinct 确认上限；触限后需要确认的调用回失败，脚本继续 |
+
+同一组数字出现在 `run_code` 的工具描述里（模型看得见才会主动分批），改配置即改描述。
+
 ```json
-"tools": { "mode": "ptc" }
+"tools": { "mode": "ptc", "ptc": { "max_calls": 1024 } }
 ```
 
 ### clock（Agent 时间感知）
