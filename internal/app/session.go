@@ -218,6 +218,9 @@ type SessionDeps struct {
 	// ExportsDir 导出缺省落点（`--path` 不给时用；装配根给 `<profile>/exports`）。
 	// 空 = 必须显式 --path，否则报未配置。
 	ExportsDir string
+	// ImportSourcesDir 导入溯源 sidecar 目录（D321；装配根给 `<profile>/import-sources`）。
+	// 空 = 不做重导去重（deepseek 一档每次都当新导入）。
+	ImportSourcesDir string
 	// TrashDir 会话回收站目录（`<profile>/trash`，D311）。空 = 未接入回收站：
 	// /rmconv 退回硬删（store.Remove），/trash 报未接入。
 	TrashDir string
@@ -258,40 +261,41 @@ type CommandHandler func(ctx context.Context, args []string) (string, error)
 // M4 启用 /plugin 与动态 /mcp: 命令、/model，思考控制 /think /effort 随 D34 启用）。
 // 命令的文本输出经返回值交给装配根渲染，轮次过程输出走 Presenter——app 不直接接触 IO。
 type Session struct {
-	store       port.ConversationStore
-	agent       *Agent
-	ids         port.IDGen
-	clock       port.Clock
-	persona     *PersonaComposer
-	level       perm.Level
-	sandboxPath string
-	perms       PermissionSettings
-	confirmer   port.Confirmer
-	jobs        jobAdmin
-	delegates   delegateAdmin
-	watches     port.WatchManager
-	skills      port.SkillCatalog
-	skillAdmin  SkillAdmin
-	watchCancel WatcherCanceller
-	log         port.Log
-	ingestors   []port.Ingestor
-	ui          port.Presenter
-	wake        func()
-	memories    MemoryOpener
-	plugins     PluginAdmin
-	models      ModelCatalog
-	modelSwitch ModelSwitcher
-	prober      ModelProbe
-	thinking    ThinkingSettings
-	exporter    port.SessionExporter
-	importer    port.SessionImporter
-	exportsDir  string
-	trashDir    string
-	auditPath   string
-	version     string
-	characters  port.CharacterCatalog
-	charAdmin   CharacterAdmin
-	charOpts    CharacterOptions
+	store            port.ConversationStore
+	agent            *Agent
+	ids              port.IDGen
+	clock            port.Clock
+	persona          *PersonaComposer
+	level            perm.Level
+	sandboxPath      string
+	perms            PermissionSettings
+	confirmer        port.Confirmer
+	jobs             jobAdmin
+	delegates        delegateAdmin
+	watches          port.WatchManager
+	skills           port.SkillCatalog
+	skillAdmin       SkillAdmin
+	watchCancel      WatcherCanceller
+	log              port.Log
+	ingestors        []port.Ingestor
+	ui               port.Presenter
+	wake             func()
+	memories         MemoryOpener
+	plugins          PluginAdmin
+	models           ModelCatalog
+	modelSwitch      ModelSwitcher
+	prober           ModelProbe
+	thinking         ThinkingSettings
+	exporter         port.SessionExporter
+	importer         port.SessionImporter
+	exportsDir       string
+	importSourcesDir string
+	trashDir         string
+	auditPath        string
+	version          string
+	characters       port.CharacterCatalog
+	charAdmin        CharacterAdmin
+	charOpts         CharacterOptions
 	// files 服务端文件解析上传口（D315）；nil = 未接入。purpose/ttl 来自 config `files` 段。
 	files        port.FileUploader
 	filesPurpose string
@@ -380,48 +384,49 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		persona = NewPersonaComposer(PromptSpec{}, RuntimeEnv{}, nil)
 	}
 	s := &Session{
-		store:        d.Store,
-		agent:        d.Agent,
-		ids:          d.IDs,
-		clock:        d.Clock,
-		persona:      persona,
-		level:        level,
-		sandboxPath:  d.SandboxPath,
-		perms:        d.Perms,
-		confirmer:    d.Confirmer,
-		jobs:         d.Jobs,
-		delegates:    d.Delegate,
-		watches:      d.Watches,
-		skills:       d.Skills,
-		skillAdmin:   d.SkillAdmin,
-		watchCancel:  d.WatchCancel,
-		log:          d.Log,
-		ingestors:    d.Ingestors,
-		ui:           d.UI,
-		wake:         d.Wake,
-		memories:     d.Memories,
-		plugins:      d.Plugins,
-		models:       d.Models,
-		modelSwitch:  d.ModelSwitch,
-		prober:       d.Prober,
-		thinking:     d.Thinking,
-		exporter:     d.Exporter,
-		importer:     d.Importer,
-		exportsDir:   d.ExportsDir,
-		trashDir:     d.TrashDir,
-		auditPath:    d.AuditPath,
-		version:      d.Version,
-		characters:   d.Characters,
-		charAdmin:    d.CharacterAdmin,
-		charOpts:     d.CharacterOpts,
-		files:        d.Files,
-		filesPurpose: d.FilesPurpose,
-		filesTTL:     d.FilesTTL,
-		blobs:        d.Blobs,
-		doctor:       d.Doctor,
-		dynamic:      map[string]CommandHandler{},
-		injectCh:     make(chan pendingInjection, injectQueueCap),
-		pendingQ:     newPendingList(),
+		store:            d.Store,
+		agent:            d.Agent,
+		ids:              d.IDs,
+		clock:            d.Clock,
+		persona:          persona,
+		level:            level,
+		sandboxPath:      d.SandboxPath,
+		perms:            d.Perms,
+		confirmer:        d.Confirmer,
+		jobs:             d.Jobs,
+		delegates:        d.Delegate,
+		watches:          d.Watches,
+		skills:           d.Skills,
+		skillAdmin:       d.SkillAdmin,
+		watchCancel:      d.WatchCancel,
+		log:              d.Log,
+		ingestors:        d.Ingestors,
+		ui:               d.UI,
+		wake:             d.Wake,
+		memories:         d.Memories,
+		plugins:          d.Plugins,
+		models:           d.Models,
+		modelSwitch:      d.ModelSwitch,
+		prober:           d.Prober,
+		thinking:         d.Thinking,
+		exporter:         d.Exporter,
+		importer:         d.Importer,
+		exportsDir:       d.ExportsDir,
+		importSourcesDir: d.ImportSourcesDir,
+		trashDir:         d.TrashDir,
+		auditPath:        d.AuditPath,
+		version:          d.Version,
+		characters:       d.Characters,
+		charAdmin:        d.CharacterAdmin,
+		charOpts:         d.CharacterOpts,
+		files:            d.Files,
+		filesPurpose:     d.FilesPurpose,
+		filesTTL:         d.FilesTTL,
+		blobs:            d.Blobs,
+		doctor:           d.Doctor,
+		dynamic:          map[string]CommandHandler{},
+		injectCh:         make(chan pendingInjection, injectQueueCap),
+		pendingQ:         newPendingList(),
 	}
 	// 待发清单归会话持有，Agent 只借用待发清单做两个取用边界（§7.1.2 轮内 / 轮末）。
 	d.Agent.setPending(s.pendingQ)

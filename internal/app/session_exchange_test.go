@@ -83,7 +83,7 @@ func (f *fakeExchange) Detect(name string, _ []byte) (port.ExchangeFormat, bool)
 	return port.ExchangeFormat{}, false
 }
 
-func (f *fakeExchange) Import(_ context.Context, _ io.Reader, _ port.ExchangeFormat, pick []int) ([]*conversation.Conversation, port.ExchangeReport, error) {
+func (f *fakeExchange) Import(_ context.Context, _ io.Reader, _ port.ExchangeFormat, pick []int, _ port.ImportOptions) ([]*conversation.Conversation, port.ExchangeReport, error) {
 	f.picks = pick
 	if f.importErr != nil {
 		return nil, port.ExchangeReport{}, f.importErr

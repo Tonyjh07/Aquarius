@@ -5,7 +5,7 @@ var enExchangeTexts = map[string]string{
 
 	// 用法
 	"usage.export":         "Usage: /export [--format <name>] [--path <file>] [--all | --ids <id>[,<id>…]] (only the current conversation by default; aqx is lossless and lands in the export directory)",
-	"usage.import":         "Usage: /import [--pick <index>]… <file> (the format is detected from the extension and the file header; lands as a new conversation)",
+	"usage.import":         "Usage: /import [--all | --pick <index>]… [--no-files] <file> (the format is detected from the path and file contents; lands as a new conversation)",
 	"exchange.spaced_hint": "Quote the path when it contains spaces, for example /import \"C:\\My Documents\\chat.aqx\"",
 
 	// 导出回执
@@ -22,9 +22,16 @@ var enExchangeTexts = map[string]string{
 	"exchange.dropped.item":        "- {item}",
 
 	// 导入回执
-	"exchange.import.to":    "Imported {path}",
-	"exchange.import.multi": "Content: imported {convs} conversations ({nodes} messages)",
-	"exchange.import.one":   "Content: {nodes} messages (landed as a new conversation)",
+	"exchange.import.to":             "Imported {path}",
+	"exchange.import.multi":          "Content: imported {convs} conversations ({nodes} messages)",
+	"exchange.import.one":            "Content: {nodes} messages (landed as a new conversation)",
+	"exchange.import.listing.head":   "{count} conversations in the archive (newest first). Use --all to import everything, --pick <index> for selected ones",
+	"exchange.import.listing.item":   "{index} · {date} · {title} ({count} messages)",
+	"exchange.import.listing.more":   "…{count} more omitted",
+	"exchange.import.progress":       "imported {done}/{total}…",
+	"exchange.import.skipped":        "Also: skipped {count} conversations identical to the previous import",
+	"exchange.import.all_skipped":    "all {count} conversations are identical to the previous import; nothing new was created",
+	"exchange.import.no_ledger_note": "no import source dir wired: re-importing the same export creates all-new conversations",
 
 	// 报错
 	"exchange.exporter_missing": "this build has no export surface wired (SessionDeps.Exporter)",
@@ -46,16 +53,18 @@ var enExchangeTexts = map[string]string{
 	"exchange.too_many_names":   "too many files share that name in the export directory; pass a file name with --path",
 
 	// 错误链短语
-	"err.list_conversations": "list conversations",
-	"err.load_conversation":  "load conversation {id}",
-	"err.mkdir_export":       "create export directory",
-	"err.create_export":      "create export file",
-	"err.export_failed":      "export failed",
-	"err.open_file":          "open file",
-	"err.read_file":          "read file",
-	"err.read_head":          "read the file header",
-	"err.import_failed":      "import failed",
-	"err.assign_import_id":   "assign an id to the imported conversation",
-	"err.save_import":        "save the imported conversation",
-	"err.stat_target":        "check the target file",
+	"err.list_conversations":  "list conversations",
+	"err.load_conversation":   "load conversation {id}",
+	"err.mkdir_export":        "create export directory",
+	"err.create_export":       "create export file",
+	"err.export_failed":       "export failed",
+	"err.open_file":           "open file",
+	"err.read_file":           "read file",
+	"err.read_head":           "read the file header",
+	"err.import_failed":       "import failed",
+	"err.assign_import_id":    "assign an id to the imported conversation",
+	"err.save_import":         "save the imported conversation",
+	"err.stat_target":         "check the target file",
+	"err.import_ledger_write": "write import source ledger",
+	"exchange.all_and_pick":   "--all and --pick cannot be combined",
 }

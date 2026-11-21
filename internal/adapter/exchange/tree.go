@@ -33,8 +33,9 @@ type importedNode struct {
 	Role     conversation.Role
 	Parts    []conversation.Part
 	Created  time.Time
-	Parent   string   // "" = 树的挂点（本程序的 Root 之下）
-	Children []string // 有序；源里没给就按 Parent 反推
+	Parent   string               // "" = 树的挂点（本程序的 Root 之下）
+	Children []string             // 有序；源里没给就按 Parent 反推
+	Outcome  conversation.Outcome // 源里给了终态就带（deepseek 的 status）；空 = 不写
 }
 
 // importedTree 一份外部会话。
@@ -118,6 +119,7 @@ func materialize(in *importedTree) (*conversation.Conversation, error) {
 			Parent:    parent,
 			Role:      n.Role,
 			Content:   n.Parts,
+			Outcome:   n.Outcome, // 源里声明的终态原样带（零值不动，validate 对空串不设限）
 			CreatedAt: nodeTime(n, created),
 		})
 	}

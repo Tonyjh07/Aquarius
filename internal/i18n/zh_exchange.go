@@ -8,7 +8,7 @@ var zhExchangeTexts = map[string]string{
 
 	// 用法
 	"usage.export":         "用法: /export [--format <名字>] [--path <文件>] [--all | --ids <id>[,<id>…]]（缺省只导当前会话；aqx 无损、落在导出目录）",
-	"usage.import":         "用法: /import [--pick <序号>]… <文件>（按扩展名与文件头自动认格式；落成新会话）",
+	"usage.import":         "用法: /import [--all | --pick <序号>]… [--no-files] <文件>（按文件内容与路径自动认格式；落成新会话）",
 	"exchange.spaced_hint": "路径里有空格时用引号括起来，例如 /import \"C:\\我的文档\\会话.aqx\"",
 
 	// 导出回执
@@ -25,9 +25,16 @@ var zhExchangeTexts = map[string]string{
 	"exchange.dropped.item":        "- {item}",
 
 	// 导入回执
-	"exchange.import.to":    "已导入 {path}",
-	"exchange.import.multi": "内容: 已导入 {convs} 个会话（{nodes} 条消息）",
-	"exchange.import.one":   "内容: {nodes} 条消息（已落成新会话）",
+	"exchange.import.to":             "已导入 {path}",
+	"exchange.import.multi":          "内容: 已导入 {convs} 个会话（{nodes} 条消息）",
+	"exchange.import.one":            "内容: {nodes} 条消息（已落成新会话）",
+	"exchange.import.listing.head":   "共 {count} 个会话（按最后改动倒序）。带 --all 全部导入，--pick <序号> 只导选中的几项",
+	"exchange.import.listing.item":   "{index} · {date} · {title}（{count} 条）",
+	"exchange.import.listing.more":   "…其余 {count} 项略",
+	"exchange.import.progress":       "已导入 {done}/{total}…",
+	"exchange.import.skipped":        "另: 跳过 {count} 个与上次导入相同的会话",
+	"exchange.import.all_skipped":    "全部 {count} 个会话与上次导入相同，没有新建会话",
+	"exchange.import.no_ledger_note": "未接入导入溯源目录：同一份导出重导会全部建成新会话",
 
 	// 报错
 	"exchange.exporter_missing": "本构建未接入导出面（SessionDeps.Exporter）",
@@ -49,16 +56,18 @@ var zhExchangeTexts = map[string]string{
 	"exchange.too_many_names":   "导出目录里同名文件太多，请用 --path 指定文件名",
 
 	// 错误链短语
-	"err.list_conversations": "列出会话",
-	"err.load_conversation":  "载入会话 {id}",
-	"err.mkdir_export":       "创建导出目录",
-	"err.create_export":      "创建导出文件",
-	"err.export_failed":      "导出失败",
-	"err.open_file":          "打开文件",
-	"err.read_file":          "读取文件",
-	"err.read_head":          "读取文件头",
-	"err.import_failed":      "导入失败",
-	"err.assign_import_id":   "分配导入会话的身份",
-	"err.save_import":        "保存导入的会话",
-	"err.stat_target":        "检查目标文件",
+	"err.list_conversations":  "列出会话",
+	"err.load_conversation":   "载入会话 {id}",
+	"err.mkdir_export":        "创建导出目录",
+	"err.create_export":       "创建导出文件",
+	"err.export_failed":       "导出失败",
+	"err.open_file":           "打开文件",
+	"err.read_file":           "读取文件",
+	"err.read_head":           "读取文件头",
+	"err.import_failed":       "导入失败",
+	"err.assign_import_id":    "分配导入会话的身份",
+	"err.save_import":         "保存导入的会话",
+	"err.stat_target":         "检查目标文件",
+	"err.import_ledger_write": "写导入溯源记录",
+	"exchange.all_and_pick":   "--all 与 --pick 不能同时用",
 }

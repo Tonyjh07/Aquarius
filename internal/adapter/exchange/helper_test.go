@@ -36,7 +36,7 @@ func exportOne(ctx context.Context, ex port.SessionExporter, c *conversation.Con
 
 // importOne 单会话导入：取回来的第一棵树（`--pick` 留给多会话用例）。
 func importOne(ctx context.Context, im port.SessionImporter, r io.Reader, f port.ExchangeFormat) (*conversation.Conversation, port.ExchangeReport, error) {
-	cs, rep, err := im.Import(ctx, r, f, nil)
+	cs, rep, err := im.Import(ctx, r, f, nil, port.ImportOptions{})
 	if err != nil {
 		return nil, rep, err
 	}

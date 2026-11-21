@@ -36,7 +36,12 @@ func exportUsage() string { return i18n.T("usage.export") }
 func importUsage() string { return i18n.T("usage.import") }
 
 // importFlags /import 认识的 flag：只认路径之前的一段（`--pick 1,3 <文件>`）。
-var importFlags = []flagDecl{{name: "--pick", value: true}}
+// --all / --no-files 是 deepseek 整库一档（D321）的：清单先行，显式全导；附件可关。
+var importFlags = []flagDecl{
+	{name: "--pick", value: true},
+	{name: "--all"},
+	{name: "--no-files"},
+}
 
 // multiExportStem 多会话导出的缺省文件名（没有单一会话标题可用）；规则在端口，
 // 界面批量导出的预填名读同一份。
@@ -263,6 +268,15 @@ func (s *Session) execImport(ctx context.Context, cmd port.Command) (string, err
 	if err != nil {
 		return "", err
 	}
+	var all, omitFiles bool
+	for _, f := range flags {
+		switch f.name {
+		case "--all":
+			all = true
+		case "--no-files":
+			omitFiles = true
+		}
+	}
 	path := rest[0]
 	f, err := os.Open(path)
 	if err != nil {
@@ -273,14 +287,28 @@ func (s *Session) execImport(ctx context.Context, cmd port.Command) (string, err
 	if err != nil {
 		return "", err
 	}
-	format, ok := s.importer.Detect(filepath.Base(path), head)
-	if !ok {
-		return "", errors.New(i18n.Tf("exchange.unknown_import", "formats", importFormatNames()))
+	// 路径级识别先行（D321）：deepseek 的条目名在 ZIP 中央目录，64 KB 文件头够不着。
+	// 认不出再落 Detect 的头部形状扫描。
+	var format port.ExchangeFormat
+	if pd, ok := s.importer.(port.PathDetector); ok {
+		if pf, ok := pd.DetectPath(path); ok {
+			format = pf
+		}
+	}
+	if format.Name == "" {
+		var ok bool
+		format, ok = s.importer.Detect(filepath.Base(path), head)
+		if !ok {
+			return "", errors.New(i18n.Tf("exchange.unknown_import", "formats", importFormatNames()))
+		}
+	}
+	if format.Name == "deepseek" {
+		return s.execImportDeepSeek(ctx, path, format, pick, all, omitFiles)
 	}
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return "", wrapSession("err.read_file", err)
 	}
-	trees, rep, err := s.importer.Import(ctx, f, format, pick)
+	trees, rep, err := s.importer.Import(ctx, f, format, pick, port.ImportOptions{OmitFiles: omitFiles})
 	if err != nil {
 		return "", wrapSession("err.import_failed", err)
 	}

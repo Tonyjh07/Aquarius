@@ -98,6 +98,9 @@ var testDataLiterals = map[string][]string{
 	"internal/adapter/llm/wire_file_test.go": {"看看这份扫描件", "你好"},
 	// DeepSeek 语音测试：服务端应答文本与录音文件名是**测试数据**（转写/上传断言核对的就是它）。
 	"internal/adapter/asrdeepseek/asrdeepseek_test.go": {"你好世界", "录音.wav"},
+	// DeepSeek 导入测试：会话标题与片段正文都是**测试数据**（清单/树断言核对的就是它）。
+	"internal/adapter/exchange/deepseek_test.go":   {"版本组", "固定话术"},
+	"internal/app/session_import_deepseek_test.go": {"带图会话", "问答会话"},
 	// 会话标题测试：模型输出（服务端生成的标题原样进会话元数据），断言的正是这些串——
 	// 换成英文等于换了被测对象（D309）。
 	"internal/adapter/llm/title_test.go": {"北京明天天气", "北京天气"},

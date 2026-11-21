@@ -23,6 +23,8 @@ var zhPortTexts = map[string]string{
 	"port.fmt.openai.loss":      "只取当前那条链，旁支、思考、工具与附件不带；注入节点降级为 system",
 	"port.fmt.sillytavern.loss": "只取当前那条链，旁支、思考、工具与附件不带；注入节点降级为 system；对方的世界书、正则与作者注不会带过来",
 	"port.fmt.openwebui.loss":   "只读不写：要供给 Open WebUI，请用 chatgpt 那份",
+	"port.fmt.deepseek.label":   "DeepSeek 全量导出",
+	"port.fmt.deepseek.loss":    "搜索轨迹与非图片附件不带；历史由 DeepSeek 默认人格生成，续写按当前配置人格",
 	"port.fmt.md.loss":          "只取当前那条链，旁支、思考、工具与附件不带；注入节点降级为 system",
 	"port.fmt.html.loss":        "只取当前那条链，旁支、思考、工具与附件不带；注入节点降级为 system",
 

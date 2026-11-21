@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
@@ -46,6 +47,16 @@ type ExchangeEntry struct {
 	Title string
 	// Nodes 节点数（不含 Root），只供展示。
 	Nodes int
+	// UpdatedAt 源里的最后改动时刻（deepseek 填，D321）：重导去重按它判断「源里变没变」；
+	// 其余格式不填（零值），没有这个概念。
+	UpdatedAt time.Time
+}
+
+// ImportOptions 一次导入的调用级选项（零值 = 全部缺省行为，调用方不为缺省传值）。
+type ImportOptions struct {
+	// OmitFiles 不把附件字节入库（deepseek 的 `--no-files`，D321）：FILE 一律计入丢弃。
+	// 其余格式没有附件字节可带，此选项无效。
+	OmitFiles bool
 }
 
 // ExchangeReport 一次进出的回执：数量、字节、丢了什么。
@@ -60,6 +71,10 @@ type ExchangeReport struct {
 	Bytes int64
 	// Dropped 逐项可读的事实行（没有带过去 / 没有带进来的东西）。
 	Dropped []string
+	// Counts 机器可合并的丢弃计数（D321）：分块导入时每次 Import 只见本块，调用方按 key
+	// 求和再渲染成「丢了什么」的行——逐块拼 Dropped 会把「搜索 3 次」切成三行半句。
+	// 键 = 分片的种类名（与 Dropped 里的措辞同源），值为次数；nil = 无计数。
+	Counts map[string]int
 	// Entries 这次涉及的会话清单：**多会话容器才填**（单会话与线性格式留空）。
 	// 回执据此决定用「一份会话」还是「N 个会话 + 逐条标题」的版式，不靠数量反猜。
 	Entries []ExchangeEntry
@@ -94,8 +109,9 @@ type SessionImporter interface {
 	// pick 只接受空或 {1}。返回顺序 = 清单顺序（升序），不按 pick 的书写顺序。
 	//
 	// 读侧的上限（每会话节点数、正文总字节、容器条目数与展开总量）由实现自己守，
-	// 超限报错而不是静默截断。
-	Import(ctx context.Context, r io.Reader, f ExchangeFormat, pick []int) ([]*conversation.Conversation, ExchangeReport, error)
+	// 超限报错而不是静默截断。opts 是调用级选项（见 ImportOptions），不是构造参数——
+	// `--no-files` 这类逐次决定的事不该让装配根替用户拍板。
+	Import(ctx context.Context, r io.Reader, f ExchangeFormat, pick []int, opts ImportOptions) ([]*conversation.Conversation, ExchangeReport, error)
 }
 
 // ExchangeIndexer 列出一份**容器**里的会话清单（界面勾选面板与批量入口用）。
@@ -108,6 +124,15 @@ type ExchangeIndexer interface {
 	// 不是容器、版本更高、旧单树形状、清单坏掉都返回错误：调用方（界面）据此退回普通导入，
 	// 由导入侧给出真正的格式原因，不在这里猜。
 	Index(ctx context.Context, path string) ([]ExchangeEntry, error)
+}
+
+// PathDetector 按路径认格式的可选扩展（D321）：`Detect` 只看 64 KB 文件头，而 ZIP 的条目名
+// 在中央目录（文件末尾）——头部够不着的形状走这里。消费方先断言本接口再落 `Detect`；
+// 实现自己决定怎么用 path（读文件、解容器），head 仍是那 64 KB，供顺手排除明显不匹配的。
+type PathDetector interface {
+	// DetectPath 按文件路径判断这是谁的格式；认不出返回 false（调用方照常走 `Detect` 与
+	// 「认不出」的报错路径，不在这里重复那套文案）。
+	DetectPath(path string) (ExchangeFormat, bool)
 }
 
 // FileStem 会话标题 → 可用作文件名的词干：路径分隔符与 Windows 保留字符换成 '-'、压掉首尾
@@ -154,6 +179,11 @@ func ExchangeFormats() []ExchangeFormat {
 		{
 			Name: "openwebui", Ext: ".json", Label: i18n.T("port.fmt.openwebui.label"), Lossy: true, NoExport: true,
 			LossNote: i18n.T("port.fmt.openwebui.loss"),
+		},
+		{
+			// DeepSeek 全量导出（D321）：整库 ZIP，只认不写——官方没有导入入口。
+			Name: "deepseek", Ext: ".zip", Label: i18n.T("port.fmt.deepseek.label"), Lossy: true, NoExport: true,
+			LossNote: i18n.T("port.fmt.deepseek.loss"),
 		},
 		{
 			// 人读呈现（D314）：不是互通格式，摊平规则沿用 openai、丢弃计数逐字一致。

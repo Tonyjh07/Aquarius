@@ -121,7 +121,7 @@ func TestAQXMultiSessionRoundtrip(t *testing.T) {
 		t.Fatalf("export: %v", err)
 	}
 	got, rep, err := New(Options{Blobs: blobs}).Import(context.Background(),
-		bytes.NewReader(buf.Bytes()), port.ExchangeFormat{Name: "aqx"}, nil)
+		bytes.NewReader(buf.Bytes()), port.ExchangeFormat{Name: "aqx"}, nil, port.ImportOptions{})
 	if err != nil {
 		t.Fatalf("import: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestAQXPickVariants(t *testing.T) {
 	}
 	for _, tc := range cases {
 		got, rep, err := New(Options{Blobs: blobs}).Import(context.Background(),
-			bytes.NewReader(buf.Bytes()), aqx, tc.pick)
+			bytes.NewReader(buf.Bytes()), aqx, tc.pick, port.ImportOptions{})
 		if err != nil {
 			t.Fatalf("%s: import: %v", tc.name, err)
 		}
@@ -195,7 +195,7 @@ func TestAQXPickOutOfRange(t *testing.T) {
 	}
 	for _, pick := range [][]int{{3}, {0}} {
 		_, _, err := New(Options{Blobs: blobs}).Import(context.Background(),
-			bytes.NewReader(buf.Bytes()), port.ExchangeFormat{Name: "aqx"}, pick)
+			bytes.NewReader(buf.Bytes()), port.ExchangeFormat{Name: "aqx"}, pick, port.ImportOptions{})
 		if err == nil || !strings.Contains(err.Error(), i18n.T("exchange.io.manifest_listing.head")) ||
 			!strings.Contains(err.Error(), "第一个") || !strings.Contains(err.Error(), "第二个") {
 			t.Fatalf("pick %v: err = %v, want 报因并列出清单", pick, err)
@@ -316,11 +316,11 @@ func TestImportPickIgnoresUnselectedTrees(t *testing.T) {
 	// 把第 2 个会话的树换成一段坏 JSON，只挑第 1 个。
 	patched := rewriteZipEntry(t, buf.Bytes(), "conversations/2/tree.json", "not json")
 	if _, _, err := New(Options{Blobs: blobs}).Import(context.Background(),
-		bytes.NewReader(patched), port.ExchangeFormat{Name: "aqx"}, nil); err == nil {
+		bytes.NewReader(patched), port.ExchangeFormat{Name: "aqx"}, nil, port.ImportOptions{}); err == nil {
 		t.Fatal("全导时应因第 2 个会话的坏树而失败")
 	}
 	got, _, err := New(Options{Blobs: blobs}).Import(context.Background(),
-		bytes.NewReader(patched), port.ExchangeFormat{Name: "aqx"}, []int{1})
+		bytes.NewReader(patched), port.ExchangeFormat{Name: "aqx"}, []int{1}, port.ImportOptions{})
 	if err != nil {
 		t.Fatalf("只导第 1 个应成功: %v", err)
 	}
@@ -341,7 +341,7 @@ func TestAQXManifestOrderIsPickOrder(t *testing.T) {
 		t.Fatalf("export: %v", err)
 	}
 	got, rep, err := New(Options{Blobs: blobs}).Import(context.Background(),
-		bytes.NewReader(buf.Bytes()), port.ExchangeFormat{Name: "aqx"}, nil)
+		bytes.NewReader(buf.Bytes()), port.ExchangeFormat{Name: "aqx"}, nil, port.ImportOptions{})
 	if err != nil {
 		t.Fatalf("import: %v", err)
 	}

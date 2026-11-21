@@ -340,8 +340,13 @@ func (e *Exchange) importAQX(ctx context.Context, r io.Reader, pick []int) ([]*c
 	return out, rep, nil
 }
 
-// Index 只读归档清单（界面勾选面板用）：不解树、不回填附件。
+// Index 只读归档清单（界面勾选面板与命令面清单共用）：不解树、不回填附件。
+// deepseek 一档先试（它的包里也有个 manifest.json，但不是 aqx 的形状）；不是 deepseek
+// 再按 aqx 读，报因由 aqx 侧给出。
 func (e *Exchange) Index(ctx context.Context, path string) ([]port.ExchangeEntry, error) {
+	if entries, isDS, dsErr := e.dsIndex(ctx, path); isDS {
+		return entries, dsErr
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

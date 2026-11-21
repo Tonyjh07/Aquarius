@@ -24,6 +24,7 @@ var (
 	_ port.SessionExporter = (*Exchange)(nil)
 	_ port.SessionImporter = (*Exchange)(nil)
 	_ port.ExchangeIndexer = (*Exchange)(nil)
+	_ port.PathDetector    = (*Exchange)(nil)
 )
 
 // Options 装配参数。
@@ -88,12 +89,12 @@ func (e *Exchange) Export(ctx context.Context, cs []*conversation.Conversation, 
 }
 
 // Import 读入一个外部文件并自检（§5.16 的「外部文件是不可信输入」）。
-func (e *Exchange) Import(ctx context.Context, r io.Reader, f port.ExchangeFormat, pick []int) ([]*conversation.Conversation, port.ExchangeReport, error) {
+func (e *Exchange) Import(ctx context.Context, r io.Reader, f port.ExchangeFormat, pick []int, opts port.ImportOptions) ([]*conversation.Conversation, port.ExchangeReport, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, port.ExchangeReport{}, err
 	}
 	rep := port.ExchangeReport{Format: f.Name}
-	if f.Name != "aqx" {
+	if f.Name != "aqx" && f.Name != "deepseek" {
 		// 非容器只有一项：只认空或 {1}，其余报因（不静默当成「全导」）。
 		if len(pick) > 1 || (len(pick) == 1 && pick[0] != 1) {
 			return nil, rep, errors.New(i18n.T("exchange.err.pick_single"))
@@ -102,6 +103,8 @@ func (e *Exchange) Import(ctx context.Context, r io.Reader, f port.ExchangeForma
 	switch f.Name {
 	case "aqx":
 		return e.importAQX(ctx, r, pick)
+	case "deepseek":
+		return e.importDeepSeek(ctx, r, pick, opts)
 	case "chatgpt":
 		c, rep, err := e.importChatGPT(ctx, r)
 		if err != nil {

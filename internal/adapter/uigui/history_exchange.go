@@ -18,12 +18,12 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// exchangeOpenFilters 导入侧文件框的过滤器：五档格式的扩展名。认不认得出由命令面按
-// 内容判，过滤器只帮用户少翻文件，不当作格式保证（`.json` 既可能是 chatgpt 也可能是
-// openai 或 openwebui）。
+// exchangeOpenFilters 导入侧文件框的过滤器：各档格式的扩展名。认不认得出由命令面按
+// 内容与路径判，过滤器只帮用户少翻文件，不当作格式保证（`.json` 既可能是 chatgpt 也
+// 可能是 openai 或 openwebui；`.zip` 只对 DeepSeek 全量导出一档，深度容器靠路径级识别）。
 func exchangeOpenFilters() []platform.FileFilter {
 	return []platform.FileFilter{
-		{Label: i18n.T("ui.history.filter_session_files"), Pattern: "*.aqx;*.json;*.jsonl"},
+		{Label: i18n.T("ui.history.filter_session_files"), Pattern: "*.aqx;*.json;*.jsonl;*.zip"},
 		{Label: i18n.T("ui.history.filter_aqx"), Pattern: "*.aqx"},
 		{Label: "JSON / JSONL (*.json;*.jsonl)", Pattern: "*.json;*.jsonl"},
 		{Label: i18n.T("ui.history.filter_all"), Pattern: "*.*"},
