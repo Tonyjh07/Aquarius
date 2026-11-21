@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-21 @ d4e3cac -->
+<!-- docs-sync: 2026-11-21 @ f7cdcaa -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -191,7 +191,11 @@
 - 模型能力差异：`ModelInfo{Vision, Audio}` 声明能力；不支持图片的模型遇到 Image Part →
   明确报因并提示（v1 不做自动 OCR/描述降级）。
 - Audio Part 一律先经 `Transcriber` 得到 Transcript；模型只见文本。Doc Part 注入提取文本（截断），
-  原文可经 `file_read` 工具取用。常见文档转文本（D105/S2b-3）：pdf/docx/xlsx/html 按扩展名
+  原文可经 `file_read` 工具取用。**Doc Part 可另带 `file_id`**（D315）：声明了 `files` 服务端能力
+  的端点上，文档在上传时由服务端解析（扫描件 OCR、内嵌图随 `rich_layout_recognition` 交模型），
+  装配时发 `{"type":"file","file_id":…}` 引用块；本地提取文本**永远保留在分片里**——能力位不生效
+  （端点没声明 / 降级到别家 / 协议不是 `openai-chat`）就照旧拍平 text，请求体与从前一字节不差。
+  引用块只在 `openai-chat` wire 实现（D315 决策 4），其余协议收到引用分片回落发文本。常见文档转文本（D105/S2b-3）：pdf/docx/xlsx/html 按扩展名
   分派到现成纯 Go 库提取（选型表与统一规则见 D105）；pptx/rtf/legacy 二进制 Office 首批缓，
   走二进制占位文案（原文仍可 `file_read`）；解析失败（加密/损坏/超限）同样回落占位并注明原因。
 - **文件读取分页**（D169）：`file_read` 接受 `offset`（1 起，行号或目录项）与 `limit`（缺省且上限
@@ -485,6 +489,11 @@ API）；未实现或报错时 app 回落通用估算（③），并以服务端
 **输入归一化**：一次输入可以是文本、单个文件、剪贴板图、麦克风音频，或一组附件。多附件的
 顺序固定为 **File 简写 → Attachments 列表 → Blob 简写**（`AttachmentList` 就是这条归一化），
 摄取逐个完成、允许部分成功，没进正文的说明走 `Note`（「已由 ASR 转写」这类）。
+
+**服务端文件解析（D315）**：上传是消费方用的小端口 `FilesUploader`（DeepSeek Files API，`/v1/files`
+multipart，`purpose` 先于 `file`）——不进 `Ingestor` 的方法面，与回收站同一姿态：能力面为单一后端
+服务，端口不为它扩容。摄取时的门控在 app：能力位生效且 `files.purpose` 非空才上传，本地提取照存
+（降级回落），上传失败明确报错、不做无谓重试（解析按页计费）。
 
 **输出侧**：`OutputRequest` 带的是**整条消息 + 分片**，其中可能含思考分片（D42）——输出器属
 「对外播报正文」，**须自行筛选**，端口不做这件事。`Deliver` 失败只记日志、不打断主流程：
@@ -1778,6 +1787,9 @@ system（`characters.apply_post_history = false` 时不发）。因为 `Tail` �
   单条消息 ≤ 8 个附件；图片单文件 ≤ 20MB。
 - **已入库附件（D187）**：粘贴的图片以 `Attachment{Blob}` 进同一条路——字节已入库，不再从
   文件系统读第二遍；与路径附件混排时按列表顺序生成分片。
+- **服务端解析（D315）**：结构化文档摄取时（本地路径要 `extractStructured` 的那类），声明了
+  `files` 能力且 `files.purpose` 非空 → 上传拿 `file_id` 写进 doc 分片（本地提取文本照存）。
+  超 100 MiB / 上传失败 / 超 120 秒一律明确报错，不静默回落；纯文本、表格与图片不上传。
 
 **语音输入（D179/D295）**：`mic` 摄取 = 采集器**连续推帧**（16kHz 单声道 16bit，32ms 一帧，默认
 上限 60s）→ 分段器逐帧判定、静音超过阈值就切一段 → 每段：入附件库（`PartAudio` 的 BlobRef 来源）

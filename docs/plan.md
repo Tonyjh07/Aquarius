@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-21 @ d4e3cac -->
+<!-- docs-sync: 2026-11-21 @ f7cdcaa -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -27,7 +27,7 @@
 每条动手前先补 [contracts.md](contracts.md) 的对应节与决策编号（新增命令、新增工具都算），
 本节只定范围与验收。
 
-### `v0.9.0`（在排，五条；回收站、`/fork`、标签置顶与人读导出已完成，见 [roadmap.md](roadmap.md)）
+### `v0.9.0`（在排，四条；回收站、`/fork`、标签置顶、人读导出与服务端文件解析已完成，见 [roadmap.md](roadmap.md)）
 
 
 落点一律是文件：写进 `--path` 指定的路径，省略则落导出目录，回执只给路径、格式与有损清单，
@@ -40,17 +40,7 @@ HTML 里没有公认写法，自己发明的标记粘进新对话也读不懂，
 为什么，回执三项对得上）；`--all --format html` 报错而不是写半份；`--path` 缺省落导出目录，
 重名加后缀（沿用现有防覆盖）。
 
-**文件交给服务端解析**（M）
-本地 `ingestfile` 解 PDF/DOCX/XLSX 靠纯 Go 库，扫描件（要 OCR）与「按原位置把图交给模型」做
-不了。走 Files API：上传时解析、拿 `file_id`、在用户消息里发 document 块。两种 `purpose`
-——`text_recognition` 只要文字，`rich_layout_recognition` 连图表一起交。装配层改动很小：doc
-分片本来就被拍平成文本，改成有 `file_id` 就发引用。
-两条限制写进文档：文件落在服务端（隐私）；这项能力只在声明了的端点上有效，降级到别家时回落本
-地解析。
-验收：一份扫描版 PDF 能答出正文内容（本地解析拿不到）；超 100 MiB 或解析超时给出明确报错、
-不静默失败；端点不支持时回落本地；上传失败不做无谓重试（解析按页计费）。
-
-**DeepSeek 语音后端（ASR + TTS）**（M）
+**DeepSeek 语音后端**DeepSeek 语音后端（ASR + TTS）**（M）
 语音侧补两个协议位 `kind: "deepseek"`：识别走 `POST /v1/tools/asr`（multipart 的 `file`，
 16 位 PCM WAV 或 Ogg Opus，**没有语种参数**——21 种语言按音频自动识别，配置里的
 `input.language` 在这个后端上不起作用）；合成走 `POST /v1/tools/tts`（JSON，`voice_id` 只有

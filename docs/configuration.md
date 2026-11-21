@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-11-20 @ c492d51 -->
+<!-- docs-sync: 2026-11-21 @ f7cdcaa -->
 
 > 本文按当前实现写成；**字段语义以本文为准**，端口与权限规则见 [contracts.md](contracts.md)。
 > 配置**以 profile 为隔离单位**：
@@ -326,6 +326,15 @@ DECIDE_ENDPOINT=http://127.0.0.1:11434 go test ./internal/adapter/decide -run Te
   先判，那样拒绝档永远不会生效。
 - 本机跑法：Ollama ≥ 0.35.1 拉 `clef-flash`，那是含 joint head 的真模型；LM Studio 加载同一份
   GGUF 只会聊天、给不出概率（文件里没有那个头）。
+
+### files（文档交给服务端解析，D315）
+
+| 字段 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `files.purpose` | string | `"text_recognition"` | 上传给 DeepSeek Files API 的用途档：`text_recognition` = 服务端只提文字（文档内嵌的图表不交给模型）；`rich_layout_recognition` = 文字与内嵌图一起交（扫描件、图表密集的文档更完整，解析更贵更慢）；**空串 = 显式关闭**，文件只走本地解析。词表外的值启动报错。**只对声明了 `server_caps` 含 `files` 的端点生效**：能力位不生效（没声明 / 降级到别家 / 协议不是 `openai-chat`）时照旧走本地解析，请求体与从前一字节不差 |
+| `files.ttl_seconds` | int | `0` | 上传的文件在服务端保留多久后自动删除（服务端 `expires_after`）：`0` = 不传（**服务端永久保留**）；非 0 合法区间 3600–2592000（1 小时 ~ 30 天），越界启动报错。**隐私口径**：文件与解析结果都落在服务端（账号级，跨密钥共享），在意的话要么设短 ttl，要么 `purpose: ""` 关掉这条路径 |
+
+上传时机的三条硬规则：超过 100 MiB（文档）/ 64 MiB（图片）直接报错不静默回落；上传失败或超 120 秒给明确报错、**不做无谓重试**（服务端解析按页计费）；只有本地走「结构化文档解析」的类型（PDF / Word / PPT 一类）才上传，纯文本、表格与图片照旧。
 
 ### input / audio（语音）
 
