@@ -47,6 +47,7 @@ var enGuiChatTexts = map[string]string{
 	"ui.chat.chip_running":       "Running…",
 	"ui.chat.thinking_live":      "Thinking…",
 	"ui.chat.thought":            "Thought",
+	"ui.chat.thought_ms":         "Thought for {n}ms",
 	"ui.chat.thought_secs":       "Thought for {n}s",
 	"ui.chat.tool_not_returned":  "(no result — the turn ended)",
 	"ui.chat.list_sep":           ", ",

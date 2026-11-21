@@ -51,7 +51,7 @@ func (m *model) replay(msg conversation.Message) {
 			case conversation.PartThinking:
 				flushSeg()
 				if strings.TrimSpace(p.Text) != "" {
-					m.addMsg(blockThinking, p.Text, msg.ID) // 回放无耗时 → secs 置 -1；D100② 直盖节点 ID
+					m.addMsg(blockThinking, p.Text, msg.ID) // 回放无耗时 → ms 置 -1；D100② 直盖节点 ID
 				}
 			case conversation.PartTool:
 				flushSeg()

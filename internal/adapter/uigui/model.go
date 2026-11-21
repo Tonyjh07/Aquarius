@@ -32,13 +32,13 @@ const (
 )
 
 // block 一段定稿转写（text 已剥控制序列，§9）。
-// secs 仅思考块使用：>=0 定稿耗时秒数（折叠行"已思考 · Ns"），-1 = 回放无耗时。
+// ms 仅思考块使用：>=0 定稿耗时毫秒（<1s 显示毫秒，>=1s 显示一位小数的秒），-1 = 回放无耗时。
 // chip 仅工具块使用（D67）：一次调用合并调用/确认/结果。
 // id 仅 user/assistant 正文块使用（D81）：所源节点——分叉编号与左右切换的数据键。
 type block struct {
 	kind blockKind
 	text string
-	secs int
+	ms   int
 	chip *toolChip
 	id   conversation.MessageID
 	// source/trigger 仅注入块使用（D166）：来源键（展示期经 port.InjectSourceLabel
@@ -96,7 +96,7 @@ type model struct {
 	draft    strings.Builder // 流式草稿（committed 后以消息文本定稿替换）
 	drafting bool
 	think    strings.Builder // 进行中的思维链（流式实时可见，D42）
-	thinkAt  time.Time       // 首个思考增量时刻（flush → secs 定稿耗时）
+	thinkAt  time.Time       // 首个思考增量时刻（flush → ms 定稿耗时）
 
 	confirm *pendingConfirm
 	// ask 进行中的提问面板（D184）：非空时输入栏画面板、按键走面板语义。

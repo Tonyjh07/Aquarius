@@ -46,7 +46,7 @@ func (u *UI) frameItems() []blockView {
 			items = append(items, blockView{kind: blockTool, chip: b.chip, chipIdx: bi, bi: bi})
 		default:
 			items = append(items, blockView{
-				kind: b.kind, text: b.text, secs: b.secs, bi: bi, id: b.id,
+				kind: b.kind, text: b.text, ms: b.ms, bi: bi, id: b.id,
 				imgs: b.imgs, source: b.source, trigger: b.trigger, cmds: b.cmds,
 			})
 		}

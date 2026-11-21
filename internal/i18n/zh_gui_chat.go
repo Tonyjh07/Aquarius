@@ -49,6 +49,7 @@ var zhGuiChatTexts = map[string]string{
 	"ui.chat.chip_running":       "运行中…",
 	"ui.chat.thinking_live":      "思考中…",
 	"ui.chat.thought":            "已思考",
+	"ui.chat.thought_ms":         "已思考 {n} 毫秒",
 	"ui.chat.thought_secs":       "已思考 {n} 秒",
 	"ui.chat.tool_not_returned":  "（未返回——本轮已结束）",
 	"ui.chat.list_sep":           "、",

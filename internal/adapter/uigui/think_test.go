@@ -21,11 +21,12 @@ func TestThinkHeaderText(t *testing.T) {
 		open bool
 		want string
 	}{
-		{blockView{kind: blockThinking, secs: 12}, false, "▸ 已思考 12 秒"},
-		{blockView{kind: blockThinking, secs: 12}, true, "▾ 已思考 12 秒"},
-		{blockView{kind: blockThinking, secs: 0}, false, "▸ 已思考 0 秒"},
-		{blockView{kind: blockThinking, secs: -1}, false, "▸ 已思考"},
-		{blockView{kind: blockThinking, secs: -1}, true, "▾ 已思考"},
+		{blockView{kind: blockThinking, ms: 850}, false, "▸ 已思考 850 毫秒"},
+		{blockView{kind: blockThinking, ms: 1200}, true, "▾ 已思考 1.2 秒"},
+		{blockView{kind: blockThinking, ms: 1000}, false, "▸ 已思考 1.0 秒"},
+		{blockView{kind: blockThinking, ms: 0}, false, "▸ 已思考 0 毫秒"},
+		{blockView{kind: blockThinking, ms: -1}, false, "▸ 已思考"},
+		{blockView{kind: blockThinking, ms: -1}, true, "▾ 已思考"},
 		{blockView{kind: blockThinking, live: true}, false, "思考中…"},
 	}
 	for _, c := range cases {
@@ -41,7 +42,7 @@ func TestThinkCollapseDefault(t *testing.T) {
 	t.Parallel()
 	u := newFrameUI()
 	u.m.addMsg(blockThinking, "想一想", "a1")
-	u.m.blocks[0].secs = 5
+	u.m.blocks[0].ms = 5
 
 	gtx, _ := frameGtx(input.Source{})
 	u.transcript(gtx, 600, 400)

@@ -22,7 +22,7 @@ import (
 type blockView struct {
 	kind    blockKind
 	text    string
-	secs    int
+	ms      int
 	live    bool
 	md      []mdBlock
 	chip    *toolChip

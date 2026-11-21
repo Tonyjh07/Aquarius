@@ -192,16 +192,16 @@ func confirmEcho(ans port.ConfirmAnswer) string {
 	return i18n.T("ui.common.deny")
 }
 
-// flushThink 把进行中的思维链落为定稿思考块（D34/§15.3：定稿带耗时秒数）。
+// flushThink 把进行中的思维链落为定稿思考块（D34/§15.3：定稿带耗时毫秒）。
 func (m *model) flushThink() {
 	if m.think.Len() == 0 {
 		return
 	}
-	secs := 0
+	ms := 0
 	if !m.thinkAt.IsZero() {
-		secs = int(time.Since(m.thinkAt).Round(time.Second).Seconds())
+		ms = int(time.Since(m.thinkAt).Milliseconds())
 	}
-	b := block{kind: blockThinking, text: m.think.String(), secs: secs}
+	b := block{kind: blockThinking, text: m.think.String(), ms: ms}
 	m.blocks = append(m.blocks, b)
 	m.think.Reset()
 	m.thinkAt = time.Time{}
@@ -213,7 +213,7 @@ func (m *model) resetDraft() {
 	m.drafting = false
 }
 
-// add 追加定稿块。思考块缺省 secs=-1（回放无耗时；flushThink 自行填）。
+// add 追加定稿块。思考块缺省 ms=-1（回放无耗时；flushThink 自行填）。
 func (m *model) add(kind blockKind, text string) {
 	m.addMsg(kind, text, "")
 }
@@ -226,7 +226,7 @@ func (m *model) addMsg(kind blockKind, text string, id conversation.MessageID) {
 	}
 	b := block{kind: kind, text: text, id: id, part: -1}
 	if kind == blockThinking {
-		b.secs = -1
+		b.ms = -1
 	}
 	m.blocks = append(m.blocks, b)
 }

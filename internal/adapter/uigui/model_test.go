@@ -657,8 +657,8 @@ func TestHistoryReplayThinking(t *testing.T) {
 	if m.blocks[0].kind != blockThinking || !strings.Contains(m.blocks[0].text, "先想一想") {
 		t.Fatalf("blocks[0] = %+v, want 思考块", m.blocks[0])
 	}
-	if m.blocks[0].secs != -1 {
-		t.Fatalf("回放思考块 secs = %d, want -1（无耗时）", m.blocks[0].secs)
+	if m.blocks[0].ms != -1 {
+		t.Fatalf("回放思考块 ms = %d, want -1（无耗时）", m.blocks[0].ms)
 	}
 	if m.blocks[0].id != "a1" || m.blocks[1].id != "a1" {
 		t.Fatalf("块 ID = %q/%q, want 均盖 a1（D100② 回放直盖）", m.blocks[0].id, m.blocks[1].id)
@@ -720,8 +720,8 @@ func TestReasoningFlow(t *testing.T) {
 	if len(m.blocks) != 1 || m.blocks[0].kind != blockThinking {
 		t.Fatalf("blocks = %+v, want 思考块先行", m.blocks)
 	}
-	if got := m.blocks[0].secs; got < 1 || got > 3 {
-		t.Fatalf("思考耗时 secs = %d, want ≈2", got)
+	if got := m.blocks[0].ms; got < 1 || got > 3000 {
+		t.Fatalf("思考耗时 ms = %d, want ≈2000", got)
 	}
 	if !strings.Contains(m.draft.String(), "答案") {
 		t.Fatalf("draft = %q", m.draft.String())
