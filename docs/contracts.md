@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-21 @ 0eea18d -->
+<!-- docs-sync: 2026-11-21 @ c90aed2 -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -1775,6 +1775,15 @@ system（`characters.apply_post_history = false` 时不发）。因为 `Tail` �
 
 **交接与丢弃**：清单位于会话上，`/new`、`/switch`、`/load`、删除会话时随旧会话丢弃并留一行
 提示（「N 条待发消息未随会话带走」）；进程退出即丢。
+
+**时间感知（clock.mode，D317）**：模型不知道「现在几点、这一轮跑了多久」，长工具链里会自己猜。
+三档：`off` 不注入（**app 零值即 off**——直接构造 Agent 的路径与旧形状逐字节相同）；`live` 每次请求
+末尾一条时间戳 system（接在 Tail 之后——Anthropic 的顶层 system 折叠保序，落点即顶层 system 末尾），
+**装配时生成**（`buildRequestTracked` 每轮都跑，一轮 Turn 里每个工具轮拿到当下时刻）；`tree` 在 live
+之上给历史 user 消息末尾拼各自 `CreatedAt`（不新增字段、不落节点——修订自然得到新时刻、克隆保留
+原时刻）。戳三段：日期时刻（时区偏移 + 星期）、本 Turn 已跑多久、第二轮起附上一批工具各自耗时
+（`runTools` 批前后计时、`execTool` 逐个计时）。`/clock [mode]` 查看与切换，**不写配置**（会话级）。
+`latest_reminder` 角色路径已确认缓议（端点家族未定，D317 决策 7），接入前一律走尾部 system。
 
 ### 7.2 摄取 / 输出管线
 

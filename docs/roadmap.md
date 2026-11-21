@@ -1,5 +1,5 @@
 # Aquarius 里程碑进度（完成记录）
-<!-- docs-sync: 2026-11-21 @ 0eea18d -->
+<!-- docs-sync: 2026-11-21 @ c90aed2 -->
 
 > **定位**：本文件是**进度档案**——只记「已经完成了什么、对应哪条决策」，以及里程碑基线。
 > 只记过去，不写未来：**要做什么、按什么顺序**看 [plan.md](plan.md)。
@@ -136,6 +136,12 @@ README 加 `trash/`。
 `stella` / `tide`，fail-fast；`format` 固定 wav，`filter_markdown` 固定开；Style/Tags/Design 配了
 启动警告「已忽略」；超 10000 计费字符或 64 KiB 请求体明确报错，不切分拼接）；`provider: "deepseek"`
 借默认 provider 的端点与密钥（D222），一把 key 跑对话、搜索与语音。
+
+第七条是**Agent 的时间感知**（D317）：`clock.mode` 三档（off 不注入 / live 每次请求末尾一条时间戳
+system / tree 再给历史 user 消息补各自 `CreatedAt`）；戳装配时生成——每个工具轮拿到当下时刻，带
+时区偏移与星期，后接本 Turn 已跑多久与上一批工具各自耗时；`/clock` 会话内切换不写配置；配置缺键 =
+live、app 零值 = off（直接构造 Agent 的路径与旧形状逐字节相同）。`latest_reminder` 角色路径确认
+缓议（端点家族未定）。
 
 ---
 

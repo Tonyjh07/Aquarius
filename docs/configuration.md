@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-11-21 @ 0eea18d -->
+<!-- docs-sync: 2026-11-21 @ c90aed2 -->
 
 > 本文按当前实现写成；**字段语义以本文为准**，端口与权限规则见 [contracts.md](contracts.md)。
 > 配置**以 profile 为隔离单位**：
@@ -326,6 +326,12 @@ DECIDE_ENDPOINT=http://127.0.0.1:11434 go test ./internal/adapter/decide -run Te
   先判，那样拒绝档永远不会生效。
 - 本机跑法：Ollama ≥ 0.35.1 拉 `clef-flash`，那是含 joint head 的真模型；LM Studio 加载同一份
   GGUF 只会聊天、给不出概率（文件里没有那个头）。
+
+### clock（Agent 时间感知，D317）
+
+| 字段 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `clock.mode` | string | `live`（**键缺失 = live**） | 给请求注入时间感知：`off` = 不注入（请求体与从前一字节不差）；`live` = 每次请求末尾一条时间戳 system（含日期、时区偏移、星期、本 Turn 已跑多久、上一批工具耗时）；`tree` = live 之上再给历史 user 消息末尾拼各自时刻（不落盘，修订换新、克隆留旧）。词表外的值启动报错。会话内用 `/clock` 切换（不写回本键） |
 
 ### files（文档交给服务端解析）
 
