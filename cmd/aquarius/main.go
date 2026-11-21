@@ -272,6 +272,7 @@ type wiring struct {
 	// assemble 段填充
 	store      port.ConversationStore
 	sessionDir string // 会话目录：/doctor 逐个解码（D306；命令行入口只认路径，不装配存储）
+	trashDir   string // 会话回收站目录（D311）：/rmconv 的删除落点，启动时扫 30 天超龄条目
 	blobs      port.AttachmentStore
 	mem        *memoryfs.Store
 	merged     *mergedMemory
@@ -503,6 +504,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		Exporter:       w.exchange,                                                                // 会话进出：/export
 		Importer:       w.exchange,                                                                // 会话进出：/import
 		ExportsDir:     filepath.Join(w.profileDir, "exports"),                                    // 缺省落点（随 profile 隔离）
+		TrashDir:       w.trashDir,                                                                // 会话回收站（D311；assembleStores 装配并清扫）
 		AuditPath:      filepath.Join(w.profileDir, "audit.log"),                                  // /audit 读全量审计行
 		Version:        version,                                                                   // /diag 写进包头（-ldflags 注入）
 		Doctor:         healthProbe{w: w},                                                         // §7.14/D306：/doctor 的七项检查

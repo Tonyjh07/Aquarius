@@ -218,6 +218,9 @@ type SessionDeps struct {
 	// ExportsDir 导出缺省落点（`--path` 不给时用；装配根给 `<profile>/exports`）。
 	// 空 = 必须显式 --path，否则报未配置。
 	ExportsDir string
+	// TrashDir 会话回收站目录（`<profile>/trash`，D311）。空 = 未接入回收站：
+	// /rmconv 退回硬删（store.Remove），/trash 报未接入。
+	TrashDir string
 	// AuditPath 审计日志路径（`/audit`）。空 = 未接入审计日志，命令报错。
 	// 与 Plugins 分开传：插件面读的是同一份文件的插件那几行，审计面读全部 kind。
 	AuditPath string
@@ -273,6 +276,7 @@ type Session struct {
 	exporter    port.SessionExporter
 	importer    port.SessionImporter
 	exportsDir  string
+	trashDir    string
 	auditPath   string
 	version     string
 	characters  port.CharacterCatalog
@@ -389,6 +393,7 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		exporter:    d.Exporter,
 		importer:    d.Importer,
 		exportsDir:  d.ExportsDir,
+		trashDir:    d.TrashDir,
 		auditPath:   d.AuditPath,
 		version:     d.Version,
 		characters:  d.Characters,

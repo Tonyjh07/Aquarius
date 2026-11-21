@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-11-21 @ eb911ce -->
+<!-- docs-sync: 2026-11-21 @ 6e620c7 -->
 
 > **权威文档之一**：决策节于 2026-09 独立成篇，与 [contracts.md](contracts.md) 同级同权威
 > （该节 2026-10 从总设计文档删除，不再占节号）。编号**跨文件不变**
@@ -319,6 +319,7 @@
 | D308 | 用量分项：`conversation.Usage` 补 `CacheRead` / `CacheWrite` / `Thinking` / `Safety` 四项，零值 = 端点没报（展示面据此整行省略）；`InputTokens` 一律折成**总输入**（Anthropic 的 `input_tokens` 不含缓存那两段，由适配器相加），四家协议因此共用 `CacheRead / InputTokens` 一个命中率算法；四项落盘随节点走，`/usage`、`/cost` 与 TUI 状态行同步显示；**只记数不计费**，金额仍按全价折算 | 已完成（v0.9.0） |
 | D309 | 会话标题由模型顺带生成：`title.enabled`（键缺失 = 开）只让**首轮**请求带 `title: {enabled: true}`，标题从三套协议的收流末尾读回、一次给全；要不要问取三条交集：配置开关、`server_caps` 含 `title`、标题仍可自动改写（仍是默认标题或首条消息的摘录）。所以 `/title` 起过的名字永不被覆盖，也不加新字段；拿不到静默回落摘录，不是错误；端点 400 点名时记进 `unsupported_server_caps` 而不是 `unsupported_params` | 已完成（v0.9.0） |
 | D310 | 服务端读链接：一次形态切换而不是加一条工具声明。触发是 `web_fetch` 只抓到壳子（`tool.Result.Fallback`）且地址在本轮用户消息里；那一轮**只声明 `deepseek_read_url`、不带本地工具**（协议里两类工具不能共存），只切一次；服务端块原文整块存进 `conversation.PartServer`（正文加密在 `signature` 里，客户端解不开也改不得）并原样回传；用过服务端阅读链接的回复不能续写，`/respond` 本地就拒；只有 Messages 协议发声明 | 已完成（v0.9.0） |
+| D311 | 会话回收站：`/rmconv` 的删除改成整份文件集（含备份与会话记忆）改名移进 `<profile>/trash/`，删除时间就是主文件的改动时间（不建 meta 文件）；`/trash` 列出 / `restore` 还原回原 ID（撞占用 ID 拒绝）/ `empty` 清空（二次确认）；主文件改动超 30 天的条目启动时清掉、留一行日志，30 天写死不配；能力面是 app 侧消费方小接口，不进 `port.ConversationStore` | 已完成（v0.9.0） |
 
 ## 记录
 
@@ -2231,4 +2232,4 @@
   ② 回收站目录自身会被 `/doctor` 之外的体检口径漏掉（多一个「程序知道的目录」）；
   ③ 确认文案从「删除」改「移入回收站」，历史 golden 回放按新口径重录。
 
-- **状态**：进行中（v0.9.0）。
+- **状态**：已完成（v0.9.0）。

@@ -123,10 +123,18 @@ var enCmdTexts = map[string]string{
 	"cmd.rm.p1.desc": "node to delete (together with its whole subtree)",
 
 	// /rmconv
-	"cmd.rmconv.desc":    "Delete whole conversations (asks for confirmation; deleting the current one switches to another)",
+	"cmd.rmconv.desc":    "Delete whole conversations into the trash (asks for confirmation; deleting the current one switches to another)",
 	"cmd.rmconv.usage":   "<id prefix> [<id prefix>…]",
 	"cmd.rmconv.p1.name": "<id prefix>",
 	"cmd.rmconv.p1.desc": "unique prefix of each conversation to delete; several are allowed and one confirmation covers them all",
+
+	// /trash
+	"cmd.trash.desc":    "Conversation trash: no args lists it; restore puts conversations back; empty clears it (asks for confirmation)",
+	"cmd.trash.usage":   "[restore <id prefix>… | empty]",
+	"cmd.trash.p1.name": "<action>",
+	"cmd.trash.p1.desc": "restore puts conversations back (followed by ids, several allowed); empty clears the whole trash (asks for confirmation); no action just lists",
+	"cmd.trash.p2.name": "<id prefix>",
+	"cmd.trash.p2.desc": "unique prefix of each conversation to restore; several are allowed (restore only)",
 
 	// /compact
 	"cmd.compact.desc": "Compact the context (fold the earlier exchange into one summary)",

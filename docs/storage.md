@@ -1,5 +1,5 @@
 # 数据布局与备份
-<!-- docs-sync: 2026-11-21 @ eb911ce -->
+<!-- docs-sync: 2026-11-21 @ 6e620c7 -->
 
 > 本文与 `storejson` 的实际写入磁盘行为一致；**磁盘形状以本文为准**。
 > 原则：**本地优先、用户数据主权**——全部明文，卸载 = 删二进制 + 删目录，
@@ -55,7 +55,7 @@
 - **旧单文件 config**（目录化之前的布局）启动即显式报 `ErrLegacyConfig` 并给手工迁移步骤，
   **不做自动迁移**。
 - `conversations/` 是唯一会被 `List` 扫描的目录：只认 `.json` 后缀，`.bak` / `.tmp` 不参与列表。
-- **回收站 `trash/`**（D311）：`/rmconv` 把会话整份文件集改名移进来（主文件 + 各代 `.bak` +
+- **回收站 `trash/`**：`/rmconv` 把会话整份文件集改名移进来（主文件 + 各代 `.bak` +
   `.tmp` + 会话记忆），文件名不变；删除时间就是主文件的改动时间（移动不改 mtime）。
   `/trash` 可列、可还原（还原 = 反向改名回 `conversations/`）、可清空；主文件改动时间超过
   30 天的条目在启动时整份清掉。`trash/` 里没有第二种要维护的形状，不建 meta 记录文件。
@@ -152,7 +152,7 @@ Move-Item ~/.aquarius/profiles/<name>/conversations/<id>.json.bak `
           ~/.aquarius/profiles/<name>/conversations/<id>.json -Force
 ```
 
-- `/rmconv`（删除整个会话）把整份文件集移进回收站 `trash/`（D311）：还原用 `/trash restore`，
+- `/rmconv`（删除整个会话）把整份文件集移进回收站 `trash/`：还原用 `/trash restore`，
   彻底清掉用 `/trash empty`——想不留痕迹先清空再删，或直接删 `trash/` 里的文件；
   `<id>.memory.md` **不动**，删完会话那份会话记忆还在，需要时手工删。
 - `<id>.memory.md` 与会话 JSON 是两份独立文件：会话记忆只有 `/memory` 与 `memory_*`

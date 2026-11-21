@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-21 @ eb911ce -->
+<!-- docs-sync: 2026-11-21 @ 6e620c7 -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -404,8 +404,8 @@ API）；未实现或报错时 app 回落通用估算（③），并以服务端
 经自己的 `wireTree`/`wireNode` 映射成 JSON，读回时 `conversation.Restore()` 重建并自检——
 换一种存储介质只需实现这 4 个方法，领域与端口都不用动。
 
-**回收站是端口之外的可选能力**（D311）：`Remove` 的语义是「移进 `<profile>/trash/`」，
-移入 / 列出 / 还原三个动作由 app 侧定义消费方小接口，`storejson` 实现；回收站条目的类型
+**回收站是端口之外的可选能力**（D311）：命令面删除（`/rmconv`）的落点是 `<profile>/trash/`，
+移入 / 列出 / 还原 / 清空四个动作由 app 侧定义消费方小接口，`storejson` 实现；回收站条目的类型
 （`port.TrashEntry`：ID、标题、消息数、删除时间）定义在 port 供两边共用。没实现该接口的
 存储退回硬删——端口方法面不为单一后端扩容。
 

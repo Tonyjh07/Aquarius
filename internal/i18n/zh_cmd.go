@@ -125,10 +125,18 @@ var zhCmdTexts = map[string]string{
 	"cmd.rm.p1.desc": "要删的节点 id（连同整棵子树）",
 
 	// /rmconv
-	"cmd.rmconv.desc":    "删除整个会话（二次确认；删当前会话会自动切换到另一个）",
+	"cmd.rmconv.desc":    "删除整个会话（移进回收站；删当前会话会自动切换到另一个）",
 	"cmd.rmconv.usage":   "<id 前缀> [<id 前缀>…]",
 	"cmd.rmconv.p1.name": "<id 前缀>",
 	"cmd.rmconv.p1.desc": "要删的会话 id 唯一前缀；可给多个，一次确认全部删除",
+
+	// /trash
+	"cmd.trash.desc":    "会话回收站：无参列出；restore 还原回原 ID；empty 清空（二次确认）",
+	"cmd.trash.usage":   "[restore <id 前缀>… | empty]",
+	"cmd.trash.p1.name": "<动作>",
+	"cmd.trash.p1.desc": "restore 还原（后跟会话 id，可多个）；empty 清空整个回收站（二次确认）；缺省只列出",
+	"cmd.trash.p2.name": "<id 前缀>",
+	"cmd.trash.p2.desc": "要还原的会话 id 唯一前缀；可给多个（仅 restore 用）",
 
 	// /compact
 	"cmd.compact.desc": "触发上下文压缩（把较早的往来压成一条摘要）",

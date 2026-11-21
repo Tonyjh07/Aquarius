@@ -16,6 +16,7 @@ var enLogTexts = map[string]string{
 	"log.act.recorded_unsupported_cap": "recorded in {provider}'s unsupported_server_caps; not sent later",
 	"log.act.retry_next_start":         "the field is still sent first on the next start",
 	"log.act.continue":                 "carried on as usual; the conversation is unaffected",
+	"log.act.trash_kept_30d":           "deleted conversations stay in the trash for 30 days; /trash restores or empties early",
 	"log.act.voice_off":                "no playback this run; text is unaffected",
 	"log.act.voice_input_off":          "no speech input this run; typing is unaffected",
 	"log.act.use_whole_recording":      "recording as one segment this run; voice still works",
@@ -120,6 +121,8 @@ var enLogTexts = map[string]string{
 	"log.job.watch_report_failed":      "the report of watch {id} was not delivered: {err}",
 	"log.attach.gc_skipped":            "could not collect attachment references; nothing cleaned this run: {err}",
 	"log.attach.gc_failed":             "attachment cleanup failed: {err}",
+	"log.trash.swept":                  "trash sweep: removed {n} aged conversations",
+	"log.trash.sweep_failed":           "trash sweep failed: {err}",
 
 	// 技能、联网、密钥
 	"log.skill.entry_skipped":        "skill entry skipped: {text}",

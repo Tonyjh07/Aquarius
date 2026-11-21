@@ -54,6 +54,9 @@ func (w *wiring) assembleStores(ctx context.Context) error {
 	}
 	w.store = store
 	w.sessionDir = convDir // /doctor 的会话一项要逐个解码（List 静默跳过坏文件，D306）
+	// 回收站（D311）：/rmconv 的删除落点；启动清扫超 30 天的条目（失败只告警，与附件 GC 同一姿态）。
+	w.trashDir = filepath.Join(w.profileDir, "trash")
+	w.runTrashGC(ctx, store)
 	// 附件库（§4.2）：sha256 内容寻址存 <profile>/attachments（随 profile
 	// 隔离，D110 修订①）；启动 GC 按全量会话引用清扫（引用收集不完整则跳过，宁可漏清不误删）。
 	blobs, err := blobfs.New(filepath.Join(w.profileDir, "attachments"))

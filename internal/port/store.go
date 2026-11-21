@@ -22,6 +22,16 @@ type ConversationSummary struct {
 	Character string `json:"character,omitempty"`
 }
 
+// TrashEntry 回收站条目摘要（D311）：与 ConversationSummary 同用途，多一个删除时间。
+// 删除时间的取法（主文件改动时间）是各实现自己的事，端口只收发这个结果。
+type TrashEntry struct {
+	ID        conversation.ID `json:"id"`
+	Title     string          `json:"title"`
+	MessageN  int             `json:"message_n"`
+	UpdatedAt time.Time       `json:"updated_at"`
+	DeletedAt time.Time       `json:"deleted_at"`
+}
+
 // ConversationStore 会话存储端口：整树存取（一会话一 JSON），写前把旧文件轮成备份代
 // （代数由实现定，内置 storejson 默认保留 3 代、可配，D7/D254）。
 type ConversationStore interface {

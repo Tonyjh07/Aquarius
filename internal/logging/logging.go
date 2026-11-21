@@ -83,13 +83,14 @@ const (
 	Skill     Context = "skill"
 	Character Context = "character"
 	Session   Context = "session"
+	Trash     Context = "trash"
 	Perm      Context = "perm"
 	UI        Context = "ui"
 	Web       Context = "web"
 )
 
 // Contexts 全部已登记的上下文（测试按该清单校验枚举没被随手加宽）。
-var Contexts = []Context{Boot, Attach, LLM, Audio, Job, Delegate, Plugin, Skill, Character, Session, Perm, UI, Web}
+var Contexts = []Context{Boot, Attach, LLM, Audio, Job, Delegate, Plugin, Skill, Character, Session, Trash, Perm, UI, Web}
 
 const (
 	// defaultCap 单文件上限，超出轮转一代（规则同 audit.log）。

@@ -19,6 +19,7 @@ var zhLogTexts = map[string]string{
 	"log.act.recorded_unsupported_cap": "已记入 {provider} 的 unsupported_server_caps，后续不再发",
 	"log.act.retry_next_start":         "下次启动仍会先试发该字段",
 	"log.act.continue":                 "照常继续，不影响对话",
+	"log.act.trash_kept_30d":           "删除的会话在回收站保留 30 天，/trash 可提前还原或清空",
 	"log.act.voice_off":                "本次不播报，文字照常",
 	"log.act.voice_input_off":          "本次不识别语音，键入照常",
 	"log.act.use_whole_recording":      "本次按整段录音处理，语音照常可用",
@@ -123,6 +124,8 @@ var zhLogTexts = map[string]string{
 	"log.job.watch_report_failed":      "观察 {id} 的报告未送达：{err}",
 	"log.attach.gc_skipped":            "收集附件引用失败，本次不清理附件：{err}",
 	"log.attach.gc_failed":             "附件清扫失败：{err}",
+	"log.trash.swept":                  "回收站清扫：清掉 {n} 条超龄会话",
+	"log.trash.sweep_failed":           "回收站清扫失败：{err}",
 
 	// 技能、联网、密钥
 	"log.skill.entry_skipped":      "技能条目被跳过：{text}",

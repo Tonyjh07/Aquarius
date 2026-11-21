@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"time"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/storejson"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/logging"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -55,5 +57,27 @@ func (w *wiring) runAttachmentGC(ctx context.Context, store port.ConversationSto
 	if err := blobs.GC(ctx, keep); err != nil && ctx.Err() == nil {
 		w.note(logging.LevelWarn, logging.Attach, "log.attach.gc_failed",
 			"log.act.continue", "err", err)
+	}
+}
+
+// trashSweepAge 回收站条目的保留期（D311）：主文件改动时间超过 30 天的启动时清掉。
+// 写死不配——做成配置项等于邀请用户把这道缓冲关掉（决策第 5 条）。
+const trashSweepAge = 30 * 24 * time.Hour
+
+// runTrashGC 启动时清扫会话回收站（D311）：超龄条目整份清掉，真清掉了几条就留一行
+// 日志（验收口径）；失败只告警不阻断启动，与附件 GC 同一姿态。
+func (w *wiring) runTrashGC(ctx context.Context, store *storejson.Store) {
+	n, err := store.SweepTrash(ctx, w.trashDir, trashSweepAge)
+	if err != nil {
+		if ctx.Err() == nil { // 启动期 Ctrl+C 属正常收尾，不告警
+			w.note(logging.LevelWarn, logging.Trash, "log.trash.sweep_failed",
+				"log.act.continue", "err", err)
+		}
+		if n == 0 {
+			return
+		}
+	}
+	if n > 0 && ctx.Err() == nil {
+		w.log.Info(logging.Trash, "log.trash.swept", "log.act.trash_kept_30d", "n", n)
 	}
 }

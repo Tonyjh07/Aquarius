@@ -149,6 +149,9 @@ func (s *Session) execTitle(ctx context.Context, cmd port.Command) (string, erro
 // ——有一个解析不出就一个都不删（半截删除比不删更坏：用户不知道哪几个还在）。删到当前会话时
 // 自动继任（最近更新的其余会话、且跳过本批要删的；一个不剩则新建空会话）并清屏回放（D75/D81）。
 // 单个 ID 的用法与回执与今天逐字相同。
+//
+// 删除的落点是**回收站**（D311）：整份文件集改名移进 `<profile>/trash/`，30 天后启动清理；
+// 回收站未接入（store 不实现 TrashStore）时退回硬删（store.Remove）。
 func (s *Session) execRmconv(ctx context.Context, cmd port.Command) (string, error) {
 	if len(cmd.Args) == 0 {
 		return "", errors.New(i18n.T("usage.rmconv"))
@@ -185,13 +188,20 @@ func (s *Session) execRmconv(ctx context.Context, cmd port.Command) (string, err
 		return i18n.Tf("tree.rmconv.canceled_many", "n", len(targets)), nil
 	}
 	deletingCurrent := false
+	ts := s.trashStore()
 	for _, id := range targets {
 		if id == s.cur.ID {
 			deletingCurrent = true
 		}
 		// 删会话是 watcher 唯一该撤销的时刻（另一处是关停）：会话没了，报告无处可落。
 		s.cancelWatchersFor(id)
-		if err := s.store.Remove(ctx, id); err != nil {
+		var err error
+		if ts != nil { // D311：删除 = 移进回收站；未接入才硬删
+			err = ts.MoveToTrash(ctx, s.trashDir, id)
+		} else {
+			err = s.store.Remove(ctx, id)
+		}
+		if err != nil {
 			return "", wrapSession("err.delete_conversation", err)
 		}
 	}
