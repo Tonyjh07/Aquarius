@@ -31,6 +31,7 @@ can open and change it. Uninstalling means deleting the program and this directo
 | `conversations/` | Conversation trees, one JSON per conversation | program | Yes; that conversation is gone |
 | `conversations/<id>.json.bak` | Previous generation, 3 kept by default | program | Yes; no rollback left |
 | `conversations/<id>.memory.md` | Memory belonging to that one conversation | assistant | Yes |
+| `trash/` | Conversation trash: conversations removed with `/rmconv` land here whole, auto-cleaned after 30 days at startup | program | Holds deleted conversations; `/trash` restores them, gone for good once emptied |
 | `jobs/` | Background job logs, one `.log` per job | program | Yes |
 | `logs/` | Run logs, split by day and rotated | program | Yes |
 | `audit.log` | Audit trail: one JSON line per model and tool call | program | Yes; history is lost |

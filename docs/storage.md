@@ -1,5 +1,5 @@
 # 数据布局与备份
-<!-- docs-sync: 2026-11-17 @ 6ac7f95 -->
+<!-- docs-sync: 2026-11-21 @ eb911ce -->
 
 > 本文与 `storejson` 的实际写入磁盘行为一致；**磁盘形状以本文为准**。
 > 原则：**本地优先、用户数据主权**——全部明文，卸载 = 删二进制 + 删目录，
@@ -22,6 +22,9 @@
     │   ├── <id>.json.bak        # 第 1 代备份（`backup.keep` 默认 3 代，更旧的是 .bak.1、.bak.2…）
     │   ├── <id>.json.*.tmp      # 写入中的临时文件（随机名，正常结束不存在）
     │   └── <id>.memory.md       # 该会话的会话记忆（随会话就近存放）
+    ├── trash/                   # 会话回收站（/rmconv 删除的会话整份移进来；同名文件集 + 主文件 mtime 记删除时间）
+    │   ├── <id>.json            # 与 conversations/ 同形（含备份与 .tmp）
+    │   └── <id>.memory.md       # 会话记忆随会话一起移入
     ├── jobs/<任务号>.log        # 后台任务日志（命令头 + 输出 + 退出标记行；任务表只在内存）
     ├── logs/                    # 运行日志（按天切、超量轮转；与审计日志分开）
     ├── audit.log                # 审计日志（JSONL：每次模型调用/工具调用一行）
@@ -52,6 +55,10 @@
 - **旧单文件 config**（目录化之前的布局）启动即显式报 `ErrLegacyConfig` 并给手工迁移步骤，
   **不做自动迁移**。
 - `conversations/` 是唯一会被 `List` 扫描的目录：只认 `.json` 后缀，`.bak` / `.tmp` 不参与列表。
+- **回收站 `trash/`**（D311）：`/rmconv` 把会话整份文件集改名移进来（主文件 + 各代 `.bak` +
+  `.tmp` + 会话记忆），文件名不变；删除时间就是主文件的改动时间（移动不改 mtime）。
+  `/trash` 可列、可还原（还原 = 反向改名回 `conversations/`）、可清空；主文件改动时间超过
+  30 天的条目在启动时整份清掉。`trash/` 里没有第二种要维护的形状，不建 meta 记录文件。
 - 除 `config.json` / `memories.md` / `secrets.*` 外，其余按需创建（没有后台任务时就可能没有 `jobs/`）。
 - **外部代理转交的痕迹只有一份台账**：`<profile>/jobs/delegates.json` 记「哪件活、谁去做的、
   何时开始、停在哪一步」（与 `jobs/ledger.json` 同目录、同一套规则：起手记一条、终态只标状态、
@@ -145,7 +152,8 @@ Move-Item ~/.aquarius/profiles/<name>/conversations/<id>.json.bak `
           ~/.aquarius/profiles/<name>/conversations/<id>.json -Force
 ```
 
-- `/rmconv`（删除整个会话）会连**各代备份**与 `.tmp` 一起删——想留底先拷走；
+- `/rmconv`（删除整个会话）把整份文件集移进回收站 `trash/`（D311）：还原用 `/trash restore`，
+  彻底清掉用 `/trash empty`——想不留痕迹先清空再删，或直接删 `trash/` 里的文件；
   `<id>.memory.md` **不动**，删完会话那份会话记忆还在，需要时手工删。
 - `<id>.memory.md` 与会话 JSON 是两份独立文件：会话记忆只有 `/memory` 与 `memory_*`
   工具会写，删会话不联动。
