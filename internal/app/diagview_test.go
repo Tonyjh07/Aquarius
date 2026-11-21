@@ -53,7 +53,7 @@ func TestExecDiag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
-	s.agent.saveLast(anchor, req, marks)
+	s.agent.saveLast(anchor, "conv-1", req, marks)
 	s.agent.RecordWire(port.WireTrace{
 		Meta: port.WireMeta{
 			Proto: "openai-chat", Model: "m", Status: 200, End: port.WireEndDone,
@@ -138,7 +138,7 @@ func TestExecDiagWithoutAudit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
-	s.agent.saveLast(anchor, req, marks)
+	s.agent.saveLast(anchor, "conv-1", req, marks)
 	s.agent.RecordWire(port.WireTrace{Meta: port.WireMeta{Proto: "openai-chat", Status: 200}, Raw: []byte("data: x\n\n")})
 	if _, err := s.execDiag(ctx, port.Command{Name: "diag"}); err != nil {
 		t.Fatalf("execDiag: %v", err)

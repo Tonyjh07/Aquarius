@@ -139,6 +139,8 @@ type Agent struct {
 	// lastSnap 上一轮实发请求的留档（/context last，§7.1）：只留最近一份，覆盖式。
 	// 存在的原因只有一个——命令在回合间隙执行，拿不到「刚发出去的那份」。
 	lastSnap atomic.Pointer[contextSnapshot]
+	prevSnap atomic.Pointer[contextSnapshot] // D318：再上一份，前缀稳定性对比的参照
+	// prevSnap 再上一份实发快照（前缀稳定性对比的参照，D318）：saveLast 挪旧而来。
 	// wires 最近几次生成的原始响应留档（/raw，§7.1）：适配器收流结束时回调写入，
 	// 环形留 wireKeep 份，最旧在后。只在内存（`/raw full` 才写入磁盘）。
 	wires atomic.Pointer[wireLog]
@@ -340,7 +342,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 		}
 		// 留档在压缩之后：`/context last` 要看的是「真正发出去的那份」，
 		// 压缩前后的差异正是最容易被误读的地方。
-		a.saveLast(a.clock.Now(), req, marks)
+		a.saveLast(a.clock.Now(), c.ID, req, marks)
 		stream, err := a.llm.Generate(ctx, req)
 		if err != nil {
 			if ctx.Err() != nil {

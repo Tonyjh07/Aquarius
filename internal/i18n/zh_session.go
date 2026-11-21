@@ -88,6 +88,7 @@ var zhSessionTexts = map[string]string{
 	"session.ctx.params":                     "采样：{params}",
 	"session.ctx.src_live":                   "来源：下一轮将发送（本回合尚未提交的缓冲不在其中）",
 	"session.ctx.src_last":                   "来源：上一轮实际发送（含自动压缩后的形态）",
+	"session.ctx.stability":                  "前缀稳定性：与上一轮相比前 {chars} 字符未变（{pct}%）",
 	"session.ctx.msg_head":                   "[{n}] {role} · {tok} tok",
 	"session.ctx.msg_one":                    "[{n}] {role} · {title} · {tok} tok",
 	"session.ctx.part_tok":                   " · {tok} tok（{pct}%）",

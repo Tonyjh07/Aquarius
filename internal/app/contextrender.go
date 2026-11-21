@@ -34,6 +34,15 @@ func (a *Agent) renderContextSummary(rep ContextReport) string {
 	} else {
 		b.WriteString(i18n.T("session.ctx.src_live"))
 	}
+	if rep.StabilityOK {
+		pct := 0.0
+		if rep.StabilityTotal > 0 {
+			pct = 100 * float64(rep.StabilityChars) / float64(rep.StabilityTotal)
+		}
+		b.WriteByte('\n')
+		b.WriteString(i18n.Tf("session.ctx.stability", "chars", rep.StabilityChars,
+			"pct", fmt.Sprintf("%.1f", pct)))
+	}
 
 	// 按消息分组：先算出每条消息的小计与每条消息包含的段序，再逐条铺。分组是为了让
 	// 「首条 system 里并进了四段」读起来是一件事，而不是四条互不相干的 system。
@@ -182,6 +191,15 @@ func (a *Agent) renderContextDump(rep ContextReport) string {
 		b.WriteString(i18n.T("session.ctx.src_last"))
 	} else {
 		b.WriteString(i18n.T("session.ctx.src_live"))
+	}
+	if rep.StabilityOK {
+		pct := 0.0
+		if rep.StabilityTotal > 0 {
+			pct = 100 * float64(rep.StabilityChars) / float64(rep.StabilityTotal)
+		}
+		b.WriteByte('\n')
+		b.WriteString(i18n.Tf("session.ctx.stability", "chars", rep.StabilityChars,
+			"pct", fmt.Sprintf("%.1f", pct)))
 	}
 	b.WriteByte('\n')
 	b.WriteString(i18n.Tf("session.ctx.dump_total",

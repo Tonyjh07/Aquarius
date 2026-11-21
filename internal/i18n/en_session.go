@@ -84,6 +84,7 @@ var enSessionTexts = map[string]string{
 	"session.ctx.params":                     "Sampling: {params}",
 	"session.ctx.src_live":                   "Source: what the next round would send (the uncommitted buffer of this turn is not part of it)",
 	"session.ctx.src_last":                   "Source: what the last round actually sent (after automatic compaction)",
+	"session.ctx.stability":                  "Prefix stability: first {chars} characters unchanged since the previous round ({pct}%)",
 	"session.ctx.msg_head":                   "[{n}] {role} · {tok} tok",
 	"session.ctx.msg_one":                    "[{n}] {role} · {title} · {tok} tok",
 	"session.ctx.part_tok":                   " · {tok} tok ({pct}%)",

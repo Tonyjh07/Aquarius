@@ -62,11 +62,18 @@ type ContextReport struct {
 	// At 这份请求交出去的时刻（只有 Last 有值）。`/diag` 拿该时刻与原始返回的起点对齐，
 	// 三部分才落在同一次请求上；`/context` 不展示该时刻。
 	At time.Time
+	// StabilityOK/Chars/Total 前缀稳定性（D318）：与上一份快照比、跳过 clock 段的最长
+	// 公共前缀。OK=false（首次请求 / 跨会话）时概览不出这一行。
+	StabilityOK    bool
+	StabilityChars int
+	StabilityTotal int
 }
 
-// contextSnapshot 上一轮实发请求的留档（/context last）：只留一份，覆盖式。
+// contextSnapshot 实发请求的留档：last 是最近一份（/context last），prev 是再上一份
+// （前缀稳定性对比的参照，D318）。
 type contextSnapshot struct {
-	at    time.Time // 交出去的时刻（`/diag` 的对齐锚点）
+	at    time.Time       // 交出去的时刻（`/diag` 的对齐锚点）
+	conv  conversation.ID // 所属会话（跨会话不比，D318 决策 3）
 	req   port.GenerateRequest
 	marks []sectionMark
 }
@@ -83,7 +90,13 @@ func (a *Agent) ContextReport(ctx context.Context, c *conversation.Conversation)
 	if err != nil {
 		return ContextReport{}, fmt.Errorf("%s: %w", i18n.T("agent.err_assemble"), err)
 	}
-	return a.reportFrom(ctx, req, marks, false, time.Time{}), nil
+	rep := a.reportFrom(ctx, req, marks, false, time.Time{})
+	// live 的参照是 last（上一轮实发）：缓存命不命中看的是「下一轮请求的前缀」与
+	// 「上一轮请求的前缀」是否一致（D318）。
+	if cur := (&contextSnapshot{conv: c.ID, req: req, marks: marks}); a.lastSnap.Load() != nil {
+		rep.StabilityChars, rep.StabilityTotal, rep.StabilityOK = a.prefixStability(cur, a.lastSnap.Load())
+	}
+	return rep, nil
 }
 
 // LastContextReport 上一轮真正发出去的请求的视图（含自动压缩之后的形态）。
@@ -93,12 +106,73 @@ func (a *Agent) LastContextReport(ctx context.Context) (ContextReport, bool) {
 	if snap == nil {
 		return ContextReport{}, false
 	}
-	return a.reportFrom(ctx, snap.req, snap.marks, true, snap.at), true
+	rep := a.reportFrom(ctx, snap.req, snap.marks, true, snap.at)
+	rep.StabilityChars, rep.StabilityTotal, rep.StabilityOK = a.prefixStability(snap, a.prevSnap.Load())
+	return rep, true
 }
 
-// saveLast 留档一份实发请求（只留最近一份）。at 取交付时刻，`/diag` 靠该时刻与原始返回对齐。
-func (a *Agent) saveLast(at time.Time, req port.GenerateRequest, marks []sectionMark) {
-	a.lastSnap.Store(&contextSnapshot{at: at, req: req, marks: marks})
+// saveLast 留档一份实发请求：旧 last 挪进 prev（前缀稳定性对比的参照，D318），last 覆盖
+// ——`last` 的语义（最后一次实发）不变。at 取交付时刻，`/diag` 靠该时刻与原始返回对齐。
+func (a *Agent) saveLast(at time.Time, conv conversation.ID, req port.GenerateRequest, marks []sectionMark) {
+	if old := a.lastSnap.Load(); old != nil {
+		a.prevSnap.Store(old)
+	}
+	a.lastSnap.Store(&contextSnapshot{at: at, conv: conv, req: req, marks: marks})
+}
+
+// prefixStability 与上一份快照比前缀稳定性（D318）：两份都按 sectionMark 摊平、跳过 clock
+// 段（时间感知戳每轮必变），取段序拼接文本的最长公共前缀。prev 缺失或会话不同 → ok=false
+// （缺数据与数据差是两回事）。
+func (a *Agent) prefixStability(cur, prev *contextSnapshot) (chars, total int, ok bool) {
+	if prev == nil || cur == nil || prev.conv != cur.conv {
+		return 0, 0, false
+	}
+	aText, aOK := flattenSections(cur)
+	bText, bOK := flattenSections(prev)
+	if !aOK || !bOK {
+		return 0, 0, false
+	}
+	total = len([]rune(aText))
+	n := len([]rune(bText))
+	if n < total {
+		total = n // 公共前缀长不超过较短的串
+	}
+	i := 0
+	ar, br := []rune(aText), []rune(bText)
+	for i < total && ar[i] == br[i] {
+		i++
+	}
+	return i, len([]rune(aText)), true
+}
+
+// flattenSections 快照 → 段序拼接的文本（clock 段除外，D318）。marks 无效或为空 = 不可比。
+func flattenSections(snap *contextSnapshot) (string, bool) {
+	if snap == nil || len(snap.marks) == 0 {
+		return "", false
+	}
+	var b strings.Builder
+	for _, mk := range snap.marks {
+		if mk.Kind == labelClock {
+			continue // 时间感知戳每轮必变（D317），排除口径在决策里已排好
+		}
+		if mk.Msg < 0 || mk.Msg >= len(snap.req.Messages) {
+			continue
+		}
+		msg := snap.req.Messages[mk.Msg]
+		switch {
+		case mk.Part >= 0 && mk.Part < len(msg.Content):
+			t, _, _ := partText(msg.Content[mk.Part])
+			b.WriteString(strings.TrimLeft(t, "\n"))
+		case mk.Part < 0:
+			t, _, _ := partsText(msg.Content)
+			b.WriteString(strings.TrimLeft(t, "\n"))
+		}
+		b.WriteByte('\n')
+	}
+	if b.Len() == 0 {
+		return "", false
+	}
+	return b.String(), true
 }
 
 // reportFrom 把（请求, 标签）摊成视图。纯读取，不改请求。
