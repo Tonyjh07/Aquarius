@@ -444,6 +444,9 @@ type assembleOpts struct {
 	// files = 整条降级链都认 `files` 服务端能力（D315）。false 时 doc 分片一律照旧拍平
 	// 提取文本——引用块发给不认的端点同样是白白一次 400。
 	files bool
+	// clockTree = 时间感知 tree 档（D317）：历史 user 消息末尾拼各自 CreatedAt
+	// （装配期投影，不落节点——修订换新、克隆留旧）。
+	clockTree bool
 }
 
 // assembledMessage 装配产物里的一条消息，外加这条消息来自哪一类内容（/context 用，§7.1）。
@@ -471,6 +474,7 @@ const (
 	labelMemory = "memory"
 	labelNote   = "note"
 	labelTail   = "tail"
+	labelClock  = "clock" // D317：时间感知戳（尾部 system）
 )
 
 // assemblePath 把 Path() 装配为模型消息序列（§7.1，含 D21 水位裁剪）：
@@ -563,6 +567,13 @@ func assemblePathLabeled(ctx context.Context, path []conversation.Message, opt a
 			parts, err := assembleParts(ctx, m.Content, opt)
 			if err != nil {
 				return nil, err
+			}
+			// 时间感知 tree 档（D317）：user 消息末尾拼该节点的时刻（装配期投影，不落
+			// 节点）。零值时间（未提交的合成消息）不拼。
+			if opt.clockTree && !m.CreatedAt.IsZero() && len(parts) > 0 {
+				if lp := parts[len(parts)-1]; lp.Kind == port.PromptText {
+					parts[len(parts)-1].Text += userClockSuffix(m.CreatedAt)
+				}
 			}
 			out = append(out, assembledMessage{
 				Msg:   port.PromptMessage{Role: port.PromptUser, Content: parts},

@@ -107,6 +107,9 @@ type Config struct {
 	// Lore 世界书按关键词激活的规则（§5.17/D294）。Enabled 由配置面解析后显式传入
 	// （键缺失 = 开），零值 = 关。
 	Lore LoreOptions
+	// ClockMode 时间感知档位（D317）：off | live | tree。**零值 = off**——直接构造 Agent
+	// 的路径（测试与嵌入方）保持旧形状；装配根显式传解析后的档位（文件层缺键 = live）。
+	ClockMode string
 }
 
 // Agent Turn 循环：一次"模型生成 + 0..n 次工具执行"（§7.1，内核唯一的编排）。
@@ -121,6 +124,7 @@ type Agent struct {
 	cfg       Config
 	model     atomic.Value // string：当前生成模型（/model 热切换，D32；取代 cfg.Model 读取）
 	think     atomic.Pointer[bool]
+	clockMode atomic.Value // string：时间感知档位（clock.mode，D317；/clock 会话内切换）
 	effort    atomic.Value // string：推理档位（/effort 热切换，D34）
 	persona   *PersonaComposer
 	maxTurns  int
@@ -200,6 +204,9 @@ func New(d Deps, cfg Config) (*Agent, error) {
 	}
 	ag.model.Store(cfg.Model) // 生成模型初值（/model 热切换，D32）
 	ag.think.Store(cfg.Think) // 思考三态初值（nil = 键缺失，D34）
+	// 时间感知初值（D317）：cfg 零值 = off（直接构造 Agent 的路径保持旧行为）；
+	// 装配根传解析后的档位（off/live/tree）。
+	ag.clockMode.Store(cfg.ClockMode)
 	ag.effort.Store(cfg.ReasoningEffort)
 	if d.Characters != nil {
 		ag.lore = &loreSource{catalog: d.Characters}
@@ -222,6 +229,17 @@ func (a *Agent) LoreFacts() (depth, budget, maxCtx int) {
 
 // setThink 切换原生思考三态（/think，D34）：nil = 键缺失态。
 func (a *Agent) setThink(v *bool) { a.think.Store(v) }
+
+// clockState 当前时间感知档位（D317）：cfg 初值 + /clock 的会话内切换。
+func (a *Agent) clockState() string {
+	if v, ok := a.clockMode.Load().(string); ok && v != "" {
+		return v
+	}
+	return modeClockOff
+}
+
+// setClockMode /clock 的会话内切换（不写配置，D317 决策 5）。
+func (a *Agent) setClockMode(v string) { a.clockMode.Store(v) }
 
 // thinkState 取三态开关（wire 规则）：nil = 未显式设置（不发 enable_thinking）。
 func (a *Agent) thinkState() *bool { return a.think.Load() }
@@ -294,6 +312,7 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 
 	mid := a.ids.MessageID() // 段预分配关联 ID（一段一节点，D95 由 D273 修订）
 	buf := newTurnBuffer(mid)
+	buf.turnStart = a.clock.Now() // D317：时钟段的「已跑多久」从 Turn 起点起算
 
 	for turn := 0; turn < a.maxTurns; turn++ {
 		// 工具批之后、下一次请求之前：这里取引导（D273）。有引导才真的切——切了就是
@@ -501,8 +520,9 @@ func (a *Agent) UsageReport(ctx context.Context, c *conversation.Conversation) (
 
 // assembleOpts 本轮装配规则（§7.1）：附件库 + 思考回传（D42）+ 视觉能力（D173）。
 func (a *Agent) assembleOpts() assembleOpts {
+	m := a.clockState()
 	return assembleOpts{blobs: a.blobs, echoThinking: a.cfg.EchoThinking, vision: a.cfg.Caps.Vision,
-		files: a.cfg.ServerCaps.Files}
+		files: a.cfg.ServerCaps.Files, clockTree: m == modeClockTree}
 }
 
 // buildRequest 装配本轮请求：一条 system 提示 + Path 全量 + 记忆 + 工具清单（§7.1）。
@@ -551,6 +571,16 @@ func (a *Agent) buildRequestTracked(ctx context.Context, c *conversation.Convers
 			Content: []port.PromptPart{{Kind: port.PromptText, Text: c.Tail}},
 		})
 		marks = append(marks, sectionMark{Msg: len(msgs) - 1, Part: 0, Kind: labelTail})
+	}
+	// 时间感知（D317）：尾部 system，装配时生成——每个工具轮拿到当下时刻。off 不加消息
+	// 也不加 mark（请求体与旧形状逐字节相同，app 零值即 off）。
+	if m := a.clockState(); m != modeClockOff {
+		text := clockStamp(a.clock.Now(), buf, m)
+		msgs = append(msgs, port.PromptMessage{
+			Role:    port.PromptSystem,
+			Content: []port.PromptPart{{Kind: port.PromptText, Text: text}},
+		})
+		marks = append(marks, sectionMark{Msg: len(msgs) - 1, Part: 0, Kind: labelClock})
 	}
 
 	req := port.GenerateRequest{

@@ -102,6 +102,7 @@ var zhSessionTexts = map[string]string{
 	"session.ctx.kind.memory":                "记忆（{parts}）",
 	"session.ctx.kind.note":                  "常驻声明",
 	"session.ctx.kind.tail":                  "尾部指令",
+	"session.ctx.kind.clock":                 "时间感知",
 	"session.ctx.kind.user":                  "用户消息",
 	"session.ctx.kind.assistant":             "助手消息",
 	"session.ctx.kind.tool":                  "工具结果",

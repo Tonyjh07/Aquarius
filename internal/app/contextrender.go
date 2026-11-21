@@ -222,6 +222,8 @@ func contextKindKey(kind string) string {
 		return "session.ctx.kind.note"
 	case labelTail:
 		return "session.ctx.kind.tail"
+	case labelClock:
+		return "session.ctx.kind.clock"
 	case labelUser:
 		return "session.ctx.kind.user"
 	case labelAssistant:

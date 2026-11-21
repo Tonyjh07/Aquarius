@@ -21,6 +21,8 @@ var enRuntimeTexts = map[string]string{
 	"files.note.upload_failed": "server-side parsing failed for {name} ({err}); the local extraction is used",
 	"files.note.read_failed":   "could not read the original bytes of {name} ({err}); the local extraction is used",
 	"session.ingest.no_input":  "the text input is empty",
+	"clock.show":               "time perception mode: {mode} (switch with /clock off|live|tree; not persisted)",
+	"clock.switched":           "time perception switched to {mode} (this session only; startup restores the configured mode)",
 
 	// 多模态输入：认不出 kinds 时说明当前支持面
 	"session.ingest.no_ingestor": "no ingestor can handle {kind} input (files and clipboard are supported; voice input is not enabled yet)",

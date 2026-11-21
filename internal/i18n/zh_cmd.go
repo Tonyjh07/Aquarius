@@ -376,6 +376,10 @@ var zhCmdTexts = map[string]string{
 	"cmd.effort.usage":   "[档位]",
 	"cmd.effort.p1.name": "档位",
 	"cmd.effort.p1.desc": "off = 清除档位；是否真发由 /think 决定",
+	"cmd.clock.desc":     "时间感知档位 off|live|tree（会话内切换，不写配置）",
+	"cmd.clock.usage":    "[档位]",
+	"cmd.clock.p1.name":  "档位",
+	"cmd.clock.p1.desc":  "off = 不注入；live = 请求末尾一条时间戳；tree = 再给历史用户消息补各自时刻",
 
 	// /help
 	"cmd.help.desc": "列出全部命令（静态清单 + 已注册的动态命令）",

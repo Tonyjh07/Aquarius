@@ -136,6 +136,7 @@ var zhCmdConfigTexts = map[string]string{
 		`（键是代理的配置项名，值是代理列出的候选之一）`,
 
 	// config_audio.go：语音
+	"cmd.config.err.clock_mode":         `clock.mode 取值不认识: {value}（可选 off / live / tree）`,
 	"cmd.config.err.input_language":     `input.language="{lang}" 仅支持 auto | zh | en`,
 	"cmd.config.err.audio_kind":         `{name}.kind="{kind}" 不认识（支持 {kinds}）`,
 	"cmd.config.err.vad_threshold":      `audio.vad.threshold 需在 {min}–{max} 之间（当前 {v}）`,

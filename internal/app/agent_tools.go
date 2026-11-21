@@ -36,9 +36,13 @@ func (a *Agent) execTool(ctx context.Context, call tool.Call) (tool.Result, erro
 // 返回 error 仅限装配级错误（确认器缺失/报错、父 ctx 取消等基础设施故障），
 // 由 Run 在提交后快速失败上抛（§14：不让模型空转到 MaxTurns）。
 func (a *Agent) runTools(ctx context.Context, buf *turnBuffer, mid conversation.MessageID, calls []tool.Call) error {
+	var batch []toolDur // D317：批内逐工具计时，时钟段第二轮起带上
+	defer func() { buf.lastBatch = batch }()
 	for i, call := range calls {
 		_ = a.ui.Emit(ctx, port.ToolCallEvent{MessageID: mid, Call: call})
+		callStart := a.clock.Now()
 		res, err := a.execTool(ctx, call)
+		batch = append(batch, toolDur{name: call.Name, d: a.clock.Now().Sub(callStart)})
 		if err != nil {
 			// 装配级错误：先公告尚未呈现的调用，再连同本调用一并补失败结果
 			// （保持调用与结果一一配对，树下次装配仍可发送），随后中止本轮。

@@ -44,6 +44,9 @@ type fileConfig struct {
 	// Backup 备份轮转（D254）：会话树写盘前保留的 .bak 代数，用户可自定义。
 	Backup backupConfig `json:"backup"`
 	// Files 文档交给服务端解析（D315）：DeepSeek Files API 的 purpose 档与服务端保留时长。
+	// Clock Agent 时间感知（D317）：mode 三档，键缺失 = live。
+	Clock clockConfig `json:"clock"`
+	// Files 文档交给服务端解析（D315）：DeepSeek Files API 的 purpose 档与服务端保留时长。
 	Files filesConfig `json:"files"`
 	// Delegate 外部代理转交（§5.18/D244）：agents 是唯一事实源（不内置预设）。
 	Delegate delegateConfig `json:"delegate"`
@@ -67,6 +70,25 @@ type titleConfig struct {
 // titleEnabled 会话标题开关（D309）：键缺失 = 开。
 func (c *fileConfig) titleEnabled() bool {
 	return c.Title.Enabled == nil || *c.Title.Enabled
+}
+
+// clockConfig Agent 时间感知（D317）：mode 词表 off | live | tree，键缺失 = live。
+type clockConfig struct {
+	Mode *string `json:"mode,omitempty"`
+}
+
+// clockMode 时间感知档位（D317）：键缺失 = live（文件层缺省）；词表外启动报错。
+// app 零值 = off 是另一层语义（直接构造 Agent 的路径），由装配根显式传解析后的档位。
+func (c *fileConfig) clockMode() (string, error) {
+	if c.Clock.Mode == nil {
+		return "live", nil
+	}
+	switch m := strings.ToLower(strings.TrimSpace(*c.Clock.Mode)); m {
+	case "off", "live", "tree":
+		return m, nil
+	default:
+		return "", fmt.Errorf("%s", i18n.Tf("cmd.config.err.clock_mode", "value", *c.Clock.Mode))
+	}
 }
 
 // backupConfig 备份轮转（D254）。只有会话树用这段配置——密钥库按自己的单代规则走。

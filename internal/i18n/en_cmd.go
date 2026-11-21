@@ -375,6 +375,10 @@ var enCmdTexts = map[string]string{
 	"cmd.effort.usage":   "[level]",
 	"cmd.effort.p1.name": "level",
 	"cmd.effort.p1.desc": "off clears the level; /think decides whether it is actually sent",
+	"cmd.clock.desc":     "Time perception mode off|live|tree (session-scoped switch, not persisted)",
+	"cmd.clock.usage":    "[mode]",
+	"cmd.clock.p1.name":  "mode",
+	"cmd.clock.p1.desc":  "off = inject nothing; live = one timestamp at the end of each request; tree = also annotate historical user messages",
 
 	// /help
 	"cmd.help.desc": "List every command (the static catalog plus registered dynamic ones)",

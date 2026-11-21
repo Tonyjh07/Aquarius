@@ -51,6 +51,18 @@ type turnBuffer struct {
 	// retryURLs 建议改走服务端阅读的地址（D310）：web_fetch 只抓到壳子时由工具填进来，
 	// 下一次请求构造时消费一次即清——不留在缓冲里，否则每轮都会把请求切成服务端形态。
 	retryURLs []string
+	// turnStart 本 Turn 的起点（D317）：时钟段的「已跑多久」从它起算；cutSegment 换缓冲时
+	// 由调用方重置（新段 = 新的一段计时）。
+	turnStart time.Time
+	// lastBatch 上一批工具的耗时（D316→D317 口径：模型要的是「刚才那步等了多久」）；
+	// runTools 收批时写入，时钟段第二轮起带上。零值 = 还没跑过工具。
+	lastBatch []toolDur
+}
+
+// toolDur 一个工具的耗时（时钟段用，D317）。
+type toolDur struct {
+	name string
+	d    time.Duration
 }
 
 // newTurnBuffer 以 Turn 预分配的关联 ID 建缓冲。

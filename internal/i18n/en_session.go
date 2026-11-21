@@ -98,6 +98,7 @@ var enSessionTexts = map[string]string{
 	"session.ctx.kind.memory":                "memory ({parts})",
 	"session.ctx.kind.note":                  "standing note",
 	"session.ctx.kind.tail":                  "trailing instruction",
+	"session.ctx.kind.clock":                 "time perception",
 	"session.ctx.kind.user":                  "user message",
 	"session.ctx.kind.assistant":             "assistant message",
 	"session.ctx.kind.tool":                  "tool result",

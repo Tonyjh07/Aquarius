@@ -442,6 +442,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	// D204：采样参数快照（整链缺省 + 逐模型覆盖）——Agent 每轮按模型名现取。
 	w.sampling.Store(w.cfg.Model.samplingTables())
+	clockMode, err := w.cfg.clockMode() // D317：词表外启动报错
+	if err != nil {
+		return fatal(stderr, "%v", err)
+	}
 	agent, err := app.New(
 		app.Deps{
 			LLM: gen, UI: w.presenter, IDs: ids, Clock: systemClock{},
@@ -457,6 +461,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			// D307/D309：服务端能力同样取与；端点不认就不发那一项，免得首轮撞 400。
 			ServerCaps:   w.cfg.Model.chainServerCaps(),
 			TitleEnabled: w.cfg.titleEnabled(),   // D309：标题由模型顺带生成（键缺失 = 开）
+			ClockMode:    clockMode,              // D317：装配根显式传（app 零值 = off）
 			ReadURL:      w.cfg.readURLEnabled(), // D310：本地抓不到正文时改由服务端读
 			// §5.17/D247：会话尾部指令（卡的 post_history_instructions）是否随每轮装配发出。
 			ApplyPostHistory: w.cfg.applyPostHistory(),

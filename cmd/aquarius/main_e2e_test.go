@@ -92,8 +92,10 @@ func TestRunFullTextConversation(t *testing.T) {
 	if first.Model != "script-model" || !first.Stream {
 		t.Fatalf("request = %+v", first)
 	}
-	if len(first.Messages) != 2 || first.Messages[0].Role != "system" || first.Messages[1].Role != "user" {
-		t.Fatalf("messages = %+v, want system+user", first.Messages)
+	// clock.mode 缺键 = live（D317）：请求末尾多一条时间戳 system。
+	if len(first.Messages) != 3 || first.Messages[0].Role != "system" ||
+		first.Messages[1].Role != "user" || first.Messages[2].Role != "system" {
+		t.Fatalf("messages = %+v, want system+user+clock(system)", first.Messages)
 	}
 
 	// 第二轮：恢复同一会话，历史进上下文；/list 可见标题。

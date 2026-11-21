@@ -25,6 +25,8 @@ var zhRuntimeTexts = map[string]string{
 	"files.note.upload_failed": "文件「{name}」交给服务端解析失败（{err}），已用本地提取",
 	"files.note.read_failed":   "文件「{name}」读不出原文（{err}），已用本地提取",
 	"session.ingest.no_input":  "文本输入为空",
+	"clock.show":               "时间感知档位: {mode}（/clock off|live|tree 切换，不写配置）",
+	"clock.switched":           "时间感知已切到 {mode}（会话内生效，重启回到配置档位）",
 
 	// 多模态输入：认不出输入类型时说明当前支持面
 	"session.ingest.no_ingestor": "没有可用的摄取器处理 {kind} 输入（当前支持文件与剪贴板；语音输入尚未启用）",

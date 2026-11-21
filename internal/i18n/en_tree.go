@@ -18,6 +18,7 @@ var enTreeTexts = map[string]string{
 	"usage.reparent":  "Usage: /reparent <id> <new parent> (both accept a unique prefix; ids read as in /branch) | /reparent --undo",
 	"usage.tag":       "Usage: /tag <conversation> [name...] (tags it; several allowed) | --rm <name> (removes a tag, repeatable) | /tag <conversation> (shows the current tags)",
 	"usage.pin":       "Usage: /pin <conversation> (pin / unpin, as a toggle)",
+	"usage.clock":     "Usage: /clock (show the current mode) | /clock off|live|tree (session-scoped switch, not persisted)",
 	"usage.list":      "Usage: /list (list conversations) | /list --tag <name> (list only those carrying all the tags, repeatable)",
 
 	// /new、/list、/switch

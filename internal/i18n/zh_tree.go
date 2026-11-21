@@ -19,6 +19,7 @@ var zhTreeTexts = map[string]string{
 	"usage.reparent":  "用法: /reparent <id> <新父>（都支持唯一前缀，id 与 /branch 里看到的一致）｜/reparent --undo",
 	"usage.tag":       "用法: /tag <会话> [名...]（打标签，可多个）｜--rm <名>（删标签，可重复）｜/tag <会话>（显示现有标签）",
 	"usage.pin":       "用法: /pin <会话>（置顶 / 取消置顶，切换）",
+	"usage.clock":     "用法: /clock（查看当前档）｜/clock off|live|tree（会话内切换，不写配置）",
 	"usage.list":      "用法: /list（列出会话）｜/list --tag <名>（只列同时带这些标签的会话，可重复）",
 
 	// /new、/list、/switch
