@@ -405,7 +405,11 @@ type UI struct {
 	// 抬手手势态（D72 logoRight 同款）；bubbleMenu = 命中后组好的菜单上下文原子槽
 	// （过线程到 shell 呈现）；bubbleMenuHook = 测试注入口（headless 不投 shell）。
 	// 仅事件循环 goroutine 读写（bubbleMenu 原子槽除外）。
-	bubbleRects    []bubbleHit
+	bubbleRects []bubbleHit
+	// pressHitBI 右键按下时命中的块序（D324）：流式期间几何逐帧上移，按下时记下
+	// 「按的是哪个气泡」，抬起时按块序找回目标；-1 = 按下点不在任何气泡上。
+	pressHitBI int
+
 	bubbleRight    bubbleRight
 	bubbleMenu     atomic.Pointer[bubbleMenuCtx]
 	bubbleMenuHook func(*bubbleMenuCtx)
@@ -571,6 +575,7 @@ func newUI(opts Options, window bool) *UI {
 	u.editor.Submit = true                     // Enter → SubmitEvent（Shift+Enter 仍换行，§15.2）
 	u.editor.SingleLine = true
 	u.followTail = true   // 初始尾随贴底（新内容贴输入栏，§15.1）
+	u.pressHitBI = -1     // 右键未按：无命中（D324）
 	u.alpha = semiAlpha   // 整窗不透明度起点（D62：随首帧 ULW 生效；D50 动画在其上插值）
 	u.focusPending = true // 初始焦点入输入栏（D63：编辑器不再每帧回投常驻焦点）
 	u.wins = newWinHost(nil)

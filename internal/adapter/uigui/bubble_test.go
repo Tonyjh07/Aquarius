@@ -141,7 +141,33 @@ func TestBubbleRightGesture(t *testing.T) {
 	}
 }
 
-// TestBubbleCtxCopy D92/D97 复制规则：有选区 → 选区文本优先（D91 后果⑤：副键留
+// TestBubbleRightDuringStream 刚发出去的消息右键没反应（D324 修正的回归）：按下后
+// 流式增量把底锚内容整体上移，抬起时按下点在最新几何里已不在原气泡下——命中在
+// **按下消费帧**解析（记下命中的块序），抬起时按块序找回目标；位移在阈值内照常弹菜单。
+func TestBubbleRightDuringStream(t *testing.T) {
+	t.Parallel()
+	u := newFrameUI()
+	u.m.addMsg(blockUser, "问", "u1")
+	q := new(input.Router)
+	n := 0
+	var got *bubbleMenuCtx
+	u.bubbleMenuHook = func(c *bubbleMenuCtx) { n++; got = c }
+	bubbleFrame(q, u)
+	pos := rectCenterF(u.bubbleRects[0].rect)
+	q.Queue(pointer.Event{Kind: pointer.Press, Position: pos, Buttons: pointer.ButtonSecondary, PointerID: 7, Source: pointer.Mouse})
+	bubbleFrame(q, u)
+	// 流式增量：内容增高，user 气泡在抬起帧的几何里已不在 pos 之下。
+	u.m.drafting = true
+	u.m.draft.WriteString("回答\n很多行\n很多行")
+	bubbleFrame(q, u)
+	q.Queue(pointer.Event{Kind: pointer.Release, Position: pos, PointerID: 7, Source: pointer.Mouse})
+	bubbleFrame(q, u)
+	if n != 1 || got == nil || got.id != "u1" {
+		t.Fatalf("请求 = %d 次, ctx = %+v, want 流式位移后仍命中原气泡", n, got)
+	}
+}
+
+// TestBubbleRightCtxCopy D92/D97 复制规则：有选区 → 选区文本优先（D91 后果⑤：副键留
 // 菜单复用选态）；无选区 → 整条气泡渲染文本（assistant 复合行按键区间拼接）；
 // edit 预填 user/assistant 均携带（D97 开放助手编辑）。
 func TestBubbleCtxCopy(t *testing.T) {

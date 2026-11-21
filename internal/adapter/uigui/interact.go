@@ -334,8 +334,10 @@ type bubbleRight struct {
 func (r *bubbleRight) add(ops *op.Ops) { event.Op(ops, r) }
 
 // update 消费手势事件：同指针按下后抬起返回 (按下点, 抬起点, true)；移出后抬起、
-// Cancel、非右键按下均解除武装（位置门控的气泡级判定在消费方——hitBubble 比对）。
-func (r *bubbleRight) update(q input.Source) (press, release image.Point, fire bool) {
+// Cancel、非右键按下均解除武装。pressed = 本批消费到了一次右键按下（携带按下点）——
+// 消费方要在**按下那一刻**的气泡几何里解析命中（D324：流式期间几何逐帧上移，抬起时
+// 再解析按下点已经对不上用户看到的气泡）。
+func (r *bubbleRight) update(q input.Source) (press, release image.Point, fire, pressed bool) {
 	for {
 		ev, ok := q.Event(pointer.Filter{
 			Target: r,
@@ -353,6 +355,8 @@ func (r *bubbleRight) update(q input.Source) (press, release image.Point, fire b
 			r.armed = e.Buttons.Contain(pointer.ButtonSecondary)
 			r.pid = e.PointerID
 			r.press = e.Position.Round()
+			press = r.press // 按下消费帧也要拿到按下点（D324：此刻解析命中）
+			pressed = r.armed
 		case pointer.Release:
 			if r.armed && e.PointerID == r.pid {
 				release = e.Position.Round()
@@ -364,7 +368,7 @@ func (r *bubbleRight) update(q input.Source) (press, release image.Point, fire b
 			r.armed = false
 		}
 	}
-	return press, release, fire
+	return press, release, fire, pressed
 }
 
 // hitBubble 点落在哪个气泡底板（D92）；未命中返回 -1。
@@ -377,19 +381,40 @@ func (u *UI) hitBubble(p image.Point) int {
 	return -1
 }
 
+// menuSlopDp 右键「原位」的位移阈值：按下→抬起位移小于此值视为原位（D324 修正）。
+const menuSlopDp = 10
+
 // updateBubbleRight 气泡右键消费者（D92）：命中解析 + 菜单请求。bubbleRects 一帧
-// 陈旧（与 keyRects 同规则）——命中基于上一帧气泡矩形；「原位」= 按下与抬起落在
-// 同一气泡（抬起位置定菜单位）。
+// 陈旧（与 keyRects 同规则）——命中基于上一帧气泡矩形。
+//
+// 命中在**按下消费帧**解析（D324 修正）：Turn 流式期间每条增量都让底锚内容整体上移
+// 一截，抬起时按下点在最新几何里往往已落在别的行（甚至落在无登记的流式草稿上）——
+// 旧判定（按下降点与抬起点各自命中同一气泡）会把这种正常右键误判成「跨气泡」，刚
+// 发出去的消息右键常常没反应。按下时记下命中气泡的**块序**，抬起时在当前矩形表里
+// 按块序找回目标（气泡还在就弹，按下的那一刻看到的是哪个气泡就弹哪个）；拖走超过
+// 阈值不弹（防误触的初衷不变）。
 func (u *UI) updateBubbleRight(gtx layout.Context) {
-	press, release, fire := u.bubbleRight.update(gtx.Source)
+	press, release, fire, pressed := u.bubbleRight.update(gtx.Source)
+	if pressed {
+		// 按下消费帧的矩形 ≈ 用户按下时看到的几何：此刻记块序，抬起时按它找回。
+		u.pressHitBI = -1
+		if pi := u.hitBubble(press); pi >= 0 {
+			u.pressHitBI = u.bubbleRects[pi].bi
+		}
+		return
+	}
 	if !fire {
 		return
 	}
-	pi := u.hitBubble(press)
-	if pi < 0 || pi != u.hitBubble(release) {
-		return
+	if d := release.Sub(press); d.X*d.X+d.Y*d.Y > menuSlopDp*menuSlopDp {
+		return // 按下后拖走了：不弹
 	}
-	u.requestBubbleMenu(u.bubbleCtx(pi))
+	for i := range u.bubbleRects {
+		if u.bubbleRects[i].bi == u.pressHitBI { // 块还在：弹出该气泡的菜单
+			u.requestBubbleMenu(u.bubbleCtx(i))
+			return
+		}
+	}
 }
 
 // bubbleMenuCtx 气泡右键菜单上下文（D92/D97/D99/D100/D107）：Gio 线程命中时组好、
