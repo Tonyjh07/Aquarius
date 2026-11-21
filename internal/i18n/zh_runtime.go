@@ -15,14 +15,16 @@ var zhRuntimeTexts = map[string]string{
 	"session.deps.clock_missing": "Clock 依赖为空",
 
 	// 会话生命周期：错误链短语（`session: <短语>: <原因>`）
-	"session.err.init":        "初始化会话",
-	"session.err.persona":     "写入 persona 首节点",
-	"session.err.append":      "追加消息",
-	"session.err.restore":     "恢复会话 {id}",
-	"session.err.ingest":      "摄取输入",
-	"session.save.note":       "（且保存失败: {save}）",
-	"session.ingest.empty":    "摄取未产出内容",
-	"session.ingest.no_input": "文本输入为空",
+	"session.err.init":         "初始化会话",
+	"session.err.persona":      "写入 persona 首节点",
+	"session.err.append":       "追加消息",
+	"session.err.restore":      "恢复会话 {id}",
+	"session.err.ingest":       "摄取输入",
+	"session.save.note":        "（且保存失败: {save}）",
+	"session.ingest.empty":     "摄取未产出内容",
+	"files.note.upload_failed": "文件「{name}」交给服务端解析失败（{err}），已用本地提取",
+	"files.note.read_failed":   "文件「{name}」读不出原文（{err}），已用本地提取",
+	"session.ingest.no_input":  "文本输入为空",
 
 	// 多模态输入：认不出输入类型时说明当前支持面
 	"session.ingest.no_ingestor": "没有可用的摄取器处理 {kind} 输入（当前支持文件与剪贴板；语音输入尚未启用）",

@@ -251,6 +251,15 @@ func anthropicMessages(msgs []port.PromptMessage, wn *wireNames) ([]anthropicInb
 func anthropicBlocks(parts []port.PromptPart, allowImage bool) ([]any, error) {
 	out := make([]any, 0, len(parts))
 	for _, p := range parts {
+		if p.Kind == port.PromptFile {
+			// 服务端文件引用（D315）本协议不发：回落发本地提取文本（Text 由装配层照带）。
+			// file_id 引用块是 DeepSeek chat-completions 家族的能力，Anthropic 兼容变体
+			// 要另带 beta 头，未实现（D315 决策 4）。
+			if p.Text != "" {
+				out = append(out, anthropicText{Type: "text", Text: p.Text})
+			}
+			continue
+		}
 		if p.Kind == port.PromptImage {
 			if !allowImage {
 				return nil, errors.New(i18n.T("llm.err.role_image"))

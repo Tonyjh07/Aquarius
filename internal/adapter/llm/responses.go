@@ -212,6 +212,13 @@ func responsesItems(m port.PromptMessage, wn *wireNames) ([]any, error) {
 func responsesContents(parts []port.PromptPart, textType string, allowImage bool) ([]any, error) {
 	out := make([]any, 0, len(parts))
 	for _, p := range parts {
+		if p.Kind == port.PromptFile {
+			// 服务端文件引用（D315）本协议不发：回落发本地提取文本（Text 由装配层照带）。
+			if p.Text != "" {
+				out = append(out, responsesTextPart{Type: textType, Text: p.Text})
+			}
+			continue
+		}
 		if p.Kind == port.PromptImage {
 			if !allowImage {
 				return nil, errors.New(i18n.T("llm.err.role_image"))

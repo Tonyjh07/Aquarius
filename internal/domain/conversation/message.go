@@ -74,6 +74,10 @@ type Part struct {
 	// 识别归属——跨 provider 复制会话时不会把 A 家的签名发给 B 家。空 = 该协议无回传要求
 	// （Chat Completions 现状：只回文本，无签名）。
 	Signature string `json:"signature,omitempty"`
+	// FileID Kind=doc：服务端文件解析的引用（D315，DeepSeek Files API）。摄取时上传拿到，
+	// 装配时按 `files` 能力位决定发引用块还是照旧拍平 Text——Text 永远保留（本地提取照存），
+	// 降级回落与 /context、导出都以它为准。空 = 未上传（纯本地）。
+	FileID string `json:"file_id,omitempty"`
 }
 
 // Role 消息角色（D95：RoleTool 删除——工具调用/结果内嵌为 assistant 的 PartTool 分片）。

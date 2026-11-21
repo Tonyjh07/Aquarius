@@ -50,9 +50,11 @@ type chatMessage struct {
 }
 
 type chatContentPart struct {
-	Type     string        `json:"type"` // "text" | "image_url"
+	Type     string        `json:"type"` // "text" | "image_url" | "file"（D315）
 	Text     string        `json:"text,omitempty"`
 	ImageURL *chatImageURL `json:"image_url,omitempty"`
+	// FileID 服务端文件引用（D315，DeepSeek Files API）：上传时解析好的 file_id 原样带上。
+	FileID string `json:"file_id,omitempty"`
 }
 
 type chatImageURL struct {
@@ -178,20 +180,28 @@ func toChatMessage(m port.PromptMessage, omit map[string]bool, wn *wireNames) (c
 	return cm, nil
 }
 
-// buildContent 全文本 → 纯字符串（最大兼容）；含图片 → content 分片数组（data URL 内联）。
+// buildContent 全文本 → 纯字符串（最大兼容）；含图片或服务端文件引用 → content 分片数组
+// （图片 data URL 内联，文件引用带 file_id，D315）。能力门控在装配层（opt.files），
+// wire 只按分片种类忠实映射。
 func buildContent(parts []port.PromptPart) (any, error) {
-	hasImage := false
+	hasImage, hasFile := false, false
 	for _, p := range parts {
-		if p.Kind == port.PromptImage {
+		switch p.Kind {
+		case port.PromptImage:
 			hasImage = true
-			break
+		case port.PromptFile:
+			hasFile = true
 		}
 	}
-	if !hasImage {
+	if !hasImage && !hasFile {
 		return flattenText(parts), nil
 	}
 	out := make([]chatContentPart, 0, len(parts))
 	for _, p := range parts {
+		if p.Kind == port.PromptFile {
+			out = append(out, chatContentPart{Type: "file", FileID: p.FileID})
+			continue
+		}
 		if p.Kind == port.PromptImage {
 			if len(p.Data) == 0 {
 				return nil, errors.New(i18n.T("llm.err.image_no_data"))

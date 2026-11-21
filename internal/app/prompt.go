@@ -441,6 +441,9 @@ type assembleOpts struct {
 	// vision = 当前模型接受图片输入。false 时图片一律降级为文字占位并写明原因，
 	// 而不是把图片块发给一个不收图片的端点（那是一次没有出路的 400）。
 	vision bool
+	// files = 整条降级链都认 `files` 服务端能力（D315）。false 时 doc 分片一律照旧拍平
+	// 提取文本——引用块发给不认的端点同样是白白一次 400。
+	files bool
 }
 
 // assembledMessage 装配产物里的一条消息，外加这条消息来自哪一类内容（/context 用，§7.1）。
@@ -821,6 +824,14 @@ func assembleParts(ctx context.Context, parts []conversation.Part, opt assembleO
 			}
 		case conversation.PartDoc:
 			// 文档正文在入库时已提取并截断存进节点，装配时直接取这段文本（D10）。
+			// 分片带了 file_id 且能力位生效 → 发引用块（D315）；不生效照旧拍平——
+			// 「能力关 = 请求体与从前逐字节相同」是验收线，Text 永远是回落的事实来源。
+			if p.FileID != "" && opt.files {
+				// Text 照带：openai-chat 只发引用块，其余协议（不认 file 分片）回落发文本——
+				// 两边各取所需，装配层不按协议分支。
+				out = append(out, port.PromptPart{Kind: port.PromptFile, FileID: p.FileID, Text: p.Text})
+				continue
+			}
 			if p.Text != "" {
 				out = append(out, port.PromptPart{Kind: port.PromptText, Text: p.Text})
 			}

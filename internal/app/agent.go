@@ -501,7 +501,8 @@ func (a *Agent) UsageReport(ctx context.Context, c *conversation.Conversation) (
 
 // assembleOpts 本轮装配规则（§7.1）：附件库 + 思考回传（D42）+ 视觉能力（D173）。
 func (a *Agent) assembleOpts() assembleOpts {
-	return assembleOpts{blobs: a.blobs, echoThinking: a.cfg.EchoThinking, vision: a.cfg.Caps.Vision}
+	return assembleOpts{blobs: a.blobs, echoThinking: a.cfg.EchoThinking, vision: a.cfg.Caps.Vision,
+		files: a.cfg.ServerCaps.Files}
 }
 
 // buildRequest 装配本轮请求：一条 system 提示 + Path 全量 + 记忆 + 工具清单（§7.1）。

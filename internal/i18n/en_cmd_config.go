@@ -10,6 +10,9 @@ var enCmdConfigTexts = map[string]string{
 		` (add it on the Model Services page, or fill in the endpoint and key directly)`,
 	"cmd.config.endpoint.missing": `Endpoint not configured` +
 		` (set base_url, or reference an entry in model.providers)`,
+	// files (D315 server-side file parsing)
+	"cmd.config.files.bad_purpose": `unknown files.purpose value: {value} (text_recognition / rich_layout_recognition / empty to disable)`,
+	"cmd.config.files.bad_ttl":     `files.ttl_seconds out of range: {value} (0 = keep forever; otherwise 3600-2592000)`,
 	"cmd.config.secret.name_missing": `The secret: reference in api_key has no environment ` +
 		`variable name (currently "{ref}"); use plain text instead`,
 

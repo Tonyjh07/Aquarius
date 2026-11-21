@@ -18,6 +18,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/characterfs"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/decorate"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/exchange"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/filesapi"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/gptsovitstts"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/ingestmic"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/jobproc"
@@ -276,6 +277,35 @@ func llmProtocol(kind string) llm.Protocol {
 
 // buildLLMs 为 primary 与 fallback[] 各建一具客户端（含 fallback——避免降级时才
 // 发现缺配置），填好降级链条目与逐 provider 计数器表。
+// filesUploader 服务端文件解析上传口（D315）：purpose 空（显式关闭）或还没配 provider =
+// nil（未接入，文档只走本地解析）。端点与密钥**借当前 primary provider**（D222 借用模式；
+// provider/base_url 重启生效，构造期固化即可——能力位也是装配期取交的）。不做重试。
+// filesUploader2 purpose/ttl 与上传口一并返回（SessionDeps 三个字段一次填齐；D315）。
+func (w *wiring) filesUploader2(ctx context.Context) (port.FileUploader, string, time.Duration, error) {
+	purpose, ttl, err := w.cfg.filesOptions()
+	if err != nil {
+		return nil, "", 0, err
+	}
+	up, err := w.filesUploader(ctx)
+	return up, purpose, ttl, err
+}
+
+func (w *wiring) filesUploader(ctx context.Context) (port.FileUploader, error) {
+	purpose, _, err := w.cfg.filesOptions()
+	if err != nil {
+		return nil, err
+	}
+	if purpose == "" || w.primary == nil {
+		return nil, nil
+	}
+	key, err := resolveAPIKey(ctx, "files", w.primary.keyRefs()[0], w.secrets, w.warnPlaintext)
+	if err != nil {
+		return nil, err
+	}
+	base := strings.TrimSuffix(w.primary.BaseURL, "/")
+	return filesapi.New(filesapi.Options{BaseURL: base, APIKey: key}), nil
+}
+
 func (w *wiring) buildLLMs() error {
 	// 空态（D278 决策 3）：一条 provider 都没有时没有客户端可建。装一个只会回
 	// 「还没有配置模型提供商」的占位实现，让后面的装配链照常走完——发消息时才报因，

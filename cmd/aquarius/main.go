@@ -476,42 +476,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// 插件宿主（M4，§6.4）：面刷新先备好（host 与 session 互依，经闭包后绑定）。
 	w.newPluginHost(ctx, tc.confirmer)
 
-	w.sess, err = app.NewSession(ctx, app.SessionDeps{
-		Store:          w.store,
-		Agent:          agent,
-		IDs:            ids,
-		Clock:          systemClock{},
-		Persona:        sessPersona, // D144/S7：新建会话时展开人格模块树（@env.date = 创建当天）
-		Level:          w.level,
-		SandboxPath:    w.sandboxDir,
-		Perms:          permSettings{w: w},
-		Confirmer:      tc.confirmer,
-		Jobs:           w.jobs,
-		Delegate:       w.delegates, // §5.18：/delegate list|kill（派活是模型经工具做的）
-		Watches:        w.watcher,
-		Skills:         w.skills,             // D201：/skill 与 skill 工具同一份清单
-		SkillAdmin:     skillsAdminApp{w: w}, // D202：/skill install|remove|update
-		WatchCancel:    watchCancel{w: w},    // D262：删除会话与关停时撤两个轮询器；切换不撤
-		Log:            w.logFrom,
-		Ingestors:      []port.Ingestor{ingestfile.New(w.blobs), ingestclip.New(w.blobs), w.mic},
-		UI:             w.presenter,
-		Wake:           w.uiWake, // D264：带回执的注入自己敲一下，等排空才返回
-		Memories:       memoryOpener{w: w},
-		Plugins:        hostAdmin{h: w.host, auditPath: filepath.Join(w.profileDir, "audit.log")}, // S6/D143：Logs 读审计日志 tail
-		Models:         modelCatalog{w: w},                                                        // D32/D173/D174：/model 读侧 + 切换 + 探测
-		ModelSwitch:    modelCatalog{w: w},                                                        // D32：/model 切换写回
-		Thinking:       thinkSettings{w: w},                                                       // D34：/think 与 /effort 写回
-		Exporter:       w.exchange,                                                                // 会话进出：/export
-		Importer:       w.exchange,                                                                // 会话进出：/import
-		ExportsDir:     filepath.Join(w.profileDir, "exports"),                                    // 缺省落点（随 profile 隔离）
-		TrashDir:       w.trashDir,                                                                // 会话回收站（D311；assembleStores 装配并清扫）
-		AuditPath:      filepath.Join(w.profileDir, "audit.log"),                                  // /audit 读全量审计行
-		Version:        version,                                                                   // /diag 写进包头（-ldflags 注入）
-		Doctor:         healthProbe{w: w},                                                         // §7.14/D306：/doctor 的七项检查
-		Characters:     w.characters,                                                              // 角色卡只读清单（/character，§5.17）
-		CharacterAdmin: w.characters,                                                              // §5.17：/character import|remove
-		CharacterOpts:  w.cfg.characterOptions(),                                                  // §5.17：三处默认开的投影开关由 config 解析
-	})
+	// 服务端文件解析（D315）：purpose 空 = 未接入；词表/区间错启动即报。
+	filesUp, filesPurpose, filesTTL, ferr := w.filesUploader2(ctx)
+	if ferr != nil {
+		return fatal(stderr, "%v", ferr)
+	}
+	w.sess, err = app.NewSession(ctx, w.sessionDeps(agent, ids, sessPersona, tc.confirmer,
+		filesUp, filesPurpose, filesTTL, version))
 	if err != nil {
 		if ctx.Err() != nil {
 			return 0 // 启动期 Ctrl+C：ctx 早于主循环创建，按取消干净收尾（不报错退出）
@@ -567,8 +538,56 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return w.mainLoop(ctx)
 }
 
+// sessionDeps Session 的装配参数（§7.3）：字面量收进来一处——run() 已在长度上限，
+// 新字段（如 D315 的 files 三件）在这里加，别再拉长 run。
+func (w *wiring) sessionDeps(agent *app.Agent, ids port.IDGen, sessPersona *app.PersonaComposer,
+	confirmer port.Confirmer, filesUp port.FileUploader, filesPurpose string, filesTTL time.Duration,
+	version string) app.SessionDeps {
+	return app.SessionDeps{
+		Store:          w.store,
+		Agent:          agent,
+		IDs:            ids,
+		Clock:          systemClock{},
+		Persona:        sessPersona,
+		Level:          w.level,
+		SandboxPath:    w.sandboxDir,
+		Perms:          permSettings{w: w},
+		Confirmer:      confirmer,
+		Jobs:           w.jobs,
+		Delegate:       w.delegates,
+		Watches:        w.watcher,
+		Skills:         w.skills,
+		SkillAdmin:     skillsAdminApp{w: w},
+		WatchCancel:    watchCancel{w: w},
+		Log:            w.logFrom,
+		Ingestors:      []port.Ingestor{ingestfile.New(w.blobs), ingestclip.New(w.blobs), w.mic},
+		UI:             w.presenter,
+		Wake:           w.uiWake,
+		Memories:       memoryOpener{w: w},
+		Plugins:        hostAdmin{h: w.host, auditPath: filepath.Join(w.profileDir, "audit.log")},
+		Models:         modelCatalog{w: w},
+		ModelSwitch:    modelCatalog{w: w},
+		Thinking:       thinkSettings{w: w},
+		Exporter:       w.exchange,
+		Importer:       w.exchange,
+		ExportsDir:     filepath.Join(w.profileDir, "exports"),
+		TrashDir:       w.trashDir,
+		AuditPath:      filepath.Join(w.profileDir, "audit.log"),
+		Version:        version,
+		Doctor:         healthProbe{w: w},
+		Characters:     w.characters,
+		CharacterAdmin: w.characters,
+		CharacterOpts:  w.cfg.characterOptions(),
+		Blobs:          w.blobs,      // D315：上传时按引用取原文
+		Files:          filesUp,      // nil = 未接入，文档只走本地解析
+		FilesPurpose:   filesPurpose, // 空 = 不上传
+		FilesTTL:       filesTTL,     // 0 = 服务端不过期
+	}
+}
+
 // mainLoop 是 run() 的主输入循环。抽出来只搬循环本身：装配期登记的 defer 全部留在
 // run() 里，退出时的后进先出顺序（先停前端、再收后台观察者）才不会被打乱。
+
 func (w *wiring) mainLoop(ctx context.Context) int {
 	var replay string
 	for {

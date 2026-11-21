@@ -327,7 +327,7 @@ DECIDE_ENDPOINT=http://127.0.0.1:11434 go test ./internal/adapter/decide -run Te
 - 本机跑法：Ollama ≥ 0.35.1 拉 `clef-flash`，那是含 joint head 的真模型；LM Studio 加载同一份
   GGUF 只会聊天、给不出概率（文件里没有那个头）。
 
-### files（文档交给服务端解析，D315）
+### files（文档交给服务端解析）
 
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|

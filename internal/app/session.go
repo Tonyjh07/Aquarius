@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
@@ -195,8 +196,7 @@ type SessionDeps struct {
 	UI port.Presenter
 	// Wake 空闲唤醒（D264）：带送达回执的注入（InjectAndWait）入队后自己敲一下，
 	// 否则用户一直不输入就永远等不到排空。装配根接到 UI 的空闲唤醒通道；nil = 不敲。
-	Wake func()
-	// Memories 用系统编辑器打开记忆文档（D24，装配根实现）；返回实际打开路径。
+	Wake func() // Memories 用系统编辑器打开记忆文档（D24，装配根实现）；返回实际打开路径。
 	// nil 时 /memory 报"未配置编辑器"。
 	Memories MemoryOpener
 	// Plugins 插件管理面（/plugin，§7.3 / M4）；nil 时 /plugin 报"未配置"。
@@ -237,6 +237,16 @@ type SessionDeps struct {
 	// CharacterOpts 角色卡投影开关（§5.17）；由 config `characters` 段填充。零值 = 三开关全关，
 	// 装配根负责把缺省（常驻世界书默认开）解析成显式值后再传进来。
 	CharacterOpts CharacterOptions
+	// Files 文档交给服务端解析的上传口（D315，DeepSeek Files API）；nil = 未接入，
+	// 文档只走本地解析。装配根在 `files.purpose` 非空时构造（purpose/ttl 一并传）。
+	Files port.FileUploader
+	// FilesPurpose 上传用途档（`text_recognition` / `rich_layout_recognition`；D315）。
+	// 空 = 不上传。空串配合 Files nil：两道闸都要开才走服务端。
+	FilesPurpose string
+	// FilesTTL 服务端保留时长（`files.ttl_seconds`）；0 = 不过期。
+	FilesTTL time.Duration
+	// Blobs 附件库读侧：上传时按 doc 分片的引用取原文。nil = 不能上传（跳过服务端解析）。
+	Blobs port.AttachmentStore
 }
 
 // CommandHandler 动态命令处理器（§6.1 扩展点 #4 / §7.3 MCP prompts）：
@@ -282,6 +292,11 @@ type Session struct {
 	characters  port.CharacterCatalog
 	charAdmin   CharacterAdmin
 	charOpts    CharacterOptions
+	// files 服务端文件解析上传口（D315）；nil = 未接入。purpose/ttl 来自 config `files` 段。
+	files        port.FileUploader
+	filesPurpose string
+	filesTTL     time.Duration
+	blobs        port.AttachmentStore
 	// doctor 体检面（§7.14/D306）；nil 时 /doctor 报未接入。
 	doctor HealthProbe
 	cur    *conversation.Conversation
@@ -365,44 +380,48 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		persona = NewPersonaComposer(PromptSpec{}, RuntimeEnv{}, nil)
 	}
 	s := &Session{
-		store:       d.Store,
-		agent:       d.Agent,
-		ids:         d.IDs,
-		clock:       d.Clock,
-		persona:     persona,
-		level:       level,
-		sandboxPath: d.SandboxPath,
-		perms:       d.Perms,
-		confirmer:   d.Confirmer,
-		jobs:        d.Jobs,
-		delegates:   d.Delegate,
-		watches:     d.Watches,
-		skills:      d.Skills,
-		skillAdmin:  d.SkillAdmin,
-		watchCancel: d.WatchCancel,
-		log:         d.Log,
-		ingestors:   d.Ingestors,
-		ui:          d.UI,
-		wake:        d.Wake,
-		memories:    d.Memories,
-		plugins:     d.Plugins,
-		models:      d.Models,
-		modelSwitch: d.ModelSwitch,
-		prober:      d.Prober,
-		thinking:    d.Thinking,
-		exporter:    d.Exporter,
-		importer:    d.Importer,
-		exportsDir:  d.ExportsDir,
-		trashDir:    d.TrashDir,
-		auditPath:   d.AuditPath,
-		version:     d.Version,
-		characters:  d.Characters,
-		charAdmin:   d.CharacterAdmin,
-		charOpts:    d.CharacterOpts,
-		doctor:      d.Doctor,
-		dynamic:     map[string]CommandHandler{},
-		injectCh:    make(chan pendingInjection, injectQueueCap),
-		pendingQ:    newPendingList(),
+		store:        d.Store,
+		agent:        d.Agent,
+		ids:          d.IDs,
+		clock:        d.Clock,
+		persona:      persona,
+		level:        level,
+		sandboxPath:  d.SandboxPath,
+		perms:        d.Perms,
+		confirmer:    d.Confirmer,
+		jobs:         d.Jobs,
+		delegates:    d.Delegate,
+		watches:      d.Watches,
+		skills:       d.Skills,
+		skillAdmin:   d.SkillAdmin,
+		watchCancel:  d.WatchCancel,
+		log:          d.Log,
+		ingestors:    d.Ingestors,
+		ui:           d.UI,
+		wake:         d.Wake,
+		memories:     d.Memories,
+		plugins:      d.Plugins,
+		models:       d.Models,
+		modelSwitch:  d.ModelSwitch,
+		prober:       d.Prober,
+		thinking:     d.Thinking,
+		exporter:     d.Exporter,
+		importer:     d.Importer,
+		exportsDir:   d.ExportsDir,
+		trashDir:     d.TrashDir,
+		auditPath:    d.AuditPath,
+		version:      d.Version,
+		characters:   d.Characters,
+		charAdmin:    d.CharacterAdmin,
+		charOpts:     d.CharacterOpts,
+		files:        d.Files,
+		filesPurpose: d.FilesPurpose,
+		filesTTL:     d.FilesTTL,
+		blobs:        d.Blobs,
+		doctor:       d.Doctor,
+		dynamic:      map[string]CommandHandler{},
+		injectCh:     make(chan pendingInjection, injectQueueCap),
+		pendingQ:     newPendingList(),
 	}
 	// 待发清单归会话持有，Agent 只借用待发清单做两个取用边界（§7.1.2 轮内 / 轮末）。
 	d.Agent.setPending(s.pendingQ)
@@ -623,6 +642,14 @@ func (s *Session) ingestAndRun(ctx context.Context, raw port.RawInput) (string, 
 	}
 	if len(parts) == 0 {
 		return "", errors.New("session: " + i18n.T("session.ingest.empty"))
+	}
+	// 服务端文件解析（D315）：门控未开 = 原样返回，请求路径一字节不变。
+	if n := s.uploadDocs(ctx, parts); n != "" {
+		if note != "" {
+			note += i18n.T("ingest.join") + n
+		} else {
+			note = n
+		}
 	}
 	s.maybeSetTitle(ingestTitle(parts))
 	s.agent.noteDateChange(ctx, s.cur) // 跨日期时先补一条日期说明（D292）

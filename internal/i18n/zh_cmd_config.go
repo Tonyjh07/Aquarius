@@ -16,6 +16,10 @@ var zhCmdConfigTexts = map[string]string{
 	"cmd.config.endpoint.from_missing": `引用的服务 "{from}" 不在 model.providers 内` +
 		`（先在「模型服务」页添加，或直接填端点与密钥）`,
 	"cmd.config.endpoint.missing": `端点未配置（填 base_url，或引用一个 model.providers 里的条目）`,
+
+	// files（D315 服务端文件解析）
+	"cmd.config.files.bad_purpose": `files.purpose 取值不认识: {value}（可选 text_recognition / rich_layout_recognition / 空串关闭）`,
+	"cmd.config.files.bad_ttl":     `files.ttl_seconds 越界: {value}（0 = 不过期；非 0 要在 3600–2592000 之间）`,
 	"cmd.config.secret.name_missing": `api_key 的 secret: 引用缺少环境变量名，当前为 "{ref}"` +
 		`（或改为直接填明文）`,
 

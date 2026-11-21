@@ -11,14 +11,16 @@ var enRuntimeTexts = map[string]string{
 	"session.deps.clock_missing": "the Clock dependency is nil",
 
 	// 会话生命周期：错误链短语（`session: <短语>: <原因>`）
-	"session.err.init":        "initialize the conversation",
-	"session.err.persona":     "write the persona root message",
-	"session.err.append":      "append the message",
-	"session.err.restore":     "restore conversation {id}",
-	"session.err.ingest":      "ingest the input",
-	"session.save.note":       " (and saving failed: {save})",
-	"session.ingest.empty":    "the ingest produced no content",
-	"session.ingest.no_input": "the text input is empty",
+	"session.err.init":         "initialize the conversation",
+	"session.err.persona":      "write the persona root message",
+	"session.err.append":       "append the message",
+	"session.err.restore":      "restore conversation {id}",
+	"session.err.ingest":       "ingest the input",
+	"session.save.note":        " (and saving failed: {save})",
+	"session.ingest.empty":     "the ingest produced no content",
+	"files.note.upload_failed": "server-side parsing failed for {name} ({err}); the local extraction is used",
+	"files.note.read_failed":   "could not read the original bytes of {name} ({err}); the local extraction is used",
+	"session.ingest.no_input":  "the text input is empty",
 
 	// 多模态输入：认不出 kinds 时说明当前支持面
 	"session.ingest.no_ingestor": "no ingestor can handle {kind} input (files and clipboard are supported; voice input is not enabled yet)",

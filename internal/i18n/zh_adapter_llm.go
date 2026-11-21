@@ -212,4 +212,15 @@ var zhAdapterLLMTexts = map[string]string{
 
 	// ---- asr/tts 共用的响应体摘要 ----
 	"audio.detail.empty_body": "（空响应体）",
+
+	// ---- filesapi（D315 服务端文件解析）----
+	"files.err.purpose_empty": "files.purpose 未配置，不能上传",
+	"files.err.build_request": "files: 编码请求",
+	"files.err.upload_failed": "文件上传失败",
+	"files.err.bad_response":  "files: 响应体不是合法 JSON",
+	"files.err.rejected":      "服务端拒绝",
+	"files.err.bad_status":    "files: 服务端返回异常状态",
+	"files.limit.doc":         "文档",
+	"files.limit.image":       "图片",
+	"files.err.too_large":     "文件超过{what}上限：{size} 字节 > {limit} 字节（服务端解析不收，已放弃上传）",
 }

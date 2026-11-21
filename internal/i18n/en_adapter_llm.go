@@ -212,4 +212,15 @@ var enAdapterLLMTexts = map[string]string{
 
 	// ---- asr/tts 共用的响应体摘要 ----
 	"audio.detail.empty_body": "(empty response body)",
+
+	// ---- filesapi (D315 server-side file parsing) ----
+	"files.err.purpose_empty": "files.purpose is not configured; cannot upload",
+	"files.err.build_request": "files: encoding request",
+	"files.err.upload_failed": "file upload failed",
+	"files.err.bad_response":  "files: response body is not valid JSON",
+	"files.err.rejected":      "rejected by the server",
+	"files.err.bad_status":    "files: unexpected status from the server",
+	"files.limit.doc":         "document",
+	"files.limit.image":       "image",
+	"files.err.too_large":     "file exceeds the {what} limit: {size} bytes > {limit} bytes (the server-side parser will not take it; upload aborted)",
 }

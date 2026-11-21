@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/app"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
@@ -42,6 +43,8 @@ type fileConfig struct {
 	Characters charactersConfig `json:"characters"`
 	// Backup 备份轮转（D254）：会话树写盘前保留的 .bak 代数，用户可自定义。
 	Backup backupConfig `json:"backup"`
+	// Files 文档交给服务端解析（D315）：DeepSeek Files API 的 purpose 档与服务端保留时长。
+	Files filesConfig `json:"files"`
 	// Delegate 外部代理转交（§5.18/D244）：agents 是唯一事实源（不内置预设）。
 	Delegate delegateConfig `json:"delegate"`
 	// Decide 模型辅助决策（D290）：实验性，模板不生成这一段。
@@ -144,6 +147,39 @@ func (c *fileConfig) characterOptions() app.CharacterOptions {
 		InjectConstantBook: on(c.Characters.InjectConstantBook),
 		InjectExamples:     on(c.Characters.InjectExamples),
 	}
+}
+
+// applyPostHistory 会话尾部指令开关（§5.17/D247）：键缺失 = 发。
+// filesOptions 服务端文件解析的用途档与保留时长（D315）：词表与区间在这里把守，
+// 越界启动报错（写错一个词等于那项能力永远不发，运行期看不出来）。
+// purpose 空 = 显式关闭（不上传）；ttl_seconds 0 = 不过期，合法区间 3600–2592000。
+func (c *fileConfig) filesOptions() (purpose string, ttl time.Duration, err error) {
+	purpose = "text_recognition" // 键缺失 = 缺省档
+	if c.Files.Purpose != nil {
+		purpose = strings.TrimSpace(*c.Files.Purpose)
+	}
+	switch purpose {
+	case "", "text_recognition", "rich_layout_recognition":
+	default:
+		return "", 0, fmt.Errorf("%s", i18n.Tf("cmd.config.files.bad_purpose", "value", purpose))
+	}
+	sec := c.Files.TTLSeconds
+	if sec < 0 || sec > 2592000 || (sec > 0 && sec < 3600) {
+		return "", 0, fmt.Errorf("%s", i18n.Tf("cmd.config.files.bad_ttl", "value", sec))
+	}
+	if sec > 0 {
+		ttl = time.Duration(sec) * time.Second
+	}
+	return purpose, ttl, nil
+}
+
+// filesConfig 服务端文件解析（D315）。
+type filesConfig struct {
+	// Purpose 上传用途档：text_recognition（键缺失 = 该档）｜ rich_layout_recognition｜
+	// 空串 = 显式关闭。指针区分「没写」与「写了空串」。
+	Purpose *string `json:"purpose"`
+	// TTLSeconds 服务端保留秒数：0 = 不过期；1 小时 ~ 30 天。
+	TTLSeconds int `json:"ttl_seconds"`
 }
 
 // applyPostHistory 会话尾部指令开关（§5.17/D247）：键缺失 = 发。

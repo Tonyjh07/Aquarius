@@ -19,6 +19,10 @@ type PromptKind string
 const (
 	PromptText  PromptKind = "text"
 	PromptImage PromptKind = "image"
+	// PromptFile 服务端文件引用（D315）：doc 分片带 file_id 且 `files` 能力位生效时发出，
+	// openai-chat wire 映射为 `{"type":"file","file_id":…}`；其余协议不认这一档，装配层
+	// 直接不给（降级走 PromptText）。
+	PromptFile PromptKind = "file"
 )
 
 // PromptRole 装配后一条消息的角色（D227）。tool 仅为 **API 投影概念**（OpenAI 协议要求
@@ -39,6 +43,8 @@ type PromptPart struct {
 	Text string
 	MIME string
 	Data []byte // 图片字节，由应用层经 AttachmentStore 解析后内联
+	// FileID Kind=file：服务端文件解析引用（D315）；Text 空着（引用块不重复带正文）。
+	FileID string
 }
 
 // PromptMessage 装配后的一条模型消息。
