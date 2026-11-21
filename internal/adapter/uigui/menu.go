@@ -42,6 +42,7 @@ const (
 	cmdNodeGoto    = 132 // 转到（/goto <id> + 唤出主窗；D139：原为单击动作）
 	cmdNodeSummary = 133 // 插入摘要（D152：弹本窗小卡，卡片两钮分别投 /summary <id> [文本]）
 	cmdNodeRespond = 134 // 生成响应（/respond <id> + 唤出主窗：从所选节点继续生成）
+	cmdNodeFork    = 135 // 分叉新会话（/fork <id> + 唤出主窗：把该节点子树摘成新会话，D312）
 )
 
 // nodeActKind 图侧动作槽的动作种类（D132：菜单分发在 shell 线程，而剪贴板写入必须在 Gio
@@ -133,20 +134,23 @@ func bubbleMenuBase(kind blockKind) []menuIt {
 	}
 }
 
-// bubbleMenuItems 主界面气泡右键菜单（D183）：基础项组 + 「生成响应」。
-// canRespond=false（该块拿不到所源节点 ID——实时草稿、工具 chip）时不给这一项：
-// `/respond` 要一个节点 ID 才有意义，菜单不该给一个点了没反应的动作。
-// 位置与图侧一致（气泡项组末尾），两处菜单里「生成响应」的落点因此统一。
+// bubbleMenuItems 主界面气泡右键菜单（D183）：基础项组 + 「生成响应」 + 「分叉新会话」。
+// canRespond=false（该块拿不到所源节点 ID——实时草稿、工具 chip）时不给这两项：
+// `/respond` 与 `/fork` 都要一个节点 ID 才有意义，菜单不该给一个点了没反应的动作。
+// 位置与图侧一致（气泡项组末尾），两处菜单里的落点因此统一。
 func bubbleMenuItems(kind blockKind, canRespond bool) []menuIt {
 	items := bubbleMenuBase(kind)
 	if !canRespond {
 		return items
 	}
-	return append(items, menuIt{id: cmdNodeRespond, label: i18n.T("ui.menu.respond")})
+	return append(items,
+		menuIt{id: cmdNodeRespond, label: i18n.T("ui.menu.respond")},
+		menuIt{id: cmdNodeFork, label: i18n.T("ui.menu.fork")})
 }
 
 // nodeMenuItems 图（消息管理面）节点右键菜单（D132）：**主界面气泡菜单那一套** +
-// 「生成响应」 + 分隔线 + 图侧四项（复制 ID / 插入摘要 / 删除该节点及子树 / 转到；D139
+// 「生成响应」 + 分隔线 + 图侧组（复制 ID / 插入摘要 / 分叉新会话 / 删除该节点及子树 /
+// 转到；D139
 // 加「转到」——`/goto` 由单击移来，原叫「在主窗定位」；D152 加「插入摘要」；2026-10-19
 // 用户批注：删除项改写成后果（不再露出 `/rm` 命令名）、「在主窗定位」缩短为「转到」、
 // 撤掉与状态栏重复的「装下整树」；2026-10-25 用户批注：加「生成响应」，放在气泡项组末尾、
@@ -158,7 +162,7 @@ func bubbleMenuItems(kind blockKind, canRespond bool) []menuIt {
 // 也不该出现摘要——摘要会顶到路径第二位、被装配当成 persona（水位语义随之失效）。
 // 注：会话根整份菜单在 openNodeMenu 处已被拦（2026-10-25 用户批注），本函数不再对根设门。
 // frozen=true（树编辑模式期，D258/§5.6.5）时**只留只读项**：编辑三项、重新生成、生成响应、
-// 插入摘要、删除全部置灰。设计稿原写「删除/切版本/插入摘要/生成响应四项」，实现扩到编辑类，
+// 插入摘要、分叉新会话、删除全部置灰。设计稿原写「删除/切版本/插入摘要/生成响应四项」，实现扩到编辑类，
 // 依据是同一节的纲：「编辑期结构只经拖拽一条路径变化」——编辑（Fresh/Carry/Clone）与重新生成
 // 都会造成结构改动，留着这些项等于开第二条路径。只读项（复制 / 复制 ID / 查看原文）与引用
 // （只往输入框追加文字，不动树）照常。
@@ -181,7 +185,10 @@ func nodeMenuItems(kind blockKind, hasText, canSummary, frozen bool) []menuIt {
 	if canSummary {
 		items = append(items, menuIt{id: cmdNodeSummary, label: i18n.T("ui.menu.insert_summary")})
 	}
+	// 「分叉新会话」（D312）贴在「删除该节点及子树」之前：两项都是「对这棵子树做什么」，
+	// 一个带走、一个删掉，邻位对照。
 	items = append(items,
+		menuIt{id: cmdNodeFork, label: i18n.T("ui.menu.fork")},
 		menuIt{id: cmdNodeRm, label: i18n.T("ui.menu.delete_subtree")},
 		menuIt{id: cmdNodeGoto, label: i18n.T("ui.menu.goto")},
 	)
@@ -197,7 +204,7 @@ func nodeMenuItems(kind blockKind, hasText, canSummary, frozen bool) []menuIt {
 func frozenCmd(id uintptr) bool {
 	switch id {
 	case cmdBubbleEdit, cmdBubbleEditKeep, cmdBubbleEditCopy, cmdBubbleRegen,
-		cmdNodeRespond, cmdNodeSummary, cmdNodeRm:
+		cmdNodeRespond, cmdNodeSummary, cmdNodeFork, cmdNodeRm:
 		return true
 	}
 	return false
@@ -299,9 +306,9 @@ func menuDispatchBubble(u *UI, ctx *bubbleMenuCtx, r uintptr) {
 		case cmdNodeGoto:
 			u.nodeAction.Store(&nodeAction{kind: nodeActGoto, id: ctx.id})
 			return
-		case cmdBubbleQuote, cmdBubbleRegen, cmdNodeRespond:
-			// 这三项仍落在主窗输入栏/内核（引用追加、重生成、从节点续写），故图侧触发时
-			// 先唤出主窗，否则用户什么也看不见（D132 规则，D139 保留）。
+		case cmdBubbleQuote, cmdBubbleRegen, cmdNodeRespond, cmdNodeFork:
+			// 这几项仍落在主窗输入栏/内核（引用追加、重生成、从节点续写、分叉切换回放），
+			// 故图侧触发时先唤出主窗，否则用户什么也看不见（D132 规则，D139 保留）。
 			_ = u.post(showExpandMsg{})
 		}
 	}
@@ -317,6 +324,9 @@ func menuDispatchBubble(u *UI, ctx *bubbleMenuCtx, r uintptr) {
 	case cmdNodeRespond:
 		// 图侧：从所选节点继续生成（与键入同路径，清屏回放后跑一轮）。
 		_ = u.post(inputMsg{text: commandLine(uiCmdRespond, string(ctx.id))})
+	case cmdNodeFork:
+		// 分叉新会话（D312）：/fork <id>，与键入同路径；标题走缺省（沿用原会话标题）。
+		_ = postCommand(u, uiCmdFork, string(ctx.id))
 	case cmdBubbleCopy:
 		_ = u.post(copyMsg{text: ctx.copy})
 	case cmdBubbleQuote:

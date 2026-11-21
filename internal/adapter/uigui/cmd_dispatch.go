@@ -21,6 +21,7 @@ const (
 	uiCmdTreeEdit   = "tree-edit"
 	uiCmdRegen      = "regen"
 	uiCmdRespond    = "respond"
+	uiCmdFork       = "fork"
 	uiCmdRm         = "rm"
 	uiCmdPermission = "permission"
 	uiCmdUnattended = "unattended"
@@ -49,6 +50,7 @@ var uiCommandTable = []uiCommand{
 	{Name: uiCmdTreeEdit, From: "history.treeEditSwitch"},
 	{Name: uiCmdRegen, From: "menu.bubbleRegen"},
 	{Name: uiCmdRespond, From: "menu.nodeRespond"},
+	{Name: uiCmdFork, From: "menu.nodeFork"},
 	{Name: uiCmdRm, From: "menu.nodeDelete"},
 	{Name: uiCmdPermission, From: "menu.permissionLevel, confirm.elevate"},
 	{Name: uiCmdUnattended, From: "menu.unattended"},

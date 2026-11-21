@@ -127,7 +127,7 @@ func TestRelGraphRightClickMenu(t *testing.T) {
 	// 2026-10-25 加「生成响应」，贴气泡项组末尾、分隔线之前）
 	items := u.menuItems(platform.MenuBubble)
 	wantLabels := []string{i18n.T("ui.common.edit"), i18n.T("ui.menu.edit_keep"), i18n.T("ui.menu.edit_copy"), i18n.T("ui.menu.regen"), i18n.T("ui.common.copy"),
-		i18n.T("ui.menu.quote"), i18n.T("ui.menu.raw"), i18n.T("ui.menu.respond"), "", i18n.T("ui.menu.copy_id"), i18n.T("ui.menu.insert_summary"), i18n.T("ui.menu.delete_subtree"), i18n.T("ui.menu.goto")}
+		i18n.T("ui.menu.quote"), i18n.T("ui.menu.raw"), i18n.T("ui.menu.respond"), "", i18n.T("ui.menu.copy_id"), i18n.T("ui.menu.insert_summary"), i18n.T("ui.menu.fork"), i18n.T("ui.menu.delete_subtree"), i18n.T("ui.menu.goto")}
 	if len(items) != len(wantLabels) {
 		t.Fatalf("项数 = %d, want %d", len(items), len(wantLabels))
 	}
@@ -318,7 +318,7 @@ func TestRelGraphMenuNoBodyNode(t *testing.T) {
 		t.Fatalf("无正文节点上下文 = %+v, want copy 为空", ctx)
 	}
 	items := u.menuItems(platform.MenuBubble)
-	want := []string{i18n.T("ui.menu.respond"), "", i18n.T("ui.menu.copy_id"), i18n.T("ui.menu.insert_summary"), i18n.T("ui.menu.delete_subtree"), i18n.T("ui.menu.goto")}
+	want := []string{i18n.T("ui.menu.respond"), "", i18n.T("ui.menu.copy_id"), i18n.T("ui.menu.insert_summary"), i18n.T("ui.menu.fork"), i18n.T("ui.menu.delete_subtree"), i18n.T("ui.menu.goto")}
 	if len(items) != len(want) {
 		t.Fatalf("无正文节点项数 = %d, want %d", len(items), len(want))
 	}
@@ -403,6 +403,33 @@ func TestRelGraphMenuRespond(t *testing.T) {
 	}
 	if im.text != "/respond "+string(want) {
 		t.Fatalf("投递命令 = %q, want /respond %s", im.text, want)
+	}
+}
+
+// TestRelGraphMenuFork 图侧「分叉新会话」（D312）→ 唤出主窗 + 投 /fork <id>（与键入同路径，
+// 标题走缺省；切换后的清屏回放发生在主窗）。
+func TestRelGraphMenuFork(t *testing.T) {
+	t.Parallel()
+	u, st, q := relGraphFixture(t)
+	const li = 4
+	want := st.model.nodes[st.vis.nodes[li]].id
+	q.Queue(relRightPress(st, li))
+	q.Queue(relRightReleaseAt(st, li))
+	relGFrame(q, u, st)
+
+	u.menuChosen(platform.MenuBubble, cmdNodeFork)
+	var se showExpandMsg
+	if !relDrainAs(t, u, &se) {
+		t.Fatal("分叉未唤出主窗")
+	}
+	select {
+	case in := <-u.inCh:
+		if in.Command == nil || in.Command.Name != "fork" ||
+			len(in.Command.Args) != 1 || conversation.MessageID(in.Command.Args[0]) != want {
+			t.Fatalf("inCh = %+v, want /fork %s", in, want)
+		}
+	default:
+		t.Fatal("inCh 空：菜单分叉未投 /fork")
 	}
 }
 

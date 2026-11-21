@@ -30,7 +30,7 @@ func TestNodeMenuFrozenGreysStructural(t *testing.T) {
 	t.Parallel()
 	frozenLabels := map[string]bool{
 		"编辑": true, "编辑并转移历史": true, "编辑并复制历史": true,
-		"重新生成": true, "生成响应": true, "插入摘要": true, "删除该节点及子树": true,
+		"重新生成": true, "生成响应": true, "插入摘要": true, "分叉新会话": true, "删除该节点及子树": true,
 	}
 	openLabels := map[string]bool{"复制": true, "查看原文": true, "复制 ID": true, "引用": true, "转到": true}
 

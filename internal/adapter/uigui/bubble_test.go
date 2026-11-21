@@ -215,12 +215,13 @@ func TestBubbleRectsThinkingChip(t *testing.T) {
 	}
 
 	// 项集：thinking/tool 两项（复制/查看原文）；thinking 定稿块已盖章节点 ID，
-	// 故多给一项「生成响应」（D183——从该思考所属节点续写）；工具 chip 无节点 ID
-	// （chip 态自足、命中不带 id）不给——`/respond` 要 ID 才有意义。
+	// 故多给「生成响应」「分叉新会话」两项（D183/D312——动作都要一个节点 ID）；工具
+	// chip 无节点 ID（chip 态自足、命中不带 id）不给——没 ID 的动作点了没反应。
 	items := bubbleMenuItems(blockThinking, true)
-	if len(items) != 3 || items[0].label != i18n.T("ui.common.copy") || items[1].label != i18n.T("ui.menu.raw") ||
-		items[2].id != cmdNodeRespond || items[2].label != i18n.T("ui.menu.respond") {
-		t.Fatalf("thinking 菜单项 = %+v, want 复制/查看原文/生成响应", items)
+	if len(items) != 4 || items[0].label != i18n.T("ui.common.copy") || items[1].label != i18n.T("ui.menu.raw") ||
+		items[2].id != cmdNodeRespond || items[2].label != i18n.T("ui.menu.respond") ||
+		items[3].id != cmdNodeFork || items[3].label != i18n.T("ui.menu.fork") {
+		t.Fatalf("thinking 菜单项 = %+v, want 复制/查看原文/生成响应/分叉新会话", items)
 	}
 	items = bubbleMenuItems(blockTool, false)
 	if len(items) != 2 || items[0].label != i18n.T("ui.common.copy") || items[1].label != i18n.T("ui.menu.raw") {

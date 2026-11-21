@@ -21,6 +21,7 @@ var zhGuiWelcomeTexts = map[string]string{
 	"ui.menu.edit_copy":      "编辑并复制历史",
 	"ui.menu.quote":          "引用",
 	"ui.menu.respond":        "生成响应",
+	"ui.menu.fork":           "分叉新会话",
 	"ui.menu.copy_id":        "复制 ID",
 	"ui.menu.insert_summary": "插入摘要",
 	"ui.menu.delete_subtree": "删除该节点及子树",

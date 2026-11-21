@@ -21,6 +21,7 @@ var enGuiWelcomeTexts = map[string]string{
 	"ui.menu.edit_copy":      "Edit and copy history",
 	"ui.menu.quote":          "Quote",
 	"ui.menu.respond":        "Generate reply",
+	"ui.menu.fork":           "Fork into new chat",
 	"ui.menu.copy_id":        "Copy ID",
 	"ui.menu.insert_summary": "Insert summary",
 	"ui.menu.delete_subtree": "Delete this node and its subtree",
