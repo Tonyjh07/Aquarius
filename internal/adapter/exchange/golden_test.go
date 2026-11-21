@@ -146,6 +146,37 @@ func TestInteropFormatsGolden(t *testing.T) {
 	}
 }
 
+// TestHumanFormatsGolden 人读呈现（md / html，D314）逐字节锁定 + 可复现：没有往返义务
+// （不进导入识别，D314 决策 4），所以只有「导两次字节相同」与 golden 比对两条，没有
+// Detect/Import 的回读腿。
+func TestHumanFormatsGolden(t *testing.T) {
+	pinLocalUTC(t) // 时间戳按本地时区打（md 用 RFC3339、与 sillytavern 同理）
+	blobs := mustBlobs(t)
+	ex := New(Options{Blobs: blobs})
+	src := goldenTree(t, blobs)
+	for _, name := range []string{"md", "html"} {
+		name := name
+		t.Run(name, func(t *testing.T) {
+			var first bytes.Buffer
+			rep, err := exportOne(context.Background(), ex, src, name, &first)
+			if err != nil {
+				t.Fatalf("export: %v", err)
+			}
+			if rep.Format != name {
+				t.Fatalf("回执格式 = %q, want %q", rep.Format, name)
+			}
+			var second bytes.Buffer
+			if _, err := exportOne(context.Background(), ex, src, name, &second); err != nil {
+				t.Fatalf("export#2: %v", err)
+			}
+			if !bytes.Equal(first.Bytes(), second.Bytes()) {
+				t.Fatal("同一棵树导两次字节不同（产物里有非确定性内容）")
+			}
+			compareGolden(t, name, first.Bytes())
+		})
+	}
+}
+
 // compareGolden 与 testdata/<name>.golden 比对；-update 时重写。
 func compareGolden(t *testing.T, name string, got []byte) {
 	t.Helper()

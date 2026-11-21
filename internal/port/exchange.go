@@ -132,7 +132,7 @@ func FileStem(title string) string {
 	return s
 }
 
-// ExchangeFormats 四种格式的静态事实（§5.16 的格式表，D242）。
+// ExchangeFormats 全部格式的静态事实（§5.16 的格式表，D242/D314）。
 //
 // 放在端口而不在适配器：命令面的用法提示、导入识别失败时的「支持这几种」文案都要用这张表，
 // 而那时可能连适配器都没装配。适配器的 Formats() 由这张表派生，两处不会分叉。
@@ -154,6 +154,15 @@ func ExchangeFormats() []ExchangeFormat {
 		{
 			Name: "openwebui", Ext: ".json", Label: i18n.T("port.fmt.openwebui.label"), Lossy: true, NoExport: true,
 			LossNote: i18n.T("port.fmt.openwebui.loss"),
+		},
+		{
+			// 人读呈现（D314）：不是互通格式，摊平规则沿用 openai、丢弃计数逐字一致。
+			Name: "md", Ext: ".md", Label: i18n.T("port.fmt.md.label"), Lossy: true,
+			LossNote: i18n.T("port.fmt.md.loss"),
+		},
+		{
+			Name: "html", Ext: ".html", Label: i18n.T("port.fmt.html.label"), Lossy: true,
+			LossNote: i18n.T("port.fmt.html.loss"),
 		},
 	}
 }

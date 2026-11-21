@@ -73,6 +73,10 @@ func (e *Exchange) Export(ctx context.Context, cs []*conversation.Conversation, 
 		return e.exportChatGPT(ctx, cs[0], w)
 	case "openai":
 		return e.exportOpenAI(ctx, cs[0], w)
+	case "md":
+		return e.exportMD(ctx, cs[0], w)
+	case "html":
+		return e.exportHTML(ctx, cs[0], w)
 	case "sillytavern":
 		return e.exportSillyTavern(ctx, cs[0], w)
 	case "openwebui":

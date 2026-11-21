@@ -329,6 +329,9 @@ func TestExchangeFiltersMatchWhatTheEntryWrites(t *testing.T) {
 		open += " " + f.Pattern
 	}
 	for _, fm := range port.ExchangeFormats() {
+		if fm.Name == "md" || fm.Name == "html" {
+			continue // 人读呈现（D314 决策 4）：不进导入识别，导入框就不该许这个愿
+		}
 		if !strings.Contains(open, fm.Ext) {
 			t.Errorf("导入过滤器缺 %s 的扩展名 %s（%s）", fm.Name, fm.Ext, open)
 		}

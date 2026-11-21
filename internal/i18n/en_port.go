@@ -9,12 +9,16 @@ var enPortTexts = map[string]string{
 	"port.fmt.openai.label":      "OpenAI message list",
 	"port.fmt.sillytavern.label": "SillyTavern chat",
 	"port.fmt.openwebui.label":   "Open WebUI conversation",
+	"port.fmt.md.label":          "Markdown document",
+	"port.fmt.html.label":        "Single-file web page",
 
 	// 有损说明（无损的 aqx 没有这一条）
 	"port.fmt.chatgpt.loss":     "attachments keep only a note; thinking and tool calls are dropped; injected nodes degrade to system; message metadata such as model/usage is dropped",
 	"port.fmt.openai.loss":      "only the current chain is kept; side branches, thinking, tools and attachments are dropped; injected nodes degrade to system",
 	"port.fmt.sillytavern.loss": "only the current chain is kept; side branches, thinking, tools and attachments are dropped; injected nodes degrade to system; the other side's world book / regex / author's note are not carried",
 	"port.fmt.openwebui.loss":   "read-only: feed Open WebUI with the chatgpt format",
+	"port.fmt.md.loss":          "only the current chain is kept; side branches, thinking, tools and attachments are dropped; injected nodes degrade to system",
+	"port.fmt.html.loss":        "only the current chain is kept; side branches, thinking, tools and attachments are dropped; injected nodes degrade to system",
 
 	// 注入来源的友好名
 	"port.src.unknown":     "unknown source",

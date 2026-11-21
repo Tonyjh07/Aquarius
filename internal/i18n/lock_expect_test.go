@@ -88,6 +88,8 @@ var testDataLiterals = map[string][]string{
 	// 标签与置顶测试：会话标题与标签值都是**测试数据**（用户手打的组织标记），
 	// 过滤与行尾展示断言核对的就是这些串本身。
 	"internal/app/session_cmd_tag_test.go": {"甲", "乙", "工作", "重要", "[工作 重要]"},
+	// 人读导出测试：正文里的字面串是**写入导出文件的测试数据**（原样性/转义性断言核对的就是它）。
+	"internal/adapter/exchange/md_test.go": {"第一行", "第二行"},
 	// 会话标题测试：模型输出（服务端生成的标题原样进会话元数据），断言的正是这些串——
 	// 换成英文等于换了被测对象（D309）。
 	"internal/adapter/llm/title_test.go": {"北京明天天气", "北京天气"},

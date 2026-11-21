@@ -12,6 +12,12 @@ var zhAdapterExchangeTexts = map[string]string{
 	"exchange.io.dropped.side_branch":         "旁支上的 {count} 条消息（只导出当前那条链）",
 	"exchange.io.dropped.line":                "{kind} {count} 个",
 
+	// ---- 人读导出（D314）：md / html 的角色标题与文件头 ----
+	"exchange.md.role_user":      "用户",
+	"exchange.md.role_assistant": "助手",
+	"exchange.md.role_system":    "系统",
+	"exchange.md.generated":      "会话最后更新：{time}",
+
 	// 丢项的种类名（回执里逐类计数用；同一个词在几种格式间共用一条）
 	"exchange.io.drop.doc_raw":         "文档原文件（只带提取的文本）",
 	"exchange.io.drop.attach_no_bytes": "附件（不带字节）",

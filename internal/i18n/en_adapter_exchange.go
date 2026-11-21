@@ -12,6 +12,12 @@ var enAdapterExchangeTexts = map[string]string{
 	"exchange.io.dropped.side_branch":         "{count} messages on side branches (only the current chain is exported)",
 	"exchange.io.dropped.line":                "{kind}: {count}",
 
+	// ---- Human-readable export (D314): md/html role headings and file header ----
+	"exchange.md.role_user":      "User",
+	"exchange.md.role_assistant": "Assistant",
+	"exchange.md.role_system":    "System",
+	"exchange.md.generated":      "Conversation last updated: {time}",
+
 	// 丢项的种类名（回执里逐类计数用；同一个词在几种格式间共用一条）
 	"exchange.io.drop.doc_raw":         "Original document file (only the extracted text is carried)",
 	"exchange.io.drop.attach_no_bytes": "Attachments (carried without bytes)",
