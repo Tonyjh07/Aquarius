@@ -262,7 +262,7 @@ func (s *Store) loadBackup(id conversation.ID) (*conversation.Conversation, bool
 	return nil, false
 }
 
-// List 列出全部会话摘要，按 UpdatedAt 降序（最新在前）。
+// List 列出全部会话摘要：置顶在前（D313），组内按 UpdatedAt 降序（最新在前），同分按 ID 降序。
 // 单个损坏文件跳过不致命（由 Load 显式暴露），.bak/.tmp 不计入；
 // M0 旧格式会话（D19）不静默跳过——聚合报因列出具体 ID，避免升级后旧数据隐形、
 // NewSession 无提示地另起新会话。
@@ -299,6 +299,8 @@ func (s *Store) List(ctx context.Context) ([]port.ConversationSummary, error) {
 			MessageN:  c.NodeCount() - 1, // 不含 Root 节点
 			UpdatedAt: c.UpdatedAt,
 			Character: c.Character,
+			Tags:      c.Tags,
+			Pinned:    c.Pinned,
 		})
 	}
 	if len(legacy) > 0 {
@@ -306,6 +308,9 @@ func (s *Store) List(ctx context.Context) ([]port.ConversationSummary, error) {
 			i18n.Tf("store.err.legacy_list", "ids", strings.Join(legacy, ", ")))
 	}
 	sort.Slice(out, func(i, j int) bool {
+		if out[i].Pinned != out[j].Pinned { // 置顶在前（D313）
+			return out[i].Pinned
+		}
 		if !out[i].UpdatedAt.Equal(out[j].UpdatedAt) {
 			return out[i].UpdatedAt.After(out[j].UpdatedAt)
 		}
@@ -479,11 +484,14 @@ func DecodeTree(data []byte) (*conversation.Conversation, error) {
 // 与改造前的形状保持一致（仍然有 nodes/children/revised_from 三个键），所以已有文件
 // 与新文件可以互相读取——wire 格式变了才需要迁移，这次只是把定义搬到适配器里。
 type wireTree struct {
-	ID          conversation.ID                                     `json:"id"`
-	Title       string                                              `json:"title"`
-	Head        conversation.MessageID                              `json:"head"`
-	Character   string                                              `json:"character,omitempty"`
-	Tail        string                                              `json:"tail,omitempty"`
+	ID        conversation.ID        `json:"id"`
+	Title     string                 `json:"title"`
+	Head      conversation.MessageID `json:"head"`
+	Character string                 `json:"character,omitempty"`
+	Tail      string                 `json:"tail,omitempty"`
+	// Tags/Pinned 会话标签与置顶（D313）。缺键即零值：旧文件天然兼容，不升 wire 版本。
+	Tags        []string                                            `json:"tags,omitempty"`
+	Pinned      bool                                                `json:"pinned,omitempty"`
 	Nodes       map[conversation.MessageID]wireNode                 `json:"nodes"`
 	Children    map[conversation.MessageID][]conversation.MessageID `json:"children"`
 	RevisedFrom map[conversation.MessageID]conversation.MessageID   `json:"revised_from"`
@@ -523,6 +531,8 @@ func encode(c *conversation.Conversation) wireTree {
 		Head:        s.Head,
 		Character:   s.Character,
 		Tail:        s.Tail,
+		Tags:        s.Tags,
+		Pinned:      s.Pinned,
 		Nodes:       make(map[conversation.MessageID]wireNode, len(s.Nodes)),
 		Children:    make(map[conversation.MessageID][]conversation.MessageID, len(s.Edges)),
 		RevisedFrom: make(map[conversation.MessageID]conversation.MessageID, len(s.RevisedFrom)),
@@ -586,6 +596,8 @@ func decodeTree(w wireTree) (*conversation.Conversation, error) {
 		Head:        w.Head,
 		Character:   w.Character,
 		Tail:        w.Tail,
+		Tags:        w.Tags,
+		Pinned:      w.Pinned,
 		Nodes:       make([]conversation.Message, 0, len(w.Nodes)),
 		Edges:       make([]conversation.SnapshotEdge, 0, len(w.Children)),
 		RevisedFrom: make([]conversation.SnapshotEdition, 0, len(w.RevisedFrom)),

@@ -41,24 +41,77 @@ func (s *Session) execNew(ctx context.Context, cmd port.Command) (string, error)
 	return i18n.Tf("tree.new.done", "id", c.ID), nil
 }
 
-// execList 实现 /list：列出会话。
+// listFlags /list 认识的 flag：--tag <名>（可重复）过滤出同时带这些标签的会话（D313）。
+var listFlags = []flagDecl{{name: "--tag", value: true}}
+
+// execList 实现 /list：列出会话。排序权威在 store.List（置顶在前，组内按更新时间，D313）；
+// 置顶行首标 ▲（可与当前会话的 * 叠加），行尾带 [标签…]（有标签才带）。
 func (s *Session) execList(ctx context.Context, cmd port.Command) (string, error) {
+	flags, _, err := scanFlags(cmd.Args, flagScan{pos: flagsAnywhere}, listFlags)
+	if err != nil {
+		return "", errors.New(i18n.T("usage.list"))
+	}
 	sums, err := s.store.List(ctx)
 	if err != nil {
 		return "", wrapSession("err.list_conversations", err)
 	}
+	if want := tagFilter(flags); len(want) > 0 { // 交集：同时带全部给定标签
+		filtered := sums[:0]
+		for _, sm := range sums {
+			if hasAllTags(sm.Tags, want) {
+				filtered = append(filtered, sm)
+			}
+		}
+		sums = filtered
+	}
 	if len(sums) == 0 {
+		if len(flags) > 0 { // 有过滤条件时的空与「没有任何会话」要分说
+			return i18n.T("tree.list.no_match"), nil
+		}
 		return i18n.T("tree.list.empty"), nil
 	}
 	var b strings.Builder
 	for _, sm := range sums {
-		mark := " "
-		if sm.ID == s.cur.ID {
-			mark = "*"
+		mark := ""
+		if sm.Pinned {
+			mark = "▲"
 		}
-		fmt.Fprintf(&b, "%s %s  %s  %s\n", mark, sm.ID, i18n.Tf("tree.list.count", "n", sm.MessageN), sm.Title)
+		if sm.ID == s.cur.ID {
+			mark += "*"
+		}
+		if mark == "" {
+			mark = " "
+		}
+		line := fmt.Sprintf("%s %s  %s  %s", mark, sm.ID, i18n.Tf("tree.list.count", "n", sm.MessageN), sm.Title)
+		if len(sm.Tags) > 0 {
+			line += "  [" + joinTags(sm.Tags) + "]"
+		}
+		b.WriteString(line + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n"), nil
+}
+
+// tagFilter 取 --tag 的全部值（按出现序，重复值无害）。
+func tagFilter(flags []cmdFlag) []string {
+	out := make([]string, 0, len(flags))
+	for _, f := range flags {
+		out = append(out, f.value)
+	}
+	return out
+}
+
+// hasAllTags 会话是否同时带全部给定标签（D313 的交集口径）。
+func hasAllTags(tags, want []string) bool {
+	have := make(map[string]bool, len(tags))
+	for _, t := range tags {
+		have[t] = true
+	}
+	for _, t := range want {
+		if !have[t] {
+			return false
+		}
+	}
+	return true
 }
 
 // execSwitch 实现 /switch：切换会话（D75 清屏回放规则）。

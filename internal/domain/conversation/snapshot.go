@@ -27,6 +27,10 @@ type Snapshot struct {
 	Character string
 	// Tail 历史之后追加的 system 文本（D243）；空 = 无。
 	Tail string
+	// Tags 会话标签（D313）：加时去重、保持首次加入顺序；空 = 没打标签。
+	Tags []string
+	// Pinned 置顶（D313）：列表把置顶排在最前；false = 未置顶。
+	Pinned bool
 	// Nodes 全部节点，按 ID 升序（确定性，便于 diff 与人工核对）。
 	Nodes []Message
 	// Edges 结构边，按父 ID 升序；每个父的孩子保持结构插入序（兄弟顺序即图上左→右，D152）。
@@ -68,6 +72,8 @@ func (c *Conversation) Snapshot() Snapshot {
 		Head:      c.Head,
 		Character: c.Character,
 		Tail:      c.Tail,
+		Tags:      append([]string(nil), c.Tags...),
+		Pinned:    c.Pinned,
 		Nodes:     make([]Message, 0, len(c.nodes)),
 		Edges:     make([]SnapshotEdge, 0, len(c.children)),
 		CreatedAt: c.CreatedAt,
@@ -117,6 +123,8 @@ func Restore(s Snapshot) (*Conversation, error) {
 		Head:        s.Head,
 		Character:   s.Character,
 		Tail:        s.Tail,
+		Tags:        append([]string(nil), s.Tags...),
+		Pinned:      s.Pinned,
 		nodes:       make(map[MessageID]Message, len(s.Nodes)),
 		children:    make(map[MessageID][]MessageID, len(s.Edges)),
 		revisedFrom: make(map[MessageID]MessageID, len(s.RevisedFrom)),

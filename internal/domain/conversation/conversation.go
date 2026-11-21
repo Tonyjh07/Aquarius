@@ -103,6 +103,12 @@ type Conversation struct {
 	// 不影响分支与导出树。空 = 无尾部指令。
 	Tail string
 
+	// Tags 会话标签（D313）：用户手打的组织标记（/tag 维护），去重、保持首次加入顺序；
+	// 空切片 = 没打标签。元数据不是节点——不进水位、不被压缩吸收、不影响分支与导出树。
+	Tags []string
+	// Pinned 置顶（D313，/pin 切换）：列表把置顶排在最前。元数据，同上不参与装配。
+	Pinned bool
+
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }

@@ -92,6 +92,8 @@ func (s *Session) forkConversation(point conversation.MessageID, title string) (
 		Head:      idMap[point],
 		Character: src.Character,
 		Tail:      src.Tail,
+		// Tags/Pinned 不带（D313）：标签与置顶是源会话的组织属性，子树搬走不等于组织关系搬走；
+		// 新会话从零值起步。
 		Nodes:     make([]conversation.Message, 0, len(sub)+1),
 		Edges:     make([]conversation.SnapshotEdge, 0, len(sub)+1),
 		CreatedAt: now,

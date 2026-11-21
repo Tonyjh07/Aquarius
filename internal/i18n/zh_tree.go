@@ -17,12 +17,26 @@ var zhTreeTexts = map[string]string{
 	"usage.rm":        "用法: /rm <id>（剪掉该节点及整棵子树，二次确认）",
 	"usage.tree_edit": "用法: /tree-edit（进入）｜--exit（界面上关开关：有改动先问保存/放弃）｜--done（保存退出）｜--cancel（放弃并退出）",
 	"usage.reparent":  "用法: /reparent <id> <新父>（都支持唯一前缀，id 与 /branch 里看到的一致）｜/reparent --undo",
+	"usage.tag":       "用法: /tag <会话> [名...]（打标签，可多个）｜--rm <名>（删标签，可重复）｜/tag <会话>（显示现有标签）",
+	"usage.pin":       "用法: /pin <会话>（置顶 / 取消置顶，切换）",
+	"usage.list":      "用法: /list（列出会话）｜/list --tag <名>（只列同时带这些标签的会话，可重复）",
 
 	// /new、/list、/switch
-	"tree.new.done":    "已新建会话 {id}",
-	"tree.list.empty":  "（还没有会话；/new 新建一个）",
-	"tree.list.count":  "{n}条",
-	"tree.switch.done": "已切换到会话 {id}",
+	"tree.new.done":      "已新建会话 {id}",
+	"tree.list.empty":    "（还没有会话；/new 新建一个）",
+	"tree.list.no_match": "（没有同时带这些标签的会话）",
+	"tree.list.count":    "{n}条",
+	"tree.switch.done":   "已切换到会话 {id}",
+	"err.save_tag":       "保存标签改动失败: {err}",
+	"err.save_pin":       "保存置顶改动失败: {err}",
+
+	// /tag、/pin 的回执：打标签与置顶的成果一句话说清（D313）
+	"tree.tag.show":    "{id} 的标签: {tags}",
+	"tree.tag.none":    "{id} 还没有标签",
+	"tree.tag.done":    "标签已更新: 会话 {id}（{tags}）",
+	"tree.tag.cleared": "标签已清空: 会话 {id}",
+	"tree.pin.on":      "已置顶: 会话 {id}（/list 里排在最前，带 ▲ 标记）",
+	"tree.pin.off":     "已取消置顶: 会话 {id}",
 
 	// /title
 	"tree.title.show":      "{id} 标题: {title}",

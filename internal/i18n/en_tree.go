@@ -16,12 +16,26 @@ var enTreeTexts = map[string]string{
 	"usage.rm":        "Usage: /rm <id> (cuts the node and its whole subtree off, after a confirmation)",
 	"usage.tree_edit": "Usage: /tree-edit (enter) | --exit (the switch on screen: if anything changed it asks save/discard first) | --done (save and exit) | --cancel (discard and exit)",
 	"usage.reparent":  "Usage: /reparent <id> <new parent> (both accept a unique prefix; ids read as in /branch) | /reparent --undo",
+	"usage.tag":       "Usage: /tag <conversation> [name...] (tags it; several allowed) | --rm <name> (removes a tag, repeatable) | /tag <conversation> (shows the current tags)",
+	"usage.pin":       "Usage: /pin <conversation> (pin / unpin, as a toggle)",
+	"usage.list":      "Usage: /list (list conversations) | /list --tag <name> (list only those carrying all the tags, repeatable)",
 
 	// /new、/list、/switch
-	"tree.new.done":    "Created conversation {id}",
-	"tree.list.empty":  "(no conversations yet; /new starts one)",
-	"tree.list.count":  "{n} msgs",
-	"tree.switch.done": "Switched to conversation {id}",
+	"tree.new.done":      "Created conversation {id}",
+	"tree.list.empty":    "(no conversations yet; /new starts one)",
+	"tree.list.no_match": "(no conversation carries all of these tags)",
+	"tree.list.count":    "{n} msgs",
+	"tree.switch.done":   "Switched to conversation {id}",
+	"err.save_tag":       "saving the tag change failed: {err}",
+	"err.save_pin":       "saving the pin change failed: {err}",
+
+	// /tag、/pin receipts: say what tagging and pinning did (D313)
+	"tree.tag.show":    "{id} tags: {tags}",
+	"tree.tag.none":    "{id} has no tags yet",
+	"tree.tag.done":    "Tags updated: conversation {id} ({tags})",
+	"tree.tag.cleared": "Tags cleared: conversation {id}",
+	"tree.pin.on":      "Pinned: conversation {id} (sorts first in /list, marked ▲)",
+	"tree.pin.off":     "Unpinned: conversation {id}",
 
 	// /title
 	"tree.title.show":      "{id} title: {title}",

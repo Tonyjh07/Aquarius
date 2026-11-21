@@ -22,7 +22,28 @@ var zhCmdTexts = map[string]string{
 	"cmd.new.p1.desc": "会话标题；省略则用首条消息自动起名",
 
 	// /list
-	"cmd.list.desc": "列出会话",
+	"cmd.list.desc":         "列出会话",
+	"cmd.list.usage":        "[--tag <名>...]",
+	"cmd.list.p1.name":      "--tag",
+	"cmd.list.p1.valuename": "<名>",
+	"cmd.list.p1.desc":      "只列同时带这些标签的会话（可重复，取交集）",
+
+	// /tag
+	"cmd.tag.desc":         "给会话打标签 / 删标签（--rm 删；无参显示现有标签）",
+	"cmd.tag.usage":        "<会话> [名...] [--rm <名>...]",
+	"cmd.tag.p1.name":      "<会话>",
+	"cmd.tag.p1.desc":      "目标会话 id（支持唯一前缀）",
+	"cmd.tag.p2.name":      "名",
+	"cmd.tag.p2.desc":      "要加的标签（可多个；重复打同一标签无副作用）",
+	"cmd.tag.p3.name":      "--rm",
+	"cmd.tag.p3.valuename": "<名>",
+	"cmd.tag.p3.desc":      "要删的标签（可重复）",
+
+	// /pin
+	"cmd.pin.desc":    "置顶 / 取消置顶（切换）",
+	"cmd.pin.usage":   "<会话>",
+	"cmd.pin.p1.name": "<会话>",
+	"cmd.pin.p1.desc": "目标会话 id（支持唯一前缀）",
 
 	// /switch
 	"cmd.switch.desc":    "切换到既有会话（清屏并回放历史）",

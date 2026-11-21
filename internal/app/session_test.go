@@ -17,7 +17,8 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// memStore 内存会话库（测试替身，按 UpdatedAt 降序返回列表）。
+// memStore 内存会话库（测试替身，置顶在前、组内按 UpdatedAt 降序返回列表——与 storejson
+// 的 List 同一排序口径，D313）。
 type memStore struct {
 	convs map[conversation.ID]*conversation.Conversation
 	err   error // 注入的保存错误
@@ -68,9 +69,14 @@ func (m *memStore) List(context.Context) ([]port.ConversationSummary, error) {
 		out = append(out, port.ConversationSummary{
 			ID: c.ID, Title: c.Title, MessageN: c.NodeCount() - 1, UpdatedAt: c.UpdatedAt, // 不含 Root，与 storejson 对齐
 			Character: c.Character, // §5.17/D243：会话列表带出角色 slug 供标注
+			Tags:      c.Tags,      // D313：/list --tag 过滤与行尾标签
+			Pinned:    c.Pinned,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {
+		if out[i].Pinned != out[j].Pinned { // 置顶在前（D313），与 storejson 同口径
+			return out[i].Pinned
+		}
 		if !out[i].UpdatedAt.Equal(out[j].UpdatedAt) {
 			return out[i].UpdatedAt.After(out[j].UpdatedAt)
 		}

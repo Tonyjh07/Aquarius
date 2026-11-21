@@ -19,7 +19,28 @@ var enCmdTexts = map[string]string{
 	"cmd.new.p1.desc": "conversation title; omitted = named after the first message",
 
 	// /list
-	"cmd.list.desc": "List conversations",
+	"cmd.list.desc":         "List conversations",
+	"cmd.list.usage":        "[--tag <name>...]",
+	"cmd.list.p1.name":      "--tag",
+	"cmd.list.p1.valuename": "<name>",
+	"cmd.list.p1.desc":      "list only conversations carrying all of these tags (repeatable; intersection)",
+
+	// /tag
+	"cmd.tag.desc":         "Tag or untag a conversation (--rm removes; no args shows current tags)",
+	"cmd.tag.usage":        "<conversation> [name...] [--rm <name>...]",
+	"cmd.tag.p1.name":      "<conversation>",
+	"cmd.tag.p1.desc":      "target conversation id (unique prefix accepted)",
+	"cmd.tag.p2.name":      "name",
+	"cmd.tag.p2.desc":      "tags to add (several allowed; re-tagging the same tag is a no-op)",
+	"cmd.tag.p3.name":      "--rm",
+	"cmd.tag.p3.valuename": "<name>",
+	"cmd.tag.p3.desc":      "tags to remove (repeatable)",
+
+	// /pin
+	"cmd.pin.desc":    "Pin or unpin a conversation (toggle)",
+	"cmd.pin.usage":   "<conversation>",
+	"cmd.pin.p1.name": "<conversation>",
+	"cmd.pin.p1.desc": "target conversation id (unique prefix accepted)",
 
 	// /switch
 	"cmd.switch.desc":    "Switch to an existing conversation (clears the screen and replays history)",

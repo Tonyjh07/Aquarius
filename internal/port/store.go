@@ -20,6 +20,10 @@ type ConversationSummary struct {
 	UpdatedAt time.Time       `json:"updated_at"`
 	// Character 绑定的角色 slug（§5.17/D243；空 = 非角色会话）。列表侧据此标注来路。
 	Character string `json:"character,omitempty"`
+	// Tags 会话标签（D313；空 = 没打标签）。/list --tag 据此过滤。
+	Tags []string `json:"tags,omitempty"`
+	// Pinned 置顶（D313）。列表排序置顶在前。
+	Pinned bool `json:"pinned,omitempty"`
 }
 
 // TrashEntry 回收站条目摘要（D311）：与 ConversationSummary 同用途，多一个删除时间。
