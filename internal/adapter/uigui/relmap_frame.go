@@ -512,7 +512,7 @@ func (g *relGraph) dragPinWorld() relPoint {
 
 // update 手势状态机：平移 / 拖节点（D121）/ 缩放（gesture.Scroll）/ 悬停 / 点击 / 右键菜单。
 func (g *relGraph) update(gtx layout.Context, u *UI, st *historyState) {
-	// 滚轮：范围放开（主窗转写区的 D71 钉点规则不适用本窗，§10.2）。
+	// 滚轮：范围放开（主窗转写区的 D71 钉点规则不适用本窗，relation-map-design §10.1）。
 	if d := g.scroll.Update(gtx.Metric, gtx.Source, gtx.Now, gesture.Vertical,
 		pointer.ScrollRange{}, pointer.ScrollRange{Min: -relWheelMax, Max: relWheelMax}); d != 0 {
 		g.wheel(d)

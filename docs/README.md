@@ -1,5 +1,5 @@
 # 文档地图与分工
-<!-- docs-sync: 2026-11-22 @ e87b0a7 -->
+<!-- docs-sync: 2026-11-22 @ c8e65d3 -->
 
 > 一页说清每篇文档**写给谁、管什么、谁是权威**。改文档之前先在这里找该篇的位置——
 > 位置不清的文档会同时变成手册、历史档案和待办清单，最后没人读完。
@@ -100,6 +100,7 @@
 | [archive/decisions-full.md](archive/decisions-full.md) | 压缩前的决策记录全文：实现细节、当时的推演与自问自答式的否决项 | 正文压缩后 [decisions.md](decisions.md) 只留一行结论与够格展开的决策；编号与结论仍以 decisions.md 为准 |
 | [archive/plan-v0.5.0.md](archive/plan-v0.5.0.md) | v0.5.0 三条主线、STC 审阅、发版排期与测试并行的工作稿全文（含验收与风险） | 完成记录见 [roadmap.md](roadmap.md) 的 v0.5.0 行；[plan.md](plan.md) 清理后只留还没做的事 |
 | [archive/review.md](archive/review.md) | v0.5.0 收尾批的文档 STC 逐篇审阅报告（改法、逐篇计数与保留清单） | 审阅已完成；当下的例外与术语以 [stc/terms.aquarius.yaml](stc/terms.aquarius.yaml) 为准 |
+| [archive/relation-map-d127-record.md](archive/relation-map-d127-record.md) | 关系图 D127 横树改造的完成记录（改动面与推进序） | 改造已完成；形态与现状见 [relation-map-design.md](relation-map-design.md)，演进见 §5.4 与 decisions |
 
 ## 维护
 
