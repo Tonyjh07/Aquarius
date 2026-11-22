@@ -21,8 +21,9 @@ type fakeRunner struct {
 	mu    sync.Mutex
 	specs []tool.Spec
 	seen  []tool.Call
-	outs  map[string]string // name → output
-	fail  map[string]string // name → err
+	outs  map[string]string          // name → output
+	fail  map[string]string          // name → err
+	imgs  map[string][]tool.ImageRef // name → 产出的图片引用（D169）
 	delay time.Duration
 }
 
@@ -43,9 +44,9 @@ func (f *fakeRunner) Execute(ctx context.Context, call tool.Call) (tool.Result, 
 		return tool.Result{OK: false, Err: err}, nil
 	}
 	if out, ok := f.outs[call.Name]; ok {
-		return tool.Result{OK: true, Output: out}, nil
+		return tool.Result{OK: true, Output: out, Images: f.imgs[call.Name]}, nil
 	}
-	return tool.Result{OK: true, Output: ""}, nil
+	return tool.Result{OK: true, Output: "", Images: f.imgs[call.Name]}, nil
 }
 
 // specsFn AllSpecs 的快照口（与 Deps 的签名同形）。
@@ -208,6 +209,32 @@ func TestCtxCancel(t *testing.T) {
 			Args: json.RawMessage(`{"code":` + quote(`r = tools.probe()`+"\n"+`return r`) + `}`)})
 	if err == nil || !strings.Contains(err.Error(), "canceled") {
 		t.Fatalf("err = %v, want 取消上抛", err)
+	}
+}
+
+// TestBindingImages 产出图片的工具在脚本内调用（2026-11-22 实测：绑定把引用压丢，
+// 模型只看到 True、图回不来）：绑定值带 "images" 引用列表，脚本结束时引用统一挂到
+// run_code 自己的结果上（装配层按 D169 投影），同哈希去重。
+func TestBindingImages(t *testing.T) {
+	f := runnerFixture()
+	f.specs = append(f.specs, tool.Spec{Name: "shot", Description: "capture", Schema: tool.NoArgsSchema})
+	f.outs["shot"] = ""
+	refs := []tool.ImageRef{
+		{Hash: "h1", MIME: "image/png", Name: "screen.png", Size: 10},
+		{Hash: "h2", MIME: "image/png"},
+	}
+	f.imgs = map[string][]tool.ImageRef{"shot": refs}
+	res := runCode(t, f, specsFn(f), `a = tools.shot()`+"\n"+`b = tools.shot()`+"\n"+`return [len(a["images"]), len(b["images"])]`)
+	if !res.OK || res.Output != "[2,2]" {
+		t.Fatalf("res = %+v, want 绑定带引用列表", res)
+	}
+	if len(res.Images) != 2 || res.Images[0].Hash != "h1" || res.Images[1].Hash != "h2" {
+		t.Fatalf("res.Images = %+v, want 去重后 2 条", res.Images)
+	}
+	// 描述写明图片在脚本结束后挂到对话上、脚本内只有引用。
+	desc := New(Deps{Inner: f, AllSpecs: specsFn(f)}).Spec().Description
+	if !strings.Contains(desc, "attached to the conversation when the script finishes") {
+		t.Fatal("描述缺图片口径句")
 	}
 }
 

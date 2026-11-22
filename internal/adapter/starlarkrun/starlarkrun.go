@@ -152,6 +152,7 @@ This is the only tool you can call directly in this mode: every other tool is re
 
 Dialect: a subset of Python. No while, no try/except, no recursion, no top-level for/if (they are allowed inside functions — your whole program is wrapped in a function, so plain statements and return work). Loops use "for x in items". Deduplicate with dict keys, not sets.
 Every tool result is a dict: {"ok": true, "output": "..."} or {"ok": false, "error": "..."}. Branch on "ok" — failed calls never raise.
+Tools that produce images (e.g. screen_capture) work here: the picture itself is attached to the conversation when the script finishes; the binding dict only carries its reference under "images" — you cannot view pixels inside the script.
 Use tools.parallel to fan out; results come back in input order. Each entry is a dict with exactly two keys, "tool" (the bare tool name — "term_exec", never "tools.term_exec") and "args" (the tool's arguments dict):
   tools.parallel([
     {"tool": "term_exec", "args": {"command": "git status"}},
@@ -218,6 +219,7 @@ type runtime struct {
 	scope *confirmScope
 	mu    sync.Mutex
 	print []string
+	imgs  []tool.ImageRef
 }
 
 // confirmScope 一次脚本执行的确认去重账本（D320）：同指纹只问一遍，distinct 询问
@@ -284,7 +286,8 @@ func (s *confirmScope) Capped() int {
 	return s.capped
 }
 
-// bindResult 把 tool.Result 折成绑定形状 {"ok", "output"|"error"}。
+// bindResult 把 tool.Result 折成绑定形状 {"ok", "output"|"error"}；产出过图片时
+// 多带一个 "images" 引用列表（D169：字节已在附件库，脚本里只有引用可读）。
 func bindResult(res tool.Result) *starlark.Dict {
 	d := &starlark.Dict{}
 	if res.OK {
@@ -297,6 +300,19 @@ func bindResult(res tool.Result) *starlark.Dict {
 			err = "tool failed"
 		}
 		d.SetKey(starlark.String("error"), starlark.String(err))
+	}
+	if len(res.Images) > 0 {
+		imgs := make([]starlark.Value, 0, len(res.Images))
+		for _, r := range res.Images {
+			id := &starlark.Dict{}
+			id.SetKey(starlark.String("hash"), starlark.String(r.Hash))
+			id.SetKey(starlark.String("mime"), starlark.String(r.MIME))
+			if r.Name != "" {
+				id.SetKey(starlark.String("name"), starlark.String(r.Name))
+			}
+			imgs = append(imgs, id)
+		}
+		d.SetKey(starlark.String("images"), starlark.NewList(imgs))
 	}
 	return d
 }
@@ -319,7 +335,40 @@ func (rt *runtime) callOne(ctx context.Context, name string, args json.RawMessag
 	if !res.OK && strings.HasPrefix(res.Err, port.ErrConfirmLimit) {
 		rt.scope.CountCapped() // 上限触达也是「按尝试计」的一部分
 	}
+	rt.recordImages(res.Images)
 	return bindResult(res), nil
+}
+
+// recordImages 攒内层工具产出的图片引用（D169）：脚本结束统一挂到 run_code 自己的
+// 结果上，装配层投影为脚本应答之后的图片消息；同哈希只留一份。
+func (rt *runtime) recordImages(refs []tool.ImageRef) {
+	if len(refs) == 0 {
+		return
+	}
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	seen := make(map[string]bool, len(rt.imgs)+len(refs))
+	for _, r := range rt.imgs {
+		seen[r.Hash] = true
+	}
+	for _, r := range refs {
+		if !seen[r.Hash] {
+			seen[r.Hash] = true
+			rt.imgs = append(rt.imgs, r)
+		}
+	}
+}
+
+// snapshotImages 本脚本攒下的全部图片引用（去重后的副本）。
+func (rt *runtime) snapshotImages() []tool.ImageRef {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if len(rt.imgs) == 0 {
+		return nil
+	}
+	out := make([]tool.ImageRef, len(rt.imgs))
+	copy(out, rt.imgs)
+	return out
 }
 
 // callFn 构造单个工具绑定：tools.<name>(k=v, ...) → JSON 对象 → Inner.Execute。
@@ -568,8 +617,10 @@ func (t *ptcTool) Execute(ctx context.Context, call tool.Call) (tool.Result, err
 	return t.finish(call, rt, tool.Result{CallID: call.ID, OK: true, Output: out}), nil
 }
 
-// finish 脚本摘要落运行日志（D320：calls / dedup / capped），结果原样返回。
+// finish 脚本摘要落运行日志（D320：calls / dedup / capped），脚本内产出的图片引用
+// 挂到结果上（D169 投影在装配层），结果原样返回。
 func (t *ptcTool) finish(call tool.Call, rt *runtime, res tool.Result) tool.Result {
+	res.Images = rt.snapshotImages()
 	if t.d.Log != nil {
 		t.d.Log("log.boot.ptc_script", "log.act.ptc_script",
 			"calls", rt.snapshotCalls(), "dedup", rt.scope.Hits(), "capped", rt.scope.Capped())
