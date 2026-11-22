@@ -141,8 +141,8 @@ func (u *UI) measureRow(gtx layout.Context, it blockView, w int, rs *rowSel) mea
 	}
 	// 折叠态命令条（D266）：贴合文案的窄条，左右内衬更松一档；展开态铺满容器，
 	// 内衬回到常规——「收起来是一枚薄条，摊开是一块面板」。
-	center := it.kind == blockCommand
-	if center && !u.cmdIsOpen(it.bi) {
+	center := it.kind == blockCommand || it.kind == blockTurn
+	if center && (it.kind == blockTurn || !u.cmdIsOpen(it.bi)) { // 摘要行恒为窄条（无展开态）
 		padX = gtx.Dp(cmdPadXDp)
 	}
 	maxW := w - 2*gtx.Dp(sideMarginDp)
@@ -330,6 +330,17 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, rs *rowSel) (layout.Widg
 			}
 			return vs.dims()
 		}, tok().cardInject, cardR, false, false
+	case blockTurn: // Turn 过程摘要行（D326）：一行窄条、整条是点击件（同命令折叠行）。
+		// 展开态不产此条目（frameItems 铺回子块），键位由子块占用——折叠态子键不铺开
+		// 但占位（selCount 恒 = 子块和，D265 同规则）。
+		return func(gtx layout.Context) layout.Dimensions {
+			cl := u.turnClick(it.bi)
+			return cl.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				s := material.Caption(u.th, turnHeaderText(it.turn))
+				s.Color = cmdHeadColor()
+				return s.Layout(gtx)
+			})
+		}, tok().cardCmd, cardR, false, false
 	case blockCommand: // 命令折叠条：形状交给 commandRowStyle，与工具 chip、分叉条同法
 		return u.commandRowStyle(gtx, it, rs, cardR)
 	case blockTool:

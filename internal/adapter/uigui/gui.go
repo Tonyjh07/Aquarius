@@ -39,6 +39,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uicommon"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui/platform"
+	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/inhistory"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -460,6 +461,12 @@ type UI struct {
 	// 按块序缓存、不进 model、清屏复位。
 	cmdOpen   map[int]bool
 	cmdClicks []*widget.Clickable
+	// turnOpen/turnClicks Turn 过程折叠（D326）：开合按 turnID（组尾 assistant 节点
+	// ID）记，跨块序稳定；点击件按块序缓存（同 cmdClick）。turnAnchors 是 frameItems
+	// 每帧重算的折叠分组（bi → 组，供点击消费期回查）。
+	turnOpen    map[conversation.MessageID]bool
+	turnClicks  []*widget.Clickable
+	turnAnchors map[int]*turnView
 
 	// 注入块视图态（D166 形态修订）：正文是进模型的原文，默认折成一行「类别 · 来源」，
 	// 点开才铺触发状态与全文。同规则按块序缓存、不进 model、清屏复位。

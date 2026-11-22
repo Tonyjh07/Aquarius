@@ -39,6 +39,8 @@ type blockView struct {
 	trigger bool
 	// cmds 命令折叠条的条目（D265）：命令行与命令自身的返回文本。
 	cmds []cmdEntry
+	// turn Turn 过程摘要的数据面（D326）：被折叠的本轮思考/chip 子块视图。
+	turn *turnView
 	// pendID 待发清单里那条「引导」的 ID（D272）：非空 = 这块不算会话节点：用户
 	// 已经说出口、还没被下一次请求取走的话。渲染成普通用户气泡，右侧带「↓ 回队列 /
 	// × 丢弃」两枚控件；不登记右键菜单（没有节点可编辑），也不随会话写入磁盘。
@@ -75,6 +77,14 @@ func (it blockView) selCount() int {
 		total := 0
 		for _, b := range it.md {
 			total += mdKeys(b)
+		}
+		return total
+	case it.kind == blockTurn && it.turn != nil:
+		// D326：键数恒 = Σ 子块键数（折叠不铺正文但键数占位防漂移，D265 同规则）；
+		// 摘要行占用第 0 键。
+		total := 0
+		for _, sub := range it.turn.blocks {
+			total += sub.selCount()
 		}
 		return total
 	case it.kind == blockTool && it.chip != nil:

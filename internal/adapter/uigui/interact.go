@@ -29,7 +29,31 @@ func (u *UI) frameItems() []blockView {
 	strips := u.branchStrips()
 	next := 0 // strips 按块序升序，指针单向前进即对齐
 	items := make([]blockView, 0, len(u.m.blocks)+len(strips)+2)
+	// Turn 过程折叠（D326）：assistant 定稿块前紧邻的思考/chip 组折成一行摘要；
+	// 展开态按原样铺回。分组每帧重算（turnAnchors 供点击消费期回查）。
+	groups := u.scanTurnGroups()
+	u.turnAnchors = groups
+	folded := make([]bool, len(u.m.blocks))
+	groupOf := make(map[int]*turnView, len(groups)) // 组内块序 → 所属组
+	for _, tv := range groups {
+		if u.turnIsOpen(tv) {
+			continue // 展开态：组内块按原样走普通路径
+		}
+		for _, sub := range tv.blocks {
+			folded[sub.bi] = true
+			groupOf[sub.bi] = tv
+		}
+	}
+	var pendStrips []branchStrip // 折叠组内块锚的分叉条，顺延到摘要行之后输出
 	for bi, b := range u.m.blocks {
+		if folded[bi] {
+			// 组内块不铺条目，但其上锚的分叉条不能丢——攒着，摘要行后统一铺。
+			if next < len(strips) && strips[next].blockIdx == bi {
+				pendStrips = append(pendStrips, strips[next])
+				next++
+			}
+			continue
+		}
 		switch {
 		case b.kind == blockAssistant:
 			// D207：纯图段（有图无字）不解析 markdown——mdBlocks("") 会兜底回一个
@@ -37,6 +61,16 @@ func (u *UI) frameItems() []blockView {
 			var md []mdBlock
 			if strings.TrimSpace(b.text) != "" {
 				md = u.mdBlocks(b.text)
+			}
+			// 摘要行在该 assistant 正文之前铺（过程先于结论）；组内块锚的分叉条
+			// 随摘要顺延（D89 纯工具轮锚在 chip 上，折叠后不能丢）。
+			if tv, ok := groups[bi]; ok && !u.turnIsOpen(tv) {
+				items = append(items, blockView{kind: blockTurn, turn: tv, bi: bi, id: tv.id})
+				for _, st := range pendStrips {
+					s := st
+					items = append(items, blockView{kind: blockBranch, branch: &s})
+				}
+				pendStrips = pendStrips[:0]
 			}
 			items = append(items, blockView{
 				kind: blockAssistant, md: md, imgs: b.imgs, bi: bi, id: b.id,
@@ -230,6 +264,16 @@ func (u *UI) updateClicks(gtx layout.Context) {
 				u.thinkOpen = map[int]bool{}
 			}
 			u.thinkOpen[i] = !u.thinkOpen[i]
+		}
+	}
+	// Turn 过程摘要行点击 → 展开/收起（D326；开合按 turnID 记，跨块序稳定；
+	// turnAnchors 是 frameItems 每帧重算的分组，bi 即点击件缓存槽）。
+	for bi, tv := range u.turnAnchors {
+		if u.turnClick(bi).Clicked(gtx) {
+			if u.turnOpen == nil {
+				u.turnOpen = map[conversation.MessageID]bool{}
+			}
+			u.turnOpen[tv.id] = !u.turnOpen[tv.id]
 		}
 	}
 	// 命令折叠条点击 → 展开/收起（D265；整条都是热区，默认折叠只留一行文案）。

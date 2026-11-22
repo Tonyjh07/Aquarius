@@ -29,6 +29,7 @@ const (
 	blockBranch                     // 分叉行（D81）：气泡下方的 `◀ i/n ▶` 切换条
 	blockInject                     // 注入节点（D166）：暗卡片 + 来源/触发头部，正文可选
 	blockCommand                    // 命令折叠条（D265）：连续命令合成一条，默认只留一行
+	blockTurn                       // Turn 过程摘要（D326）：本轮思考+工具折成一行，点击展开铺回
 )
 
 // block 一段定稿转写（text 已剥控制序列，§9）。
@@ -55,6 +56,9 @@ type block struct {
 	// cmds 命令折叠条的条目（D265）：连续的命令与各自返回文本合成一条，默认折成一行。
 	// 只有 blockCommand 有内容；text 不参与该种类的渲染（正文全在条目里）。
 	cmds []cmdEntry
+	// turn 仅摘要块使用（D326）：被折叠的本轮思考/chip 子块视图（m.blocks 不动，
+	// 摘要只在渲染分组层产出，展开态按原样铺回）。
+	turn *turnView
 }
 
 // toolChip 一次工具调用的合并视图（D67/§15.3）：调用 + 权限确认 + 结果同组，
@@ -338,6 +342,9 @@ func (m *model) clear() {
 	m.u.thinkOpen = nil
 	m.u.cmdOpen = nil    // D265 同一套规则：命令条的开合也不跨清屏继承
 	m.u.injectOpen = nil // 注入块的折叠态同一套规则
+	m.u.turnOpen = nil   // D326：Turn 过程摘要的开合同规则
+	m.u.turnClicks = m.u.turnClicks[:0]
+	m.u.turnAnchors = nil
 	// pendingCmd **不清**（D265）：清屏正发生在 /switch、/regen 这类命令中途，
 	// 这类命令的返回文本还没到——抹掉就等于让那条结果无处可归。
 }

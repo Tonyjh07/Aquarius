@@ -1,0 +1,215 @@
+package uigui
+
+// turn_test.go Turn 过程折叠（D326）：
+//   - 分组：assistant 定稿前的紧邻思考/chip 折成一行摘要（含 ≥1 chip 才折），纯思考组
+//     不折、无定稿（纯工具轮）不折；
+//   - 展开点击 → 子块铺回、键序不变；再折叠恢复；
+//   - 摘要文案：秒段求和（<1s 毫秒 / ≥1s 一位小数秒）、回放无耗时省略秒段；
+//   - 清屏复位开合态。
+
+import (
+	"testing"
+
+	"gioui.org/io/input"
+	"gioui.org/io/pointer"
+
+	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
+	"github.com/Tonyjh07/Aquarius/internal/port"
+)
+
+var _ = pointer.Move
+
+// portReasoning / portToolCall / portToolResult / textPartsOf 事件与内容的小构造器。
+func portReasoning(text string) port.Event {
+	return port.DeltaEvent{Delta: port.Delta{Text: text, Reasoning: true}}
+}
+
+func portToolCall(id, name string) port.Event {
+	return port.ToolCallEvent{Call: tool.Call{ID: tool.CallID(id), Name: name}}
+}
+
+func portToolResult(id string, ok bool, out string) port.Event {
+	return port.ToolResultEvent{Result: tool.Result{CallID: tool.CallID(id), OK: ok, Output: out}}
+}
+
+func textPartsOf(s string) []conversation.Part {
+	return []conversation.Part{{Kind: conversation.PartText, Text: s}}
+}
+
+// turnFixture 一轮「思考 → 两个工具 → 回答」的定稿序列（含一个已完成 chip）。
+func turnFixture(t *testing.T) (*model, *UI) {
+	t.Helper()
+	m, u := newTestModel(t)
+	u.m = m // newTestModel 不接 u.m（frameItems 需要），测试里接上
+	m.handleEvent(portReasoning("想一想"))
+	m.handleEvent(portToolCall("c1", "file_read"))
+	m.handleEvent(portToolResult("c1", true, "完毕"))
+	m.handleEvent(portToolCall("c2", "term_exec"))
+	m.handleEvent(portToolResult("c2", false, "炸了"))
+	m.flushThink()
+	m.commit(conversation.Message{ID: "a1", Role: conversation.RoleAssistant,
+		Content: textPartsOf("回答")})
+	return m, u
+}
+
+// TestTurnFoldGroupsGroups 分组与摘要条目：组内块不出条目，摘要条目带子块与计数。
+func TestTurnFoldGroups(t *testing.T) {
+	t.Parallel()
+	_, u := turnFixture(t)
+	items := u.frameItems()
+	if len(items) != 2 { // 摘要 + assistant 正文（live 无）
+		t.Fatalf("items = %d, want 2（摘要 + 正文）: %+v", len(items), items)
+	}
+	turn, ans := items[0], items[1]
+	if turn.kind != blockTurn || turn.turn == nil || ans.kind != blockAssistant {
+		t.Fatalf("items = %+v, want [摘要, 正文]", items)
+	}
+	if turn.turn.tools != 2 || len(turn.turn.blocks) != 3 {
+		t.Fatalf("turn = tools %d / blocks %d, want 2 / 3", turn.turn.tools, len(turn.turn.blocks))
+	}
+	if turn.turn.ms < 0 {
+		t.Fatalf("ms = %d, want 思考耗时求和（≥0，不因回放态为 -1）", turn.turn.ms)
+	}
+	// 键数恒 = 子块键数和：思考 1 + chip 2 + chip 2 = 5（开合不漂移，D265 同规则）。
+	if n := turn.selCount(); n != 5 {
+		t.Fatalf("selCount = %d, want 5", n)
+	}
+}
+
+// TestTurnFoldExclusions 纯思考组不折叠；纯工具轮（无 assistant 定稿）不折叠。
+func TestTurnFoldExclusions(t *testing.T) {
+	t.Parallel()
+	m, u := newTestModel(t)
+	u.m = m
+	m.handleEvent(portReasoning("只想不干"))
+	m.flushThink()
+	m.commit(conversation.Message{ID: "a1", Role: conversation.RoleAssistant,
+		Content: textPartsOf("回答")})
+	items := u.frameItems()
+	if len(items) != 2 || items[0].kind != blockThinking || items[1].kind != blockAssistant {
+		t.Fatalf("纯思考组 items = %+v, want 思考块 + 正文（不折摘要）", items)
+	}
+
+	m, _ = newTestModel(t)
+	u.m = m
+	m.handleEvent(portToolCall("c1", "file_read"))
+	m.handleEvent(portToolResult("c1", true, "完毕"))
+	if items := u.frameItems(); len(items) != 1 || items[0].kind != blockTool {
+		t.Fatalf("纯工具轮 items = %+v, want chip 原样（无定稿不折）", items)
+	}
+	_ = u
+}
+
+// frameTurnFixture 带完整主题的帧级夹具（同 turnFixture 序列，经 newFrameUI）。
+func frameTurnFixture(t *testing.T) *UI {
+	t.Helper()
+	u := newFrameUI()
+	m := u.m
+	m.handleEvent(portReasoning("想一想"))
+	m.handleEvent(portToolCall("c1", "file_read"))
+	m.handleEvent(portToolResult("c1", true, "完毕"))
+	m.handleEvent(portToolCall("c2", "term_exec"))
+	m.handleEvent(portToolResult("c2", false, "炸了"))
+	m.flushThink()
+	m.commit(conversation.Message{ID: "a1", Role: conversation.RoleAssistant,
+		Content: textPartsOf("回答")})
+	return u
+}
+
+// TestTurnFoldExpandCollapse 点击摘要 → 子块铺回（键序不变），再点 → 折回。
+func TestTurnFoldExpandCollapse(t *testing.T) {
+	t.Parallel()
+	u := frameTurnFixture(t)
+	q := new(input.Router)
+	gtx, ops := frameGtx(q.Source())
+	u.layout(gtx)
+	q.Frame(ops)
+
+	// 点击摘要行：摘要条目的 bi = assistant 块序（fixture 中 = 3）。
+	u.turnClick(3).Click()
+	gtx, ops = frameGtx(q.Source())
+	u.layout(gtx)
+	q.Frame(ops)
+	items := u.frameItems()
+	// 展开态：思考 + 两个 chip + 正文（无摘要条目）；键数含正文行（5 + 1 = 6），
+	// 与折叠态（摘要 5 + 正文 1）一致——开合不漂移后续行序号。
+	if len(items) != 4 || items[0].kind != blockThinking ||
+		items[1].kind != blockTool || items[2].kind != blockTool || items[3].kind != blockAssistant {
+		t.Fatalf("展开态 items = %+v, want 子块铺回", items)
+	}
+	total := 0
+	for _, it := range items {
+		total += it.selCount()
+	}
+	if total != 6 {
+		t.Fatalf("展开态键数 = %d, want 6（与折叠态一致）", total)
+	}
+	if !u.turnOpen["a1"] {
+		t.Fatal("点击后未记开合态（turnID = a1）")
+	}
+
+	// 再点 = 折回。
+	u.turnClick(3).Click()
+	gtx, ops = frameGtx(q.Source())
+	u.layout(gtx)
+	q.Frame(ops)
+	if u.turnOpen["a1"] {
+		t.Fatal("第二次点击后仍在展开态")
+	}
+	items = u.frameItems()
+	if len(items) != 2 || items[0].kind != blockTurn {
+		t.Fatalf("折回后 items = %+v, want 摘要 + 正文", items)
+	}
+}
+
+// TestTurnHeaderText 摘要文案：秒段格式与思考块同一套；回放（无耗时）省略秒段。
+func TestTurnHeaderText(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		ms, tools int
+		want      string
+	}{
+		{800, 2, i18n.Tf("ui.turn.summary", "sec", i18n.Tf("ui.turn.sec_ms", "n", 800), "n", 2)},
+		{1500, 1, i18n.Tf("ui.turn.summary", "sec", i18n.Tf("ui.turn.sec_s", "n", "1.5"), "n", 1)},
+		{-1, 3, i18n.Tf("ui.turn.summary_plain", "n", 3)},
+	}
+	for _, c := range cases {
+		tv := &turnView{ms: c.ms, tools: c.tools}
+		if got := turnHeaderText(tv); got != c.want {
+			t.Fatalf("ms %d / tools %d = %q, want %q", c.ms, c.tools, got, c.want)
+		}
+	}
+}
+
+// TestTurnClearResets 清屏复位开合态（与 thinkOpen/cmdOpen 同规则）。
+func TestTurnClearResets(t *testing.T) {
+	t.Parallel()
+	m, u := turnFixture(t)
+	u.turnOpen = map[conversation.MessageID]bool{"a1": true}
+	m.clear()
+	if u.turnOpen != nil || u.turnAnchors != nil || len(u.turnClicks) != 0 {
+		t.Fatalf("清屏后未复位: open=%v anchors=%v clicks=%d", u.turnOpen, u.turnAnchors, len(u.turnClicks))
+	}
+}
+
+// TestTurnFrameRendersSummary 摘要行整帧渲染不炸、子块折叠后不占气泡矩形（右键
+// 不可达 = 过程隐藏）。
+func TestTurnFrameRendersSummary(t *testing.T) {
+	t.Parallel()
+	u := frameTurnFixture(t)
+	q := new(input.Router)
+	gtx, ops := frameGtx(q.Source())
+	u.layout(gtx)
+	q.Frame(ops)
+	chipRows := 0
+	for _, h := range u.bubbleRects {
+		if h.kind == blockTool {
+			chipRows++
+		}
+	}
+	if chipRows != 0 {
+		t.Fatalf("折叠态 bubbleRects 含 %d 个 chip 行, want 0（过程已隐藏）", chipRows)
+	}
+}
