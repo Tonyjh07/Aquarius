@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-22 @ 04ac04d -->
+<!-- docs-sync: 2026-11-22 @ 161baed -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -33,9 +33,9 @@
 - **P2 · pluginapi/v1 契约**（M）：规格已成文——[plugin-design.md](plugin-design.md)（D327）；
   本批次出独立 go.mod 契约包与防腐映射点列表，接口代码随 P3。
 - **P3 · plugingo 装载器 + 首个 Tier-1 插件**（M~L，关键路径）：按 plugin-design.md §7/§11/§12
-  实现——宿主校验与状态机、`adapter/plugingo` 转换层、main 注册表。**样例插件待定**：
-  候选一为导出文件输出器（`OutputAdapter`，contracts §7.2 形态），其余候选等拍板后回填；
-  验收标准（覆盖供给面、Host 消费面、管理面、生命周期四层）不随选型变。
+  实现——宿主校验与状态机、`adapter/plugingo` 转换层、main 注册表。**样例插件定为间隔
+  重复记忆插件**（独立仓库，设计稿见该仓库 design.md；`MemoryStore` + `ToolProvider` +
+  面板形态），验收标准（覆盖供给面、Host 消费面、管理面、生命周期四层）不变。
 - **P4 · 杂项收口**（S，随做随删）：regexp2 `MatchTimeout` 与计数路径 ctx 检查（安全）；
   `think` 参数非空校验；压缩摘要流的 UI 标注；`/usage` 文案修正；三协议兼容回归
   （DeepSeek 当 anthropic 协议的第二家真后端跑集成用例）。
