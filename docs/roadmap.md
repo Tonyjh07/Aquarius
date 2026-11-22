@@ -1,5 +1,5 @@
 # Aquarius 里程碑进度（完成记录）
-<!-- docs-sync: 2026-11-22 @ a0dfebf -->
+<!-- docs-sync: 2026-11-22 @ e87b0a7 -->
 
 > **定位**：本文件是**进度档案**——只记「已经完成了什么、对应哪条决策」，以及里程碑基线。
 > 只记过去，不写未来：**要做什么、按什么顺序**看 [plan.md](plan.md)。
@@ -60,7 +60,7 @@ v0.2.0 的 P0（守规）、P1（聚合根归位）与 P2（收口与归位 + �
 **申报 `fs`**（读写过手，越界读按次数问、越界写每次都问、控制文件单列，D283/D284）、
 **申报 `terminal`**（命令由 Aquarius 起进程、每条问一次、输出进报告不进正文，D286）、
 **会话选项**（`delegate.agents[].options` 照代理广告的值设，D287）四批已全部完成并随 v0.6.0
-发布；同期移除 `-yes`（D285），界面文案按 STC 复审一遍（见 [stc/review.md](stc/review.md)）。
+发布；同期移除 `-yes`（D285），界面文案按 STC 复审一遍（见 [../archive/review.md](../archive/review.md)）。
 无余额。
 
 `v0.7.0`（决策策略）：**放行策略按工具四态**、只存例外、作用域到目录
@@ -297,7 +297,7 @@ ID · 预览（复用 `nodeSummary`），上限 100 行截断记数，单个会�
 引号按 11-04 拍板保留 `「」`，在 [stc/terms.aquarius.yaml](stc/terms.aquarius.yaml) 记成项目例外；
 非引号错误级问题 425 → 10，剩下 10 处是几何位置术语、测试断言与学科术语，逐条登记理由。
 G20 疑点 55 处复核后保留。`docs/README.md` 的「文风」收成一句指向，`development.md` 的引用同步改。
-逐篇结果、保留项与两篇只报不改的清单在 [stc/review.md](stc/review.md)。
+逐篇结果、保留项与两篇只报不改的清单在 [../archive/review.md](../archive/review.md)。
 
 **v0.5.0-F 完成情况**：`uigui` 拆包按实测否决后从 [plan.md](plan.md) 移出，理由与重启判据
 记在 [development.md](development.md) 的「已否决的提议」。命令分派按「动作表 + 对账锁」收口，

@@ -2,7 +2,7 @@
 # term：统一使用的叫法；meaning：这个叫法在项目里的意思；not：不使用的叫法；en：英文界面的叫法。
 # 用途：文档 STC 审阅与重写（v0.5.0 收尾批）时保持同一对象同一叫法。checker 不读本文件，
 # 供 agent 审阅时对照。本机技能目录 .workbuddy/skills/stc/dictionary/ 下留的是同一份副本；
-# 改词表以本文件为准。审阅结论见 docs/stc/review.md。
+# 改词表以本文件为准。审阅结论见 docs/../archive/review.md。
 
 - term: 会话树
   meaning: 一棵不可变消息树加一个 Head 游标，是会话的全部数据

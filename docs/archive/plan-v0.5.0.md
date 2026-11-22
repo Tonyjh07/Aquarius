@@ -1,10 +1,10 @@
 # v0.5.0 工作稿存档（plan.md 清理前）
-<!-- docs-sync: 2026-11-05 @ c541a2c -->
+<!-- docs-sync: 2026-11-22 @ e87b0a7 -->
 
 > **只读存档**：2026-11-05 从 [plan.md](../plan.md) 移出的 v0.5.0 已完成章节，逐字保留，
 > 不随代码更新。现行进度档案见 [roadmap.md](../roadmap.md) 的 v0.5.0 行，决策结论见
 > [decisions.md](../decisions.md)，内核规格见 [contracts.md](../contracts.md)，文档审阅结果见
-> [stc/review.md](../stc/review.md)，发布说明见 [releases/v0.5.0.md](../releases/v0.5.0.md)。
+> [archive/review.md](../archive/review.md)，发布说明见 [releases/v0.5.0.md](../releases/v0.5.0.md)。
 > 本文件只用来查「当时那批工作是怎么排的、验收与风险怎么写的」；未来工作一律以 plan.md 为准。
 >
 > 收录：清理前的版本路线、v0.5.0 发版排期、文档按 STC 审阅与重写、多语言界面、规范化日志、
@@ -19,7 +19,7 @@
 
 | 版本 | 主题 | 内容 | 状态 |
 |---|---|---|---|
-| v0.5.0 | 多语言界面 + 规范化日志 + 首次运行引导 + 文档 STC 审阅 | 三条主线：**界面 i18n**（`zh` / `en`，代码与视觉走查均已收口）、**规范化日志**（五段式运行日志，L1–L4 全部完成）、**欢迎窗重构成五页引导**（O1–O5）。收尾批：**文档 STC 审阅已完成**（11-05，见 [stc/review.md](../stc/review.md)）；**测试并行与依赖收口已完成**（11-05，见本文「测试并行与 `-race` 墙钟」节）。外部代理那一线整体移入 v0.6.0（见下）。语音前处理与说话人仍在 backlog，不占这一版 | 收口中（见 [roadmap.md](../roadmap.md) 的 v0.5.0 行；逐日排期见下方「v0.5.0 发版排期」） |
+| v0.5.0 | 多语言界面 + 规范化日志 + 首次运行引导 + 文档 STC 审阅 | 三条主线：**界面 i18n**（`zh` / `en`，代码与视觉走查均已收口）、**规范化日志**（五段式运行日志，L1–L4 全部完成）、**欢迎窗重构成五页引导**（O1–O5）。收尾批：**文档 STC 审阅已完成**（11-05，见 [archive/review.md](../archive/review.md)）；**测试并行与依赖收口已完成**（11-05，见本文「测试并行与 `-race` 墙钟」节）。外部代理那一线整体移入 v0.6.0（见下）。语音前处理与说话人仍在 backlog，不占这一版 | 收口中（见 [roadmap.md](../roadmap.md) 的 v0.5.0 行；逐日排期见下方「v0.5.0 发版排期」） |
 | v0.6.0 | 外部代理：设置窗直接配 ACP + 申报 `fs` / `terminal` | 三件由浅入深：先把代理**配得明白**（A1，设置窗里增删改、根集、权限、连通性），再让读写**经 Aquarius 转手**（A2），最后让命令**由 Aquarius 执行**（A3，含前置验证）。语音前处理与说话人仍在 backlog | 规划中 |
 
 **方向**：v0.5.0 的三条主线是同一件事的三个面——都在**收口**而不是加功能：多语言把界面文案收进
@@ -55,7 +55,7 @@
 | 10 | ~~L3 端口换结构化回调~~ | 已完成 11-04 | `Logf(format, args…)` 这一族消失；`[plugin] ` 前缀收进 `ctx` |
 | 11 | ~~L4 上锁（接 I6 已完成的 AST 辅助）~~ | 已完成 11-04 | `internal/logging/lock_test.go` 两把锁：stderr 出口白名单、事件 key 必带行动位与上下文段 |
 | 12 | ~~`en` 全量冒烟 + 608dp / 200% 离屏截帧~~ | 已完成 11-04 | `AQUARIUS_UI_LANG=en go test ./...` 抓到 5 处期望值写死中文；离屏走查抓到历史窗状态栏在 en 下溢出（`Discard` 被切、开关掉出可视区），修法见下 |
-| 13 | ~~文档按 STC 审阅与重写~~ | 已完成 11-05 | 引号口径按 11-04 拍板保留 `「」`；12 篇改写、2 篇只报不改；非引号错误 425 → 10，剩下 10 处是术语与断言原文，逐条登记在 [stc/review.md](../stc/review.md) |
+| 13 | ~~文档按 STC 审阅与重写~~ | 已完成 11-05 | 引号口径按 11-04 拍板保留 `「」`；12 篇改写、2 篇只报不改；非引号错误 425 → 10，剩下 10 处是术语与断言原文，逐条登记在 [archive/review.md](../archive/review.md) |
 | 14 | 发版闸门 | 11-06 上午 | 干净 clone 构建、`govulncheck`、`winres` 两处版本、页 2 四条正文的生效日期改 11-06、`docs/releases/v0.5.0.md`、tag；**推送给用户执行**。STC 那批已完成，`docs/` 13 篇已收口 |
 
 **顺序约束**：O4 先于 L2 / L3——`assemble_ports.go` 同时是 L2 的主战场与 O4 空值分支的落点，
@@ -77,7 +77,7 @@ L4 复用这套 AST 辅助，不再有同批文件的冲突。
 > （`AGENTS.md` 末尾的 `stc:start` 段，`mode=default`）。这一项不是装工具，是把已写成的 8,953 行
 > 中文按同一把尺子过一遍：`docs/` 13 篇 + 仓库 `README.md`。
 > 2026-11-05 已完成：逐篇结果、保留理由与只报不改清单见
-> [stc/review.md](../stc/review.md)，词表正本见 [stc/terms.aquarius.yaml](../stc/terms.aquarius.yaml)。
+> [archive/review.md](../archive/review.md)，词表正本见 [stc/terms.aquarius.yaml](../stc/terms.aquarius.yaml)。
 
 **收益**：v0.5.0 把界面文案收进 `internal/i18n`、把日志收进 `internal/logging`，同一轮改动里
 「同一件事在两三处各写一遍」的措辞差异留了下来。STC 的两件东西正好对上：词表（一个词一个意思，
@@ -113,7 +113,7 @@ L4 复用这套 AST 辅助，不再有同批文件的冲突。
 剩 10 处术语与断言原文误报，逐条登记理由；G20 疑点 55 处逐条复核后保留；`git diff` 逐篇过，
 结论、数字、权限、默认值、跨篇链接与标题锚点与改前一致；`docsync -check` 绿；用户面五篇
 不再出现 `D<n>` / `§<n>` / 里程碑编号。`contracts` / `decisions` 的待改清单在
-[stc/review.md](../stc/review.md) 文末。
+[archive/review.md](../archive/review.md) 文末。
 
 **边界（已收口）**：STC **取代** [docs/README.md](../README.md) 的「文风」——表达层的规则
 （词表、句长、四个场景的细则）以 STC 为准，`docs/README.md` 那段「文风」已收成一句指向，

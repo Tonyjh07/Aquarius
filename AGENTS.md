@@ -274,8 +274,10 @@ internal/adapter/    llm（含 llm/tokenizer 精确计数）、toolbuiltin（mem
 改完中文，对动过的文件跑一遍：
 
 ```bash
-node .workbuddy/skills/stc/tools/cli.mjs check <文件或目录> --profile for-document
+node .workbuddy/skills/stc/tools/cli.mjs check <文件或目录> --profile for-document | grep -v '（G17'
 ```
 
-代码注释也按 `for-document` 查（默认的 `for-web-dev` 只看字符串）。报告里的 G17 跳过，其余逐条
-判断；「待确认」不强制改，但保留要有理由。
+代码注释也按 `for-document` 查（默认的 `for-web-dev` 只看字符串）。引号例外（G17，保留「」）
+已拍板，理由与另几条例外见 docs/stc/terms.aquarius.yaml 的「项目例外」段——过滤掉再看，
+其余逐条判断；「待确认」不强制改，但保留要有理由。存量段落不追着改：改到哪段，顺手把那段
+按 STC 重写（docs/README.md「文风」的存量分层），不单独发起纯风格清扫。

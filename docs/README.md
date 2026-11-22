@@ -1,5 +1,5 @@
 # 文档地图与分工
-<!-- docs-sync: 2026-11-17 @ b80ea1d -->
+<!-- docs-sync: 2026-11-22 @ e87b0a7 -->
 
 > 一页说清每篇文档**写给谁、管什么、谁是权威**。改文档之前先在这里找该篇的位置——
 > 位置不清的文档会同时变成手册、历史档案和待办清单，最后没人读完。
@@ -35,7 +35,7 @@
 | [contracts.md](contracts.md) | **内核当前为真**的规格：领域模型、端口、插件宿主、应用层、权限与安全、取消与并发 | **内核事实的最终裁定**；与 decisions 同级 |
 | [decisions.md](decisions.md) | 每条决策一行结论；够格展开的写动机与用户拍掉的方案 | 与 contracts 同级；**编号的唯一索引**在这里 |
 | [roadmap.md](roadmap.md) | 已经完成了什么、对应哪条决策 | 进度档案，只记过去；计划不在本文 |
-| [plan.md](plan.md) | 还没做的事、顺序与节奏 | 未来工作的唯一处；**工作稿，随时重排，别的文档不按节号引用 plan.md** |
+| [plan.md](plan.md) | 还没做的事、顺序与节奏 | 未来工作的唯一处；**工作稿，随时重排，别的文档不按节号引用 plan.md**。阶段完成即从本文删除（[roadmap.md](roadmap.md) 留一行结论），本文只留没做的事 |
 | [overview.md](overview.md) | 定位、统一语言、限界上下文、依赖方向、目录与端口矩阵 | **定位与术语的唯一处**；一页速览 |
 | [development.md](development.md) | 门禁、测试手段、工程准则与边界、How-to | 开发流程的唯一处 |
 | [relation-map-design.md](relation-map-design.md) | 会话树关系图的形态规格（通道分配、行为契约） | uigui 实现规格；可被测试断言的部分以本文为准 |
@@ -79,9 +79,12 @@
 
 中文按 STC（简明技术性中文）写：词表、句长与四个场景的细则由 STC 规则给出
 （见 [AGENTS.md](../AGENTS.md) 末尾的 STC 段）。本仓只登记项目例外与术语，见
-[stc/terms.aquarius.yaml](stc/terms.aquarius.yaml)；逐篇的审阅结论与保留理由见
-[stc/review.md](stc/review.md)。两条规则不随 STC 变：用户面文档不出现决策编号与节号；
+[stc/terms.aquarius.yaml](stc/terms.aquarius.yaml)；2026-11-05 那轮逐篇审阅的过程报告已归档
+（[archive/review.md](archive/review.md)），当下的例外以词表为准。两条规则不随 STC 变：用户面文档不出现决策编号与节号；
 文档分工与「一个事实一处权威」按本文的地图。
+
+**存量分层**：STC 约束新写的和本次改动的文字；2026-11-04 引入之前的历史段落不追着改——
+改到哪一段，顺手把那一段按 STC 重写（改到即改写），不单独发起纯风格清扫。
 
 ## 存档
 
@@ -96,6 +99,7 @@
 | [archive/relation-map-physics-design.md](archive/relation-map-physics-design.md) | 关系图「全程物理动画」的力积分设计稿（边弹簧 + 阻尼 + 树锚的推导与实测） | 生产物理改采源算法（D128）；形态与现状见 [relation-map-design.md](relation-map-design.md) §5.4 |
 | [archive/decisions-full.md](archive/decisions-full.md) | 压缩前的决策记录全文：实现细节、当时的推演与自问自答式的否决项 | 正文压缩后 [decisions.md](decisions.md) 只留一行结论与够格展开的决策；编号与结论仍以 decisions.md 为准 |
 | [archive/plan-v0.5.0.md](archive/plan-v0.5.0.md) | v0.5.0 三条主线、STC 审阅、发版排期与测试并行的工作稿全文（含验收与风险） | 完成记录见 [roadmap.md](roadmap.md) 的 v0.5.0 行；[plan.md](plan.md) 清理后只留还没做的事 |
+| [archive/review.md](archive/review.md) | v0.5.0 收尾批的文档 STC 逐篇审阅报告（改法、逐篇计数与保留清单） | 审阅已完成；当下的例外与术语以 [stc/terms.aquarius.yaml](stc/terms.aquarius.yaml) 为准 |
 
 ## 维护
 
