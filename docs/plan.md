@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-22 @ 6a6c32a -->
+<!-- docs-sync: 2026-11-22 @ fc720f0 -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -15,6 +15,33 @@
 - 规模记号：**S** = 半天~1 天，**M** = 2~4 天，**L** = 1 周+（含测试与文档）。
 - 版本记号：一个版本 = 一组完整的、可验证的收口；不把半截工作留成版本边界。
 - 批次记号：`P<n>-<m>` 是执行批次里的条目号，跨文档引用写批次号（如 `P2-4`），不要用节号。
+
+---
+
+## v1.0.0（在排）：正式版收口
+
+> 下版发 `v1.0.0`。判断依据（2026-11-22 会话）：内核完成度与质量基建已够格，缺口在三笔
+> 承诺——插件契约没冻结、隐含契约没显式化、稳定声明没写。本版把这三笔立干净。
+
+- **P1 · 契约显式化**（S~M）：
+  1. Agent/Runner 共享可变状态的并发模型落 contracts（M2 审查遗留三条：`Confirmer` 无任务
+     标识的语义、注入队列满时的重试、watcher 表生命周期）；
+  2. 稳定声明成文（新篇 `docs/stability.md`）：存储格式兼容承诺、平台支持矩阵、不承诺项
+     （自动更新、代码签名、PTC 实验性、上游字体缺陷）；发布说明「已知限制」今后只引这篇；
+  3. MCP 提示文本冒充身份的最小处置（来源标记 + system 注明「以下来自外部服务」）；
+  4. MCP 默认风险按来源分流（config 来源 `safe`、plugins 目录来源 `confirm`）。
+- **P2 · pluginapi/v1 契约**（M）：规格已成文——[plugin-design.md](plugin-design.md)（D327）；
+  本批次出独立 go.mod 契约包与防腐映射点列表，接口代码随 P3。
+- **P3 · plugingo 装载器 + 首个 Tier-1 插件**（M~L，关键路径）：按 plugin-design.md §7/§11/§12
+  实现——宿主校验与状态机、`adapter/plugingo` 转换层、main 注册表；首个插件为导出文件
+  输出器（`OutputAdapter`），同时是契约验收与文档样例。
+- **P4 · 杂项收口**（S，随做随删）：regexp2 `MatchTimeout` 与计数路径 ctx 检查（安全）；
+  `think` 参数非空校验；压缩摘要流的 UI 标注；`/usage` 文案修正；三协议兼容回归
+  （DeepSeek 当 anthropic 协议的第二家真后端跑集成用例）。
+- **收口**：稳定声明复核 → 全门禁 → 发布说明（引 stability.md，写 1.0 的承诺与不承诺）→
+  winres 1.0.0.0。
+
+P1 / P2 / P4 可穿插；关键路径在 P3。
 
 ---
 
@@ -210,8 +237,6 @@ DeepSeek 现在同时提供 Messages（`/anthropic/v1/messages`）、Responses �
   TTS 流式合成见上文「DeepSeek 全家桶」一节）；**导出文件输出器**（把每条回答镜像到文件，[contracts.md](contracts.md) §7.2 的
   `OutputAdapter` 形态）——与 `/export` 的按次整树导出是两件事，后者见 [contracts.md](contracts.md) §5.16
 - **备份的后续**：增量与差量备份、归档加密（密钥库那条是另一件事）、把备份做成定时任务
-- **Tier-1 Go 插件（D29 由 M4 移入）**：`pluginapi/v1` 独立 go.mod 契约 + `adapter/plugingo`
-  编译期装载器（范围随后续里程碑定稿；M4 只做 Tier-2 MCP）
 - **GUI 后续（M5/D43 之外，[gui-design.md](gui-design.md) 预留）**：悬浮球本体转常规窗口形态（D43 只预留设计
   不实现；功能窗用独立常规窗已入正册 D60）、多颜色主题预设（M5 只做品牌色
   `#00AEEF` + 深/浅两版）；转写气泡内嵌图片缩略图仍留在此处

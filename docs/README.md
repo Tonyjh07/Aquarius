@@ -1,5 +1,5 @@
 # 文档地图与分工
-<!-- docs-sync: 2026-11-22 @ c8e65d3 -->
+<!-- docs-sync: 2026-11-22 @ fc720f0 -->
 
 > 一页说清每篇文档**写给谁、管什么、谁是权威**。改文档之前先在这里找该篇的位置——
 > 位置不清的文档会同时变成手册、历史档案和待办清单，最后没人读完。
@@ -40,6 +40,7 @@
 | [development.md](development.md) | 门禁、测试手段、工程准则与边界、How-to | 开发流程的唯一处 |
 | [relation-map-design.md](relation-map-design.md) | 会话树关系图的形态规格（通道分配、行为契约） | uigui 实现规格；可被测试断言的部分以本文为准 |
 | [gui-design.md](gui-design.md) | GUI 壳内实现规格：悬浮球形态、输入栏与转写、主题令牌、多窗、缩放、气泡菜单 | uigui 实现规格；`§15.x` 引用指本文 |
+| [plugin-design.md](plugin-design.md) | Tier-1 插件（`pluginapi/v1`）实现规格：接口面、UI 扩展面、宿主服务、生命周期、版本纪律 | plugingo 实现规格；两级模型总形状在 contracts §6.2 |
 | [AGENTS.md](../AGENTS.md) | 硬性规则、文档纪律、常用命令、提交要求、本机环境该记什么 | **规则的唯一处**（development.md 是汇编，冲突以本文为准） |
 | [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md) | 第三方组件的版本与许可证 | 再分发合规依据 |
 
