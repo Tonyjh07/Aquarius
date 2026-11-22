@@ -5,6 +5,7 @@ package uigui
 
 import (
 	"fmt"
+	"gioui.org/io/input"
 	"testing"
 )
 
@@ -60,6 +61,37 @@ func TestParseMarkdownLists(t *testing.T) {
 	}
 	if blocks[4].order != 2 {
 		t.Fatalf("有序编号 = %d, want 2", blocks[4].order)
+	}
+}
+
+// TestParseMarkdownTable 表格解析（D325）：表头 + 表体入网格、单元格行内剥标记、
+// 缺列补空；不是表格的伪表（缺分隔行）仍是段落原文。
+func TestParseMarkdownTable(t *testing.T) {
+	t.Parallel()
+	blocks := blocksOf(t, "| 名称 | 数量 |\n| --- | --: |\n| **甲** | 1 |\n| 乙 |  |")
+	if len(blocks) != 1 || blocks[0].kind != mdTable || blocks[0].grid == nil {
+		t.Fatalf("blocks = %+v, want 单个表格块", blocks)
+	}
+	g := blocks[0].grid
+	if len(g.head) != 2 || g.head[0] != "名称" || g.head[1] != "数量" {
+		t.Fatalf("head = %v, want [名称 数量]", g.head)
+	}
+	if len(g.rows) != 2 {
+		t.Fatalf("rows = %d, want 2", len(g.rows))
+	}
+	if g.rows[0][0] != "甲" || g.rows[0][1] != "1" {
+		t.Fatalf("row0 = %v, want 行内标记已剥", g.rows[0])
+	}
+	if g.rows[1][1] != "" { // 缺列补空
+		t.Fatalf("row1 = %v, want 空单元格补齐", g.rows[1])
+	}
+	if n := mdKeys(blocks[0]); n != 6 { // (2 行体 + 1 表头) × 2 列
+		t.Fatalf("mdKeys = %d, want 6", n)
+	}
+	// 伪表（缺分隔行）不进网格：仍是段落原文。
+	blocks = blocksOf(t, "| 甲 | 乙 |\n| 丙 | 丁 |")
+	if len(blocks) != 1 || blocks[0].kind != mdPara || blocks[0].text == "" {
+		t.Fatalf("伪表 blocks = %+v, want 段落", blocks)
 	}
 }
 
@@ -198,6 +230,54 @@ func TestFrameItemsMarkdown(t *testing.T) {
 	}
 	if items[2].kind != blockAssistant || !items[2].live || items[2].text != "**草稿**不解析" || items[2].md != nil {
 		t.Fatalf("items[2] = %+v（live 草稿应原样且不解析）", items[2])
+	}
+}
+
+// TestFrameItemsMarkdownTable 含表格的助手块：表格入复合行、选键按单元格累计
+// （键数 = 行 × 列 + 其余块，D325），整帧布局不炸（网格渲染走量期宏）。
+func TestFrameItemsMarkdownTable(t *testing.T) {
+	t.Parallel()
+	u := newFrameUI()
+	u.m.add(blockUser, "画个表格")
+	u.m.add(blockAssistant, "表格：\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |")
+	items := u.frameItems()
+	a := items[1]
+	if a.kind != blockAssistant || len(a.md) != 2 || a.md[1].kind != mdTable {
+		t.Fatalf("items[1].md = %+v, want 段落 + 表格", a.md)
+	}
+	// 段落 1 键 + 表格 (1 表头 + 2 行) × 2 列 = 7。
+	if n := a.selCount(); n != 7 {
+		t.Fatalf("selCount = %d, want 7（D325 按单元格计键）", n)
+	}
+	// 整帧跑一遍（网格宏 + 细线 + 文本重放全路径），只验不炸与几何落格。
+	q := new(input.Router)
+	gtx, ops := frameGtx(q.Source())
+	u.layout(gtx)
+	q.Frame(ops)
+}
+
+// TestMdTableColWidths 列宽分配（D325）：权重占比 × 可用宽，窄列保底，总宽超限按比例压回。
+func TestMdTableColWidths(t *testing.T) {
+	t.Parallel()
+	// 均权 → 均分。
+	w := mdTableColWidths(300, []float64{1, 1}, 48)
+	if w[0] != 150 || w[1] != 150 {
+		t.Fatalf("均权 = %v, want [150 150]", w)
+	}
+	// 权重 3:1 → 225:75。
+	w = mdTableColWidths(300, []float64{3, 1}, 48)
+	if w[0] != 225 || w[1] != 75 {
+		t.Fatalf("3:1 = %v, want [225 75]", w)
+	}
+	// 窄列保底：权重悬殊时小列不低于 minW。
+	w = mdTableColWidths(300, []float64{9, 0.05}, 48)
+	if w[1] != 48 {
+		t.Fatalf("保底 = %v, want 小列 48", w)
+	}
+	// 超限压回：保底把总宽顶过可用时按比例缩。
+	w = mdTableColWidths(60, []float64{1, 1, 1, 1}, 48)
+	if got := w[0] + w[1] + w[2] + w[3]; got > 60 {
+		t.Fatalf("总宽 %d 超可用 60: %v", got, w)
 	}
 }
 

@@ -12,12 +12,15 @@ import (
 
 	"github.com/yuin/goldmark"
 	gmast "github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/extension"
+	gmeast "github.com/yuin/goldmark/extension/ast"
 	gmtext "github.com/yuin/goldmark/text"
 	"github.com/yuin/goldmark/util"
 )
 
-// mdParser CommonMark 解析器（默认无扩展：表格按原文段落呈现、可读，D65 否决 GFM）。
-var mdParser = goldmark.New()
+// mdParser CommonMark 解析器 + GFM Table 单项扩展（D325：表格网格渲染；D65 对 GFM
+// 其余扩展的否决维持——strikethrough / tasklist 等仍按原文呈现）。
+var mdParser = goldmark.New(goldmark.WithExtensions(extension.Table))
 
 // mdKind markdown 结构块种类（解析层中间表示；渲染映射见 UI.mdViews）。
 type mdKind int
@@ -29,6 +32,7 @@ const (
 	mdListItem               // 列表项（前缀已在 text；level = 嵌套深度，order = 有序编号）
 	mdQuote                  // 引用（前缀已在 text）
 	mdRule                   // 分隔线
+	mdTable                  // 表格（D325：grid 携内容，text 不参与渲染）
 )
 
 // mdBlock markdown 结构块。
@@ -38,7 +42,18 @@ type mdBlock struct {
 	level int    // 标题级别 / 列表嵌套深度
 	order int    // 有序列表编号（0 = 无序）
 	lang  string // 代码块语言标签
+	// grid 仅表格块使用（D325）：表头 + 表体，单元格已行内剥标记。
+	grid *mdGrid
 }
+
+// mdGrid 一张表格（D325）：head 一行、body 若干行，列数以 head 为准（缺列补空）。
+type mdGrid struct {
+	head []string
+	rows [][]string
+}
+
+// cols 列数。
+func (t *mdGrid) cols() int { return len(t.head) }
 
 // parseMarkdown 源文本 → 结构块（只遍历顶层与列表/引用子树；解析无错误路径，
 // 对抗性输入的兜底在 UI.mdViews 的 recover）。
@@ -80,11 +95,49 @@ func appendBlock(blocks []mdBlock, n gmast.Node, src []byte) []mdBlock {
 		return blocks
 	case *gmast.List:
 		return mdAppendList(blocks, n, src, 0)
+	case *gmeast.Table: // D325：表格 → 网格块（单元格行内剥标记，与正文同一出口）
+		return append(blocks, mdParseTable(n, src))
 	case *gmast.HTMLBlock: // HTML 块按原文文本行呈现（§9 只渲染不执行）
 		return append(blocks, mdBlock{kind: mdPara, text: mdTrimNL(mdCodeLines(n, src))})
 	default:
 		return blocks
 	}
+}
+
+// mdParseTable 表格节点 → 网格块（D325）：第一个 TableHeader 是表头，其余 TableBody
+// 行按 head 列数取齐（缺列补空串、多列截断）；列对齐声明吞掉不实现（D325 决策 4）。
+func mdParseTable(n *gmeast.Table, src []byte) mdBlock {
+	t := &mdGrid{}
+	for c := n.FirstChild(); c != nil; c = c.NextSibling() {
+		switch c := c.(type) {
+		case *gmeast.TableHeader:
+			for cc := c.FirstChild(); cc != nil; cc = cc.NextSibling() {
+				if cell, ok := cc.(*gmeast.TableCell); ok {
+					t.head = append(t.head, mdTrimNL(mdInlineText(cell, src)))
+				}
+			}
+		case *gmeast.TableRow: // goldmark 表体行直接挂 Table 下（无 TableBody 层）
+			cells := make([]string, 0, len(t.head))
+			for cc := c.FirstChild(); cc != nil; cc = cc.NextSibling() {
+				if cell, ok := cc.(*gmeast.TableCell); ok && len(cells) < len(t.head) {
+					cells = append(cells, mdTrimNL(mdInlineText(cell, src)))
+				}
+			}
+			for len(cells) < len(t.head) {
+				cells = append(cells, "")
+			}
+			t.rows = append(t.rows, cells)
+		}
+	}
+	return mdBlock{kind: mdTable, grid: t}
+}
+
+// mdKeys 该结构块占用的行选键数（D325：表格 = 行 × 列，单元格各自可选；其余恒 1）。
+func mdKeys(b mdBlock) int {
+	if b.kind == mdTable && b.grid != nil {
+		return (len(b.grid.rows) + 1) * b.grid.cols()
+	}
+	return 1
 }
 
 // mdAppendList 列表 → 平铺列表项块（嵌套列表紧随父项、深度缩进；软换行的续行对齐前缀）。
@@ -281,7 +334,7 @@ func mdBlocksCached(src string, cache *map[string][]mdBlock) (blocks []mdBlock) 
 	parsed := parseMarkdown(src)
 	blocks = parsed[:0]
 	for _, b := range parsed {
-		if b.kind == mdRule || strings.TrimSpace(b.text) != "" {
+		if b.kind == mdRule || b.kind == mdTable || strings.TrimSpace(b.text) != "" {
 			blocks = append(blocks, b)
 		}
 	}

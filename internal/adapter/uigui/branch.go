@@ -58,7 +58,8 @@ func (it blockView) menuable() bool {
 	return false
 }
 
-// selCount 本条目占用的行选键数（D66 双键）：助手复合行 = 块数；工具 chip = 恒 2
+// selCount 本条目占用的行选键数（D66 双键）：助手复合行 = 各块键数之和（表格块按
+// 行×列计，D325）；工具 chip = 恒 2
 // （参数/结果——开合切换不漂移后续行序号，D67）；**分叉条 = 0**（D81：无文本可选，且
 // 不占键 → 分叉条的增删不漂移其它行的选择序号）；**纯图气泡 = 0**（D207：没有文本可
 // 选，图格只响应点击）；**命令折叠条 = 每条 2**（命令行/输出，D265 同 D67 规则：
@@ -70,7 +71,12 @@ func (it blockView) selCount() int {
 	case it.kind == blockCommand:
 		return 2 * len(it.cmds)
 	case it.kind == blockAssistant && len(it.md) > 0:
-		return len(it.md)
+		// D325：表格块占 行×列 枚键（单元格各自可选），其余块各一枚。
+		total := 0
+		for _, b := range it.md {
+			total += mdKeys(b)
+		}
+		return total
 	case it.kind == blockTool && it.chip != nil:
 		return 2
 	case it.kind == blockUser || it.kind == blockAssistant:

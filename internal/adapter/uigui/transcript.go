@@ -6,6 +6,7 @@ import (
 	"image"
 	"image/color"
 	"strings"
+	"unicode/utf8"
 
 	"gioui.org/font"
 	"gioui.org/io/event"
@@ -247,12 +248,14 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, rs *rowSel) (layout.Widg
 		imgs := it.imgs
 		return func(gtx layout.Context) layout.Dimensions {
 			vs := beginVStack(gtx)
-			for k, b := range blocks {
-				if k > 0 {
+			k := 0 // 行选键游标：表格块占 行×列 枚键（D325），随 mdKeys 累计
+			for i, b := range blocks {
+				if i > 0 {
 					vs.gap(mdBlockGapDp)
 				}
 				off := image.Pt(0, vs.y) // add 的 offY 即当前 y（先 gap 后取）
 				vs.add(u.mdBlockWidget(b, rs, k, off))
+				k += mdKeys(b)
 			}
 			if len(imgs) > 0 {
 				if len(blocks) > 0 {
@@ -550,6 +553,10 @@ func mdBlockWidgetTh(th *material.Theme, b mdBlock, rs *rowSel, k int, off image
 				return l.Layout(gtx)
 			}, k, off, image.Point{})
 		}
+	case mdTable: // D325：网格（表头加粗 + 横竖细线、列宽按内容权重；键 = 每单元格一枚）
+		return func(gtx layout.Context) layout.Dimensions {
+			return mdTableLayout(gtx, th, b.grid, rs, k, off)
+		}
 	default: // mdPara / mdListItem：正文（列表前缀已在文本）
 		return func(gtx layout.Context) layout.Dimensions {
 			return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -559,4 +566,187 @@ func mdBlockWidgetTh(th *material.Theme, b mdBlock, rs *rowSel, k int, off image
 			}, k, off, image.Point{})
 		}
 	}
+}
+
+// 表格网格渲染（D325）。列宽 = 各列最长单元格的字符权重 × 可用宽（窄列保底）；
+// 不逐列像素测量（决策否决）。文本先整体录宏（note 须在对应 label Layout 之后调用
+// ——Regions 此刻才有效，同 mdCode 模式），细线与表头底线后画、文本最后重放，
+// 与 paintRow 的「底 → 高亮 → 文本」次序一致。
+const (
+	mdTableCellInsetXdp unit.Dp = 6
+	mdTableCellInsetYdp unit.Dp = 3
+	mdTableColMinDp     unit.Dp = 48
+)
+
+func mdTableLayout(gtx layout.Context, th *material.Theme, t *mdGrid, rs *rowSel, kBase int, off image.Point) layout.Dimensions {
+	cols := 0
+	if t != nil {
+		cols = t.cols()
+	}
+	if cols == 0 {
+		return layout.Dimensions{}
+	}
+	avail := gtx.Constraints.Max.X
+
+	// 列宽：各列最长单元格字符数作权重（限幅防长单元格吞表），窄列保底。
+	const weightCap = 40
+	weights := make([]float64, cols)
+	capRow := func(cells []string) {
+		for j := 0; j < cols && j < len(cells); j++ {
+			n := utf8.RuneCountInString(cells[j])
+			if n > weightCap {
+				n = weightCap
+			}
+			if weights[j] < float64(n) {
+				weights[j] = float64(n)
+			}
+		}
+	}
+	capRow(t.head)
+	for _, r := range t.rows {
+		capRow(r)
+	}
+	widths := mdTableColWidths(avail, weights, gtx.Dp(mdTableColMinDp))
+
+	rows := append([][]string{t.head}, t.rows...)
+	txt, rowH := mdTableRecord(gtx, th, rows, widths, rs, kBase, off)
+
+	// 细线与表头底线（宏外画 → 文本重放在线之上）。
+	tableH := rowHSum(rowH)
+	for i := 1; i <= len(rows); i++ {
+		y := rowHSum(rowH[:i])
+		h := 1
+		c := paperOf().hairline
+		if i == 1 {
+			h = gtx.Dp(2) // 表头底线加重
+			c = tok().textMuted
+		}
+		st := op.Offset(image.Pt(0, y-h)).Push(gtx.Ops)
+		paint.FillShape(gtx.Ops, c,
+			clip.Rect(image.Rectangle{Max: image.Pt(avail, h)}).Op())
+		st.Pop()
+	}
+	x := 0
+	for j := 1; j < cols; j++ { // 列间细线（列宽已知，逐列累加左缘）
+		x += widths[j-1]
+		st := op.Offset(image.Pt(x, 0)).Push(gtx.Ops)
+		paint.FillShape(gtx.Ops, paperOf().hairline,
+			clip.Rect(image.Rectangle{Max: image.Pt(1, tableH)}).Op())
+		st.Pop()
+	}
+	txt.Add(gtx.Ops)
+	return layout.Dimensions{Size: image.Pt(avail, tableH)}
+}
+
+// mdTableRecord 整表录宏：逐行逐格排版（每格一枚行选键，行主序），返回文本宏与各
+// 行高。单元格文本在固定列宽内换行；note 在每格 Layout 之后调用（Regions 此刻才有效，
+// 同 mdCode 模式）。超长闸门（funcsize）把这段从 mdTableLayout 拆出。
+func mdTableRecord(gtx layout.Context, th *material.Theme, rows [][]string, widths []int,
+	rs *rowSel, kBase int, off image.Point,
+) (op.CallOp, []int) {
+	cols := len(widths)
+	cellInX := gtx.Dp(mdTableCellInsetXdp)
+	cellInY := gtx.Dp(mdTableCellInsetYdp)
+	m := op.Record(gtx.Ops)
+	rowH := make([]int, len(rows))
+	inset := layout.Inset{
+		Left: unit.Dp(cellInX), Right: unit.Dp(cellInX),
+		Top: unit.Dp(cellInY), Bottom: unit.Dp(cellInY),
+	}
+	cellPt := image.Pt(cellInX, cellInY)
+	rowY := 0
+	for i, cells := range rows {
+		x := 0
+		for j := 0; j < cols; j++ {
+			cell := ""
+			if j < len(cells) {
+				cell = cells[j]
+			}
+			key := kBase + i*cols + j
+			cgx := gtx
+			cgx.Constraints.Min.X, cgx.Constraints.Max.X = widths[j], widths[j]
+			cgx.Constraints.Min.Y = 0
+			draw := func(cg layout.Context) layout.Dimensions {
+				return inset.Layout(cg, func(cg layout.Context) layout.Dimensions {
+					l := material.Body2(th, cell)
+					if i == 0 {
+						l.Font.Weight = font.Bold
+					}
+					l.State = rs.sel(key)
+					return l.Layout(cg)
+				})
+			}
+			var d layout.Dimensions
+			if rs != nil {
+				d = rs.layout(cgx, draw, key, off.Add(image.Pt(x+cellInX, rowY+cellInY)), cellPt)
+			} else {
+				d = draw(cgx)
+			}
+			x += widths[j]
+			if d.Size.Y > rowH[i] {
+				rowH[i] = d.Size.Y
+			}
+		}
+		rowY += rowH[i]
+	}
+	return m.Stop(), rowH
+}
+
+// rowHSum 行高前缀和。
+func rowHSum(hs []int) int {
+	n := 0
+	for _, h := range hs {
+		n += h
+	}
+	return n
+}
+
+// mdTableColWidths 内容权重 → 各列像素宽。先按占比分；占比不足保底的列拉到 minW，
+// 剩余宽度在其余列按占比重分（保底列不吃掉别人的份额）；总余量为负（窄窗 + 列多）
+// 时退回纯占比——优先放得下。
+func mdTableColWidths(avail int, weights []float64, minW int) []int {
+	cols := len(weights)
+	widths := make([]int, cols)
+	sum := 0.0
+	for _, w := range weights {
+		sum += w
+	}
+	if sum <= 0 {
+		for j := range widths {
+			widths[j] = avail / cols
+		}
+		return widths
+	}
+	for j, w := range weights {
+		widths[j] = int(float64(avail) * w / sum)
+	}
+	fixed := make([]bool, cols)
+	fixedW := 0
+	restSum := 0.0
+	for j, w := range weights {
+		if widths[j] < minW {
+			widths[j] = minW
+			fixed[j] = true
+			fixedW += minW
+		} else {
+			restSum += w
+		}
+	}
+	if rem := avail - fixedW; rem < 0 {
+		// 纯占比压回（保底让位于放得下）。
+		for j := range widths {
+			widths[j] = int(float64(avail) * weights[j] / sum)
+			if widths[j] < 1 {
+				widths[j] = 1
+			}
+		}
+		return widths
+	} else if restSum > 0 {
+		for j := range widths {
+			if !fixed[j] {
+				widths[j] = int(float64(rem) * weights[j] / restSum)
+			}
+		}
+	}
+	return widths
 }
