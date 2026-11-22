@@ -129,6 +129,21 @@ func TestDecisionsBodyInIndex(t *testing.T) {
 		b.WriteString("在 `## 索引` 的表格里补一行结论；正文可以没有，索引不能缺。")
 		t.Fatal(b.String())
 	}
+
+	// 索引里带链接的行（`[Dn](#dn)`）指向展开正文的锚，锚必须真的存在——合并或删改
+	// 正文小节时掉锚（连带整段记录）只能从这里发现。
+	body := strings.Join(lines[bodyAt:], "\n")
+	var dangling []string
+	linkRe := regexp.MustCompile(`\[D(\d+)\]\(#d\d+\)`)
+	for _, m := range linkRe.FindAllStringSubmatch(strings.Join(lines[indexAt:bodyAt], "\n"), -1) {
+		id := m[1]
+		if !strings.Contains(body, `<a id="d`+id+`"></a>`) {
+			dangling = append(dangling, id)
+		}
+	}
+	if len(dangling) > 0 {
+		t.Fatalf("索引链接指向不存在的正文锚（记录被删了？）: %v", dangling)
+	}
 }
 
 // TestDecisionIDsParsing 守住取号规则本身：区间展开、顿号并列、区间不带第二个 D 都要认，
