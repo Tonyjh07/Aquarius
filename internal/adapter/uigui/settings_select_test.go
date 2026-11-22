@@ -13,6 +13,7 @@ import (
 	"gioui.org/op"
 	"gioui.org/unit"
 
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
@@ -284,5 +285,26 @@ func TestSelectBtnShowsCurrent(t *testing.T) {
 	c.setValue("zh")
 	if got := c.display(); got != "中文" {
 		t.Fatalf("展示名 = %q", got)
+	}
+}
+
+// TestToolsPickersOpen 工具页两台选择器（呈现模式 / decide 模式）点开弹层出全档：
+// 页 Events 必须注册 openPicker——漏了的表现就是「点了没反应」（v1.0.0 回归锁）。
+func TestToolsPickersOpen(t *testing.T) {
+	t.Parallel()
+	restoreLight(t)
+	u, f, _ := toolsPageUI(t, ToolsSnapshot{Revision: 1})
+	f.page = pageTools
+	toolsFrame(f, u)
+	f.toolsMode.click.Click()
+	f.openPicker(pickerGtx(720, 560), i18n.T("ui.page.tools.mode_label"), &f.toolsMode)
+	if opts := f.pickerOptions(); len(opts) != len(toolsModeLevels()) {
+		t.Fatalf("呈现模式弹层选项 = %v, want %v", opts, toolsModeLevels())
+	}
+	f.closePicker() // 收起（不改选项）
+	f.decideMode.click.Click()
+	f.openPicker(pickerGtx(720, 560), i18n.T("ui.page.tools.decide_mode_label"), &f.decideMode)
+	if opts := f.pickerOptions(); len(opts) != len(decideModeLevels()) {
+		t.Fatalf("decide 模式弹层选项 = %v, want %v", opts, decideModeLevels())
 	}
 }

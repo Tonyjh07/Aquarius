@@ -282,6 +282,10 @@ func (toolsPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 		}
 		u.dispatchToolAction(f, key)
 	}
+	// 呈现模式与 decide 模式两台选择器：弹层是全窗唯一模态，必须在页的 Events 里
+	// 注册点击（与常规页 perm/uiLang 同一模式）。
+	f.openPicker(gtx, i18n.T("ui.page.tools.mode_label"), &f.toolsMode)
+	f.openPicker(gtx, i18n.T("ui.page.tools.decide_mode_label"), &f.decideMode)
 	// 行内档位分段（D282）：点中即落值；执行类选「允许」先立确认态。
 	for _, b := range f.toolsSnap.Builtins {
 		if idx := f.polSegFor(b.Name).clicked(gtx); idx >= 0 {
