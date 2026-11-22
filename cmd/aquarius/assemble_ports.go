@@ -778,9 +778,7 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 		w.runner.Add(starlarkrun.New(starlarkrun.Deps{
 			Inner:  w.runner,
 			Limits: ptcLimits,
-			Log: func(event, act string, kv ...any) {
-				w.note(logging.LevelInfo, logging.Boot, event, act, kv...)
-			},
+			Log:    w.logFrom,
 			AllSpecs: func() []tool.Spec {
 				specs, err := w.runner.AllSpecs(context.Background())
 				if err != nil {

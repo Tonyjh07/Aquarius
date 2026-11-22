@@ -65,9 +65,6 @@ func (l Limits) withDefaults() Limits {
 	return l
 }
 
-// Log 脚本摘要行（D320：事实落运行日志，审计不动）；nil = 不记（测试）。
-type Log func(event, act string, kv ...any)
-
 // Deps 装配选项。
 type Deps struct {
 	// Inner 脚本内调用的执行门面——就是注册了 run_code 的那个 toolrun.Runner
@@ -78,8 +75,8 @@ type Deps struct {
 	AllSpecs func() []tool.Spec
 	// Limits 限额（tools.ptc；零值 = 全缺省）。
 	Limits Limits
-	// Log 运行日志回调（装配根给 w.logFrom 同款）；nil = 不记。
-	Log Log
+	// Log 运行日志回调（装配根给 w.logFrom 同款，级别由适配器定）；nil = 不记。
+	Log port.Log
 }
 
 type ptcTool struct {
@@ -617,13 +614,18 @@ func (t *ptcTool) Execute(ctx context.Context, call tool.Call) (tool.Result, err
 	return t.finish(call, rt, tool.Result{CallID: call.ID, OK: true, Output: out}), nil
 }
 
-// finish 脚本摘要落运行日志（D320：calls / dedup / capped），脚本内产出的图片引用
-// 挂到结果上（D169 投影在装配层），结果原样返回。
+// finish 脚本摘要落运行日志（D320）：脚本被确认上限掐过（capped>0）才升 WARN 让用户
+// 看见为什么调用被拒，正常路径降 Debug（每次都打 INFO 是纯噪音）；脚本内产出的图片
+// 引用挂到结果上（D169 投影在装配层），结果原样返回。
 func (t *ptcTool) finish(call tool.Call, rt *runtime, res tool.Result) tool.Result {
 	res.Images = rt.snapshotImages()
 	if t.d.Log != nil {
-		t.d.Log("log.boot.ptc_script", "log.act.ptc_script",
-			"calls", rt.snapshotCalls(), "dedup", rt.scope.Hits(), "capped", rt.scope.Capped())
+		kv := []any{"calls", rt.snapshotCalls(), "dedup", rt.scope.Hits(), "capped", rt.scope.Capped()}
+		if rt.scope.Capped() > 0 {
+			t.d.Log(port.LogWarn, "boot", "log.boot.ptc_script_capped", "log.act.ptc_script", kv...)
+		} else {
+			t.d.Log(port.LogDebug, "boot", "log.boot.ptc_script", "log.act.ptc_script", kv...)
+		}
 	}
 	return res
 }

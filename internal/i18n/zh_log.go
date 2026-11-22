@@ -14,6 +14,7 @@ var zhLogTexts = map[string]string{
 	"log.act.mode":                     "当前档位: {mode}",
 	"log.boot.ptc_experimental":        "tools.mode=ptc 是实验性功能：模型改用脚本批量调工具，限额与确认语义以后可能调整",
 	"log.boot.ptc_script":              "run_code 脚本执行摘要",
+	"log.boot.ptc_script_capped":       "run_code 脚本触发确认上限，脚本内后续调用被拒",
 	"log.act.ptc_script":               "calls: {calls}, dedup: {dedup}, capped: {capped}",
 	"log.act.skip_key_this_run":        "本次启动跳过该密钥",
 	"log.act.start_without_key":        "没有密钥也照常启动，发消息时才报因",

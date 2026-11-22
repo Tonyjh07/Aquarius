@@ -114,30 +114,57 @@ func TestPTC2DescribeBinding(t *testing.T) {
 	}
 }
 
-// TestPTC2ScriptSummaryLog 摘要日志行带上 calls / dedup / capped。
+// TestPTC2ScriptSummaryLog 摘要日志行带上 calls / dedup / capped；正常路径降 Debug
+// （每次脚本都打 INFO 是噪音），触发确认上限才升 WARN。
 func TestPTC2ScriptSummaryLog(t *testing.T) {
 	var mu sync.Mutex
+	var gotLv port.LogLevel
 	var gotEvent, gotAct string
 	var gotKv []any
-	r, _ := ptcFixture(t, "", Limits{ConfirmLimit: 1})
-	// Log 回调经 Deps 注入到同一份 run_code（再 Add 一次覆盖注册）。
-	r.Add(New(Deps{Inner: r, AllSpecs: specsFnFromTools(r),
-		Log: func(event, act string, kv ...any) {
+	r, _ := ptcFixture(t, "", Limits{ConfirmLimit: 4}) // 不触上限，看正常路径的 debug 档
+	// Log 回调经 Deps 注入到同一份 run_code（再 Add 一次覆盖注册；限额要带上，
+	// 否则落缺省 8 不触发上限）。
+	r.Add(New(Deps{Inner: r, AllSpecs: specsFnFromTools(r), Limits: Limits{ConfirmLimit: 4},
+		Log: func(lv port.LogLevel, ctx, event, act string, kv ...any) {
 			mu.Lock()
 			defer mu.Unlock()
-			gotEvent, gotAct, gotKv = event, act, kv
+			gotLv, gotEvent, gotAct, gotKv = lv, event, act, kv
 		}}))
 	if _, err := r.Execute(context.Background(), ptcScript(
 		`tools.writer(p=1)`+"\n"+`tools.writer(p=1)`+"\n"+`tools.writer(p=2)`+"\n"+`return "done"`)); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
 	mu.Lock()
-	defer mu.Unlock()
-	if gotEvent != "log.boot.ptc_script" || gotAct != "log.act.ptc_script" {
-		t.Fatalf("log = %s/%s", gotEvent, gotAct)
+	if gotLv != port.LogDebug || gotEvent != "log.boot.ptc_script" || gotAct != "log.act.ptc_script" {
+		mu.Unlock()
+		t.Fatalf("log = %s %s/%s, want debug 档摘要", gotLv, gotEvent, gotAct)
 	}
+	mu.Unlock()
 	if len(gotKv) < 2 || gotKv[0] != "calls" || gotKv[1] != 3 {
 		t.Fatalf("kv = %v, want calls=3", gotKv)
+	}
+}
+
+// TestPTC2CappedSummaryWarn 确认上限触达后摘要升 WARN（用户需要看见调用为何被拒）。
+func TestPTC2CappedSummaryWarn(t *testing.T) {
+	var mu sync.Mutex
+	var gotLv port.LogLevel
+	var gotEvent string
+	r, _ := ptcFixture(t, "", Limits{ConfirmLimit: 1})
+	r.Add(New(Deps{Inner: r, AllSpecs: specsFnFromTools(r), Limits: Limits{ConfirmLimit: 1},
+		Log: func(lv port.LogLevel, ctx, event, act string, kv ...any) {
+			mu.Lock()
+			defer mu.Unlock()
+			gotLv, gotEvent = lv, event
+		}}))
+	if _, err := r.Execute(context.Background(), ptcScript(
+		`tools.writer(p=1)`+"\n"+`tools.writer(p=2)`+"\n"+`tools.writer(p=3)`+"\n"+`return "done"`)); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if gotLv != port.LogWarn || gotEvent != "log.boot.ptc_script_capped" {
+		t.Fatalf("log = %s %s, want warn 档 capped 事件", gotLv, gotEvent)
 	}
 }
 

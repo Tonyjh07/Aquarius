@@ -11,6 +11,7 @@ var enLogTexts = map[string]string{
 	"log.act.mode":                     "current mode: {mode}",
 	"log.boot.ptc_experimental":        "tools.mode=ptc is experimental: the model now batches tool calls in scripts; limits and confirmation semantics may change",
 	"log.boot.ptc_script":              "run_code script summary",
+	"log.boot.ptc_script_capped":       "run_code script hit the confirmation limit; further calls inside it were refused",
 	"log.act.ptc_script":               "calls: {calls}, dedup: {dedup}, capped: {capped}",
 	"log.act.skip_key_this_run":        "skipped this key for this run",
 	"log.act.start_without_key":        "started without a key; the reason is reported when a message is sent",
