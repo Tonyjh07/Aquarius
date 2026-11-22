@@ -92,11 +92,11 @@ func TestRunCommitModeOnlyTouchesThatCommit(t *testing.T) {
 		t.Fatalf("AGENTS.md 不该有标记:\n%s", agents)
 	}
 	// 标记的哈希是父提交（代码基线），不是本提交自身。
-	head, err := exec.Command("git", "-C", dir, "rev-parse", "--short", "HEAD").Output()
+	head, err := exec.Command("git", "-C", dir, "rev-parse", "HEAD").Output()
 	if err != nil {
 		t.Fatal(err)
 	}
-	parent, err := exec.Command("git", "-C", dir, "rev-parse", "--short", "HEAD^").Output()
+	parent, err := exec.Command("git", "-C", dir, "rev-parse", "HEAD^").Output()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,10 +104,10 @@ func TestRunCommitModeOnlyTouchesThatCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(a), "@ "+strings.TrimSpace(string(parent))) {
+	if !strings.Contains(string(a), "@ "+short7(parent)) {
 		t.Fatalf("标记应指向父提交 %s:\n%s", parent, a)
 	}
-	if strings.Contains(string(a), "@ "+strings.TrimSpace(string(head))) {
+	if strings.Contains(string(a), "@ "+short7(head)) {
 		t.Fatalf("标记不该指向本提交自身:\n%s", a)
 	}
 }
@@ -170,6 +170,15 @@ func TestRunCheckReportsMissing(t *testing.T) {
 }
 
 // git 在 dir 里执行一条命令，返回去空白输出。
+// short7 与 main.go 的 shortHash 同口径：固定 7 位，`--short` 的位数随仓库增长会变。
+func short7(b []byte) string {
+	v := strings.TrimSpace(string(b))
+	if len(v) > 7 {
+		v = v[:7]
+	}
+	return v
+}
+
 func git(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).Output()
@@ -212,12 +221,12 @@ func TestRunHistoryFillsCommittedDoc(t *testing.T) {
 	git(t, dir, "add", "-A")
 	git(t, dir, "commit", "-m", "docs: a")
 	contentDay := git(t, dir, "log", "-1", "--format=%ad", "--date=short", "HEAD")
-	parent := git(t, dir, "rev-parse", "--short", "HEAD^")
+	parent := short7([]byte(git(t, dir, "rev-parse", "HEAD^")))
 
 	appendTo(t, dir, "go.mod", "\n// touch\n")
 	git(t, dir, "add", "-A")
 	git(t, dir, "commit", "-m", "chore: touch code")
-	head := git(t, dir, "rev-parse", "--short", "HEAD")
+	head := short7([]byte(git(t, dir, "rev-parse", "HEAD")))
 
 	var out, errBuf bytes.Buffer
 	if code := run([]string{"-root", dir}, &out, &errBuf); code != 0 {
@@ -244,7 +253,7 @@ func TestRunHistorySkipsMarkerOnlyCommit(t *testing.T) {
 	git(t, dir, "add", "-A")
 	git(t, dir, "commit", "-m", "docs: a")
 	contentDay := git(t, dir, "log", "-1", "--format=%ad", "--date=short", "HEAD")
-	parent := git(t, dir, "rev-parse", "--short", "HEAD^")
+	parent := short7([]byte(git(t, dir, "rev-parse", "HEAD^")))
 
 	// 手工塞一个错误的标记并单独提交（模拟「补标记」那类提交）。
 	body := read(t, dir, "docs/a.md")

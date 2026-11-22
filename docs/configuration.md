@@ -1,5 +1,5 @@
 # 配置参考
-<!-- docs-sync: 2026-11-21 @ fefa55a0 -->
+<!-- docs-sync: 2026-11-21 @ fefa55a -->
 
 > 本文按当前实现写成；**字段语义以本文为准**，端口与权限规则见 [contracts.md](contracts.md)。
 > 配置**以 profile 为隔离单位**：

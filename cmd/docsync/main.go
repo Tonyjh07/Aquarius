@@ -546,20 +546,30 @@ func commitDate(root, rev string) (string, error) {
 	return day, nil
 }
 
+// shortHash 固定 7 位短哈希。不用 `rev-parse --short`：它的位数随仓库增长自动变
+// （7 → 8），标记会跟着来回翻转，每次全树刷一遍。
+func shortHash(out []byte) string {
+	sha := strings.TrimSpace(string(out))
+	if len(sha) > 7 {
+		sha = sha[:7]
+	}
+	return sha
+}
+
 // parentRev 该提交的父提交短哈希（根提交无父 → 用根提交自己）。
 func parentRev(root, rev string) (string, error) {
-	out, err := exec.Command("git", "-C", root, "rev-parse", "--short", rev+"^").Output()
+	out, err := exec.Command("git", "-C", root, "rev-parse", rev+"^").Output()
 	if err == nil {
-		if sha := strings.TrimSpace(string(out)); sha != "" {
+		if sha := shortHash(out); sha != "" {
 			return sha, nil
 		}
 	}
 	// 根提交（没有父）或 rev 本身无效时回落到 rev。
-	out, err = exec.Command("git", "-C", root, "rev-parse", "--short", rev).Output()
+	out, err = exec.Command("git", "-C", root, "rev-parse", rev).Output()
 	if err != nil {
 		return "", fmt.Errorf("解析提交 %s 失败: %w", rev, err)
 	}
-	sha := strings.TrimSpace(string(out))
+	sha := shortHash(out)
 	if sha == "" {
 		return "", fmt.Errorf("解析提交 %s 失败：输出为空", rev)
 	}
@@ -584,13 +594,13 @@ func repoRoot() (string, error) {
 	}
 }
 
-// gitRev 取短提交哈希。
+// gitRev 取 HEAD 的固定 7 位短哈希。
 func gitRev(root string) (string, error) {
-	out, err := exec.Command("git", "-C", root, "rev-parse", "--short", "HEAD").Output()
+	out, err := exec.Command("git", "-C", root, "rev-parse", "HEAD").Output()
 	if err != nil {
 		return "", fmt.Errorf("读 HEAD 失败（仓库还没提交？）: %w", err)
 	}
-	rev := strings.TrimSpace(string(out))
+	rev := shortHash(out)
 	if rev == "" {
 		return "", fmt.Errorf("读 HEAD 失败：输出为空")
 	}
