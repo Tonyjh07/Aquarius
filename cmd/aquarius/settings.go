@@ -31,6 +31,9 @@ type textSettings struct {
 	Web          webConfig     `json:"web"`   // D200：联网搜索与抓取
 	Limits       limitsConfig  `json:"limits"`
 	Backup       backupConfig  `json:"backup"` // D254：会话树备份代数
+	// Tools / Decide 工具页两段（v1.0.0；均为实验性，段缺失 = 功能「不存在」）。
+	Tools  toolsConfig  `json:"tools"`
+	Decide decideConfig `json:"decide"`
 	// Model 采样参数（D204）：只读 model.sampling 这一段——provider/模型编辑走
 	// ProviderManager，不在这里。
 	Model struct {
@@ -119,10 +122,25 @@ func readTextSettings(cfgPath string) uigui.SettingsSnapshot {
 		SamplingTopP:        numText(raw.Model.Sampling.TopP),
 		SamplingMaxTokens:   intText(raw.Model.Sampling.MaxTokens),
 		SamplingStop:        stopsText(raw.Model.Sampling.Stop),
+		// 工具页（v1.0.0）：呈现模式与 decide 现值（文件即事实源，改动重启生效）。
+		// decide 阈值带生效默认值回填（表单空 = 保持现值，键缺失时「现值」就是默认）。
+		ToolsMode:         toolsModeText(raw.Tools.Mode),
+		DecideMode:        strings.ToLower(strings.TrimSpace(raw.Decide.Mode)),
+		DecideBaseURL:     raw.Decide.BaseURL,
+		DecideModel:       raw.Decide.Model,
+		DecideTimeoutMS:   decideTimeoutText(raw.Decide.TimeoutMS),
+		DecideTaskChars:   decideTaskCharsText(raw.Decide.TaskChars),
+		DecideWarmup:      raw.Decide.Warmup == nil || *raw.Decide.Warmup,
+		DecideRiskBelow:   decideThresholdText(raw.Decide.Allow.RiskBelow, 0.5),
+		DecideHumanBelow:  decideThresholdText(raw.Decide.Allow.HumanBelow, 0.15),
+		DecideDenyEnabled: raw.Decide.Deny.Enabled,
+		DecideHumanAbove:  decideThresholdText(raw.Decide.Deny.HumanAbove, 0.85),
 	}
 	// 语音密钥只带形态（D35）：已入库的给引用名，明文的只标形态。
 	snap.ASRKeySaved, snap.ASRKeyPlain, snap.ASRKeyRef = keyShapeOf(raw.Audio.ASR.APIKey)
 	snap.TTSKeySaved, snap.TTSKeyPlain, snap.TTSKeyRef = keyShapeOf(raw.Audio.TTS.APIKey)
+	// decide 密钥同规则（v1.0.0）。
+	snap.DecideKeySaved, snap.DecideKeyPlain, snap.DecideKeyRef = keyShapeOf(raw.Decide.APIKey)
 	for name := range raw.MCPServers {
 		snap.MCPServers = append(snap.MCPServers, name)
 	}
@@ -145,6 +163,37 @@ func keyShapeOf(ref string) (saved, plain bool, name string) {
 		return true, false, ref
 	}
 	return false, true, ""
+}
+
+// toolsModeText tools.mode 指针 → 快照值（键缺失 = ""，表单归一为 native）。
+func toolsModeText(mode *string) string {
+	if mode == nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(*mode))
+}
+
+// decideTimeoutText / decideTaskCharsText / decideThresholdText decide 数值键 →
+// 快照值：0 或省略按生效默认回填（表单空 = 保持现值，「现值」就是默认）。
+func decideTimeoutText(ms int) int {
+	if ms <= 0 {
+		return 1500
+	}
+	return ms
+}
+
+func decideTaskCharsText(n *int) int {
+	if n == nil || *n <= 0 {
+		return 80
+	}
+	return *n
+}
+
+func decideThresholdText(v *float64, def float64) float64 {
+	if v == nil || *v <= 0 {
+		return def
+	}
+	return *v
 }
 
 // persistSettingsTextKeys 无内核命令覆盖的键一次泛键改写（ui.theme/hotkey + D90 三
@@ -213,6 +262,9 @@ func persistSettingsTextKeys(cfgPath string, p uigui.SettingsPatch) error {
 		if err := validateSamplingSettings(cfgPath, sampling); err != nil {
 			return err
 		}
+	}
+	if err := validateToolsPatch(p); err != nil {
+		return err
 	}
 	return persistConfig(cfgPath, func(generic map[string]any) {
 		applySettingsPatch(generic, p, sampling)
@@ -319,6 +371,7 @@ func applySettingsPatch(generic map[string]any, p uigui.SettingsPatch, sampling 
 	if p.SamplingSet {
 		writeSamplingSection(generic, sampling)
 	}
+	writeToolsSection(generic, p)
 }
 
 // applyAudioPatch 写语音与语音输入两段。asr / tts 的空值语义只在这里用，
@@ -547,4 +600,118 @@ func settingsCommands(cur uigui.SettingsSnapshot, p uigui.SettingsPatch) []port.
 		cmds = append(cmds, port.Command{Name: "effort", Args: []string{e}})
 	}
 	return cmds
+}
+
+// validateToolsPatch 工具页两组装配期配置的写前校验（呈现模式与 decide；词表与区间
+// 与启动期归一化同规则——config_decide.go 的 decideOptions / toolsConfig.toolsMode），
+// 写进去的值必须过得了下次启动的校验。
+func validateToolsPatch(p uigui.SettingsPatch) error {
+	if p.ToolsMode != "" {
+		switch p.ToolsMode {
+		case "native", "ptc":
+		default:
+			return errors.New(i18n.Tf("cmd.config.err.tools_mode", "value", strconv.Quote(p.ToolsMode)))
+		}
+	}
+	if !p.DecideSet {
+		return nil
+	}
+	switch p.DecideMode {
+	case "off", "shadow", "on":
+	default:
+		return errors.New(i18n.Tf("cmd.config.err.decide_mode", "value", strconv.Quote(p.DecideMode)))
+	}
+	type rng struct {
+		key      string
+		n        int
+		min, max int
+	}
+	for _, r := range []rng{
+		{"decide.timeout_ms", p.DecideTimeoutMS, port.SettingsDecideTimeoutMin, port.SettingsDecideTimeoutMax},
+		{"decide.task_chars", p.DecideTaskChars, 0, port.SettingsDecideTaskCharsMax},
+	} {
+		if r.n != 0 && (r.n < r.min || r.n > r.max) {
+			return errors.New(i18n.Tf("cmd.config.err.decide_range",
+				"key", r.key, "min", r.min, "max", r.max))
+		}
+	}
+	type frng struct {
+		key    string
+		v, max float64
+	}
+	for _, r := range []frng{
+		{"decide.allow.risk_below", p.DecideRiskBelow, port.SettingsDecideRiskBelowMax},
+		{"decide.allow.human_below", p.DecideHumanBelow, port.SettingsDecideHumanBelowMax},
+		{"decide.deny.human_above", p.DecideHumanAbove, port.SettingsDecideHumanAboveMax},
+	} {
+		if r.v != 0 && r.v > r.max {
+			return errors.New(i18n.Tf("cmd.config.err.decide_range",
+				"key", r.key, "min", 0, "max", r.max))
+		}
+	}
+	return nil
+}
+
+// writeToolsSection 把工具页两段写进配置映射（键级语义：文本空 = 不写该键——清空走
+// 高级页；数值 0 = 不改；布尔带指针才写；api_key 非空才写，只写不回显、留空 = 保持
+// 原引用）。decide 段不存在即创建；DecideSet 才动这一段——没改过的保存不得顺手创建
+// 段（段缺失 = 实验功能「不存在」的默认形态）。
+func writeToolsSection(generic map[string]any, p uigui.SettingsPatch) {
+	if p.ToolsMode != "" {
+		tSec, _ := generic["tools"].(map[string]any)
+		if tSec == nil {
+			tSec = map[string]any{}
+			generic["tools"] = tSec
+		}
+		tSec["mode"] = p.ToolsMode
+	}
+	if !p.DecideSet {
+		return
+	}
+	dSec, _ := generic["decide"].(map[string]any)
+	if dSec == nil {
+		dSec = map[string]any{}
+		generic["decide"] = dSec
+	}
+	dSec["mode"] = p.DecideMode
+	for k, v := range map[string]string{
+		"base_url": p.DecideBaseURL,
+		"api_key":  p.DecideKey,
+		"model":    p.DecideModel,
+	} {
+		if s := strings.TrimSpace(v); s != "" {
+			dSec[k] = s
+		}
+	}
+	if p.DecideTimeoutMS != 0 {
+		dSec["timeout_ms"] = p.DecideTimeoutMS
+	}
+	if p.DecideTaskChars != 0 {
+		dSec["task_chars"] = p.DecideTaskChars
+	}
+	if p.DecideWarmup != nil {
+		dSec["warmup"] = *p.DecideWarmup
+	}
+	allow, _ := dSec["allow"].(map[string]any)
+	if allow == nil {
+		allow = map[string]any{}
+		dSec["allow"] = allow
+	}
+	if p.DecideRiskBelow != 0 {
+		allow["risk_below"] = p.DecideRiskBelow
+	}
+	if p.DecideHumanBelow != 0 {
+		allow["human_below"] = p.DecideHumanBelow
+	}
+	deny, _ := dSec["deny"].(map[string]any)
+	if deny == nil {
+		deny = map[string]any{}
+		dSec["deny"] = deny
+	}
+	if p.DecideDenyEnabled != nil {
+		deny["enabled"] = *p.DecideDenyEnabled
+	}
+	if p.DecideHumanAbove != 0 {
+		deny["human_above"] = p.DecideHumanAbove
+	}
 }

@@ -14,7 +14,7 @@ func policyUI(t *testing.T, builtins ...BuiltinToolState) (*UI, *settingsForm, *
 	snap := ToolsSnapshot{Revision: 1, Level: "strict", Builtins: builtins}
 	u, f, ta := toolsPageUI(t, snap)
 	f.page = pageTools
-	toolsFrame(f, u)
+	toolsFrameTall(f, u) // decide 分组拉长了整页：高视口把页尾行也铺出来
 	return u, f, ta
 }
 
@@ -28,6 +28,16 @@ func policyKinds(f *settingsForm) []rowKind {
 }
 
 // hasKind 行型序列里是否出现某种行。
+func countKind(kinds []rowKind, k rowKind) int {
+	n := 0
+	for _, x := range kinds {
+		if x == k {
+			n++
+		}
+	}
+	return n
+}
+
 func hasKind(kinds []rowKind, k rowKind) bool {
 	for _, x := range kinds {
 		if x == k {

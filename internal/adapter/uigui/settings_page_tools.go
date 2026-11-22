@@ -25,11 +25,22 @@ func (toolsPage) Rows(f *settingsForm) []rowDesc {
 	if f.tools == nil {
 		return append(rows, rowDesc{kind: rowToolsEmpty, text: i18n.T("ui.common.unwired")})
 	}
+	// 页顶：呈现模式（tools.mode，实验性；保存后重启生效）。
+	rows = append(rows, sec(i18n.T("ui.page.tools.section_mode")), rowDesc{kind: rowToolsMode})
 	rows = append(rows, sec(i18n.T("ui.page.tools.section_builtin")), rowDesc{kind: rowToolsNote})
-	for i := range f.toolsSnap.Builtins {
-		rows = append(rows, rowDesc{kind: rowBuiltin, field: i})
-		if f.polConfirm == f.toolsSnap.Builtins[i].Name {
-			rows = append(rows, rowDesc{kind: rowToolsConfirm, field: i})
+	// 内置工具按类折叠（v1.0.0）：清单三十余条逐行平铺把页面拖得过长——按类分组，
+	// 组头带成员数，展开才铺成员行；执行类确认行跟随成员行。
+	for _, g := range builtinGroups(f.toolsSnap.Builtins) {
+		rows = append(rows, rowDesc{kind: rowBuiltinGroup, name: g.key,
+			text: i18n.Tf("ui.page.tools.group_fmt", "label", i18n.T(g.labelKey), "n", len(g.idxs))})
+		if !f.toolsFold[g.key] {
+			continue // 缺省收起；toolsFold[g.key] = true 才铺成员
+		}
+		for _, idx := range g.idxs {
+			rows = append(rows, rowDesc{kind: rowBuiltin, field: idx})
+			if f.polConfirm == f.toolsSnap.Builtins[idx].Name {
+				rows = append(rows, rowDesc{kind: rowToolsConfirm, field: idx})
+			}
 		}
 	}
 	rows = append(rows, sec(i18n.T("ui.page.tools.section_mcp")))
@@ -50,10 +61,77 @@ func (toolsPage) Rows(f *settingsForm) []rowDesc {
 	// 外部代理没有稳定的工具名（ACP 的 fs/terminal 回调），只能按整个来源设一条。
 	rows = append(rows, sec(i18n.T("ui.page.tools.section_policy")),
 		rowDesc{kind: rowToolsAgent}, rowDesc{kind: rowToolsHard})
+	// 模型辅助决策（decide，实验性）：全键表单，保存后重启生效。
+	rows = append(rows, sec(i18n.T("ui.page.tools.section_decide")),
+		rowDesc{kind: rowDecideNote},
+		rowDesc{kind: rowDecideMode},
+		rowDesc{kind: rowDecideBase},
+		rowDesc{kind: rowDecideKey},
+		rowDesc{kind: rowDecideModel},
+		rowDesc{kind: rowDecideTimeout},
+		rowDesc{kind: rowDecideWarmup},
+		rowDesc{kind: rowDecideTaskChars},
+		rowDesc{kind: rowDecideRisk},
+		rowDesc{kind: rowDecideHuman},
+		rowDesc{kind: rowDecideDeny},
+		rowDesc{kind: rowDecideDenyAbove})
 	if f.toolsStatus != "" {
 		rows = append(rows, rowDesc{kind: rowToolsStatus})
 	}
 	return rows
+}
+
+// builtinGroup 一个内置工具分组：key 是折叠态的键（稳定、不随语言变），labelKey 是
+// 组名的 i18n key，idxs 是成员在快照 Builtins 里的下标（保持快照顺序）。
+type builtinGroup struct {
+	key      string
+	labelKey string
+	idxs     []int
+}
+
+// builtinGroups 把内置工具按展示类归组（display-only 映射：组是界面词汇，不是内核
+// 契约——内核只认工具名）。未收录前缀的工具落「交互与其他」，新内置工具加进清单
+// 前先看落在哪组顺眼。
+func builtinGroups(builtins []BuiltinToolState) []builtinGroup {
+	order := []builtinGroup{
+		{key: "files", labelKey: "ui.page.tools.group_files"},
+		{key: "memory", labelKey: "ui.page.tools.group_memory"},
+		{key: "jobs", labelKey: "ui.page.tools.group_jobs"},
+		{key: "cmds", labelKey: "ui.page.tools.group_cmds"},
+		{key: "net", labelKey: "ui.page.tools.group_net"},
+		{key: "misc", labelKey: "ui.page.tools.group_misc"},
+	}
+	byKey := map[string]int{}
+	for i, g := range order {
+		byKey[g.key] = i
+	}
+	groupOf := func(name string) string {
+		switch {
+		case strings.HasPrefix(name, "file_"):
+			return "files"
+		case strings.HasPrefix(name, "memory_"):
+			return "memory"
+		case strings.HasPrefix(name, "job_"), strings.HasPrefix(name, "watch_"):
+			return "jobs"
+		case name == "term_exec", name == "think", name == "sleep":
+			return "cmds"
+		case name == "web_search", name == "web_fetch",
+			name == "window_list", name == "screen_capture":
+			return "net"
+		}
+		return "misc" // ask_user / delegate* / skill / context_compact / 未来新增
+	}
+	for i, b := range builtins {
+		k := groupOf(b.Name)
+		order[byKey[k]].idxs = append(order[byKey[k]].idxs, i)
+	}
+	out := order[:0]
+	for _, g := range order {
+		if len(g.idxs) > 0 {
+			out = append(out, g)
+		}
+	}
+	return out
 }
 
 func (toolsPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm, rows []rowDesc, i int) (layout.Dimensions, bool) {
@@ -99,6 +177,84 @@ func (toolsPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm, r
 			l.Color = paperOf().text3
 		}
 		return l.Layout(gtx), true
+	case rowToolsMode:
+		return fieldRow(gtx, th, i18n.T("ui.page.tools.mode_label"), func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+				layout.Rigid(selectBtn(th, &f.toolsMode)),
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						l := material.Body2(th, i18n.T("ui.page.tools.mode_hint"))
+						l.Color = paperOf().text3
+						return l.Layout(gtx)
+					})
+				}),
+			)
+		}), true
+	case rowBuiltinGroup:
+		btn := f.toolBtns["g:"+r.name]
+		if btn == nil { // 防御：Rows 与 Events 共用同一 toolBtns，正常不会缺
+			btn = new(widget.Clickable)
+			f.toolBtns["g:"+r.name] = btn
+		}
+		return toolGroupRow(gtx, th, btn, r.text, f.toolsFold[r.name]), true
+	default:
+		if d, ok := f.decideRow(gtx, th, r.kind); ok {
+			return d, true
+		}
+		return layout.Dimensions{}, false
+	}
+}
+
+// decideRow decide 分组的行渲染（Body 的尾部开关兜底；funcsize 闸门：Body 不再长胖）。
+func (f *settingsForm) decideRow(gtx layout.Context, th *material.Theme, k rowKind) (layout.Dimensions, bool) {
+	switch k {
+	case rowDecideNote:
+		l := material.Body2(th, i18n.T("ui.page.tools.decide_note"))
+		l.Color = paperOf().text3
+		return l.Layout(gtx), true
+	case rowDecideMode:
+		return fieldRow(gtx, th, i18n.T("ui.page.tools.decide_mode_label"), func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+				layout.Rigid(selectBtn(th, &f.decideMode)),
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						l := material.Body2(th, i18n.T("ui.page.tools.decide_mode_hint"))
+						l.Color = paperOf().text3
+						return l.Layout(gtx)
+					})
+				}),
+			)
+		}), true
+	case rowDecideBase:
+		return fieldRow(gtx, th, i18n.T("ui.page.tools.decide_base_label"),
+			editorBox(th, &f.decideBase, i18n.T("ui.page.tools.decide_base_hint"))), true
+	case rowDecideKey:
+		return fieldRow(gtx, th, i18n.T("ui.page.tools.decide_key_label"),
+			editorBox(th, &f.decideKey, i18n.T("ui.page.tools.decide_key_hint"))), true
+	case rowDecideModel:
+		return fieldRow(gtx, th, i18n.T("ui.page.tools.decide_model_label"),
+			editorBox(th, &f.decideModel, i18n.T("ui.page.tools.decide_model_hint"))), true
+	case rowDecideTimeout:
+		return fieldRow(gtx, th, i18n.T("ui.page.tools.decide_timeout_label"),
+			editorBox(th, &f.decideTimeout, i18n.T("ui.page.tools.decide_timeout_hint"))), true
+	case rowDecideWarmup:
+		return fieldRow(gtx, th, i18n.T("ui.page.tools.decide_warmup_label"),
+			capCheck(th, &f.decideWarmup, i18n.T("ui.page.tools.decide_warmup_hint"))), true
+	case rowDecideTaskChars:
+		return fieldRow(gtx, th, i18n.T("ui.page.tools.decide_taskchars_label"),
+			editorBox(th, &f.decideTaskChars, i18n.T("ui.page.tools.decide_taskchars_hint"))), true
+	case rowDecideRisk:
+		return fieldRow(gtx, th, i18n.T("ui.page.tools.decide_risk_label"),
+			editorBox(th, &f.decideRisk, i18n.T("ui.page.tools.decide_risk_hint"))), true
+	case rowDecideHuman:
+		return fieldRow(gtx, th, i18n.T("ui.page.tools.decide_human_label"),
+			editorBox(th, &f.decideHuman, i18n.T("ui.page.tools.decide_human_hint"))), true
+	case rowDecideDeny:
+		return fieldRow(gtx, th, i18n.T("ui.page.tools.deny_enabled_label"),
+			capCheck(th, &f.decideDeny, i18n.T("ui.page.tools.deny_enabled_hint"))), true
+	case rowDecideDenyAbove:
+		return fieldRow(gtx, th, i18n.T("ui.page.tools.deny_above_label"),
+			editorBox(th, &f.decideDenyAbove, i18n.T("ui.page.tools.deny_above_hint"))), true
 	}
 	return layout.Dimensions{}, false
 }
@@ -110,6 +266,14 @@ func (toolsPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 	// S6/D143：动作分发（按钮只在工具页渲染；快照取上帧同步值）。
 	for key, btn := range f.toolBtns {
 		if !btn.Clicked(gtx) {
+			continue
+		}
+		if strings.HasPrefix(key, "g:") { // 分组头：翻折叠态（界面状态，不落 config）
+			if f.toolsFold == nil {
+				f.toolsFold = map[string]bool{}
+			}
+			k := strings.TrimPrefix(key, "g:")
+			f.toolsFold[k] = !f.toolsFold[k]
 			continue
 		}
 		if strings.HasPrefix(key, "pol:") {
@@ -135,8 +299,17 @@ func (toolsPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 	}
 }
 
-// FirstEditor 本页无编辑档（全是按钮/开关），不抢焦点。
-func (toolsPage) FirstEditor(f *settingsForm) *widget.Editor { return nil }
+// FirstEditor decide 表单的首个编辑档（开窗聚焦；本页自此有编辑档）。
+func (toolsPage) FirstEditor(f *settingsForm) *widget.Editor { return &f.decideBase }
+
+// toolGroupRow 内置工具分组头：组名 + 成员数，点击展开/收起（▾ 展开态、▸ 收起态）。
+func toolGroupRow(gtx layout.Context, th *material.Theme, btn *widget.Clickable, text string, open bool) layout.Dimensions {
+	mark := "▸"
+	if open {
+		mark = "▾"
+	}
+	return material.Button(th, btn, mark+" "+text).Layout(gtx)
+}
 
 // policyNoteRow 内置工具区顶部的说明：默认跟随哪个档、执行类为什么要确认。
 func (f *settingsForm) policyNoteRow(gtx layout.Context, th *material.Theme) layout.Dimensions {

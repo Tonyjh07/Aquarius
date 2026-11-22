@@ -206,6 +206,11 @@ func toolsPageUI(t *testing.T, snap ToolsSnapshot) (*UI, *settingsForm, *fakeToo
 		Tools:         ta,
 	})
 	f := newSettingsForm(u)
+	// 内置工具清单自 v1.0.0 起按类折叠且缺省收起——测试要驱动成员行（分段/启停按钮），
+	// 先全部展开。折叠本身有专门用例（TestToolsPageGroupsCollapse）。
+	for _, g := range builtinGroups(snap.Builtins) {
+		f.toolsFold[g.key] = true
+	}
 	return u, f, ta
 }
 
@@ -215,6 +220,18 @@ func toolsFrame(f *settingsForm, u *UI) {
 		Ops:         &ops,
 		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
 		Constraints: layout.Exact(image.Pt(720, 560)),
+	}, testTheme(), u, f)
+}
+
+// toolsFrameTall 高视口帧：工具页自 v1.0.0 起有 decide 全键分组，560px 视口装不下整页，
+// 而材料 List 虚拟化视口外的行——要驱动页尾（MCP / 目录放宽 / 外部代理）按钮的用例
+// 用这一帧把整页铺出来。
+func toolsFrameTall(f *settingsForm, u *UI) {
+	var ops op.Ops
+	settingsFrame(layout.Context{
+		Ops:         &ops,
+		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
+		Constraints: layout.Exact(image.Pt(720, 6000)),
 	}, testTheme(), u, f)
 }
 
@@ -266,7 +283,7 @@ func TestToolsPageSnapshotSync(t *testing.T) {
 	}
 	u, f, ta := toolsPageUI(t, snap)
 	f.navBtns[pageTools].Click()
-	toolsFrame(f, u)
+	toolsFrameTall(f, u)
 	if f.page != pageTools {
 		t.Fatalf("page = %d, want 工具与 MCP", f.page)
 	}
@@ -328,7 +345,7 @@ func TestToolsPageDirRules(t *testing.T) {
 	}
 	u, f, ta := toolsPageUI(t, snap)
 	f.navBtns[pageTools].Click()
-	toolsFrame(f, u)
+	toolsFrameTall(f, u)
 	if f.page != pageTools {
 		t.Fatalf("page = %d, want 工具与 MCP", f.page)
 	}
@@ -370,5 +387,55 @@ func TestToolsPageNotWired(t *testing.T) {
 	rows := f.pageRows(pageTools)
 	if len(rows) < 2 || rows[0].kind != rowTitle || rows[1].kind != rowToolsEmpty {
 		t.Fatalf("未接线页行计划 = %+v, want 标题 + 占位", rows)
+	}
+}
+
+// TestToolsPageGroupsCollapse 分组折叠（v1.0.0）：组头点击翻转折叠态——收起时成员行
+// 消失、组头行仍在；展开后成员行回来，执行类确认行跟随成员行。
+func TestToolsPageGroupsCollapse(t *testing.T) {
+	t.Parallel()
+	restoreLight(t)
+	snap := ToolsSnapshot{Revision: 1, Builtins: []BuiltinToolState{
+		{Name: "file_write", Label: "写入文件", Enabled: true},
+		{Name: "term_exec", Label: "执行命令", Enabled: true, Exec: true},
+	}}
+	u, f, _ := toolsPageUI(t, snap) // 驱动器默认全展开
+	f.page = pageTools
+	toolsFrame(f, u)
+	if !hasKind(policyKinds(f), rowBuiltin) || !hasKind(policyKinds(f), rowBuiltinGroup) {
+		t.Fatalf("展开态应有组头与成员行")
+	}
+
+	// 点击组头收起 files 组：file_write 的成员行消失，cmds 组的 term_exec 不受影响。
+	f.toolBtns["g:files"].Click()
+	toolsFrame(f, u)
+	if n := countKind(policyKinds(f), rowBuiltin); n != 1 {
+		t.Fatalf("files 收起后应只剩 cmds 一条成员行，实 %d", n)
+	}
+	f.toolBtns["g:cmds"].Click()
+	toolsFrame(f, u)
+	if hasKind(policyKinds(f), rowBuiltin) {
+		t.Fatalf("两组全收起后不应有成员行")
+	}
+
+	// 全收起 → 展开 files → 成员行回来。
+	f.toolsFold = map[string]bool{}
+	toolsFrame(f, u)
+	if hasKind(policyKinds(f), rowBuiltin) {
+		t.Fatalf("缺省应为收起态")
+	}
+	f.toolsFold["files"] = true
+	toolsFrame(f, u)
+	if got := policyKinds(f); !hasKind(got, rowBuiltin) || hasKind(got, rowToolsConfirm) {
+		t.Fatalf("普通工具展开不应带确认行：%v", got)
+	}
+
+	// 执行类成员行上的分段点「允许」→ 确认行跟随成员行出现（先展开 cmds 组）。
+	f.toolsFold["cmds"] = true
+	toolsFrame(f, u)
+	segClick(t, f, "term_exec", 2)
+	toolsFrame(f, u)
+	if !hasKind(policyKinds(f), rowToolsConfirm) {
+		t.Fatalf("确认行应跟随成员行")
 	}
 }

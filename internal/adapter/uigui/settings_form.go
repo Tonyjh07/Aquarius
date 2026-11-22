@@ -234,6 +234,23 @@ type settingsForm struct {
 	samplingMax  widget.Editor
 	samplingStop widget.Editor
 
+	// 工具页三件（v1.0.0）：呈现模式选择行 + decide 全键表单。decide 数值空 = 不改
+	// （同 maxTurns 规则）；密钥只写不回显（D35 同一套规则）。toolsFold 是内置工具
+	// 分组的展开态（界面状态，不进 config；缺省收起）。
+	toolsMode       selectField
+	decideMode      selectField
+	decideBase      widget.Editor
+	decideKey       widget.Editor
+	decideModel     widget.Editor
+	decideTimeout   widget.Editor
+	decideTaskChars widget.Editor
+	decideRisk      widget.Editor
+	decideHuman     widget.Editor
+	decideDenyAbove widget.Editor
+	decideWarmup    widget.Bool
+	decideDeny      widget.Bool
+	toolsFold       map[string]bool
+
 	// 关于页（D208）：纯信息页——没有配置项，不进快照也不会进 patch。aboutVersion 取
 	// 装配根注入的 Options.Version；图标缓存与两个动作件、反馈文案挂在这里（本窗独占）。
 	aboutVersion string
@@ -277,6 +294,9 @@ func newSettingsFormState() *settingsForm {
 		asrLang:      selectField{displays: langLevels(), values: langValues},
 		asrKind:      selectField{displays: asrKindLevels(), values: asrKindValues},
 		ttsKind:      selectField{displays: ttsKindLevels(), values: ttsKindValues},
+		toolsMode:    selectField{displays: toolsModeLevels(), values: toolsModeValues},
+		decideMode:   selectField{displays: decideModeLevels(), values: decideModeValues},
+		toolsFold:    map[string]bool{},
 		testResults:  make(chan testOutcome, 8),
 		toolRes:      make(chan toolActionResult, 16),
 		skillRes:     make(chan skillActionResult, 16),
@@ -371,11 +391,14 @@ func newSettingsForm(u *UI) *settingsForm {
 		&f.asrModel, &f.asrPath, &f.asrBaseURL, &f.asrKey, &f.ttsModel, &f.ttsBaseURL, &f.ttsKey,
 		&f.ttsVoice, &f.ttsDesign, &f.ttsStyle, &f.ttsTags,
 		&f.webCount, &f.webMaxChars, &f.webProxy, &f.webUA, &f.webTimeout,
-		&f.samplingTemp, &f.samplingTopP, &f.samplingMax, &f.samplingStop} {
+		&f.samplingTemp, &f.samplingTopP, &f.samplingMax, &f.samplingStop,
+		&f.decideBase, &f.decideKey, &f.decideModel, &f.decideTimeout, &f.decideTaskChars,
+		&f.decideRisk, &f.decideHuman, &f.decideDenyAbove} {
 		ed.SingleLine = true
 	}
 	f.asrKey.Mask = '•' // 只写不回显（D35 同一套规则）
 	f.ttsKey.Mask = '•'
+	f.decideKey.Mask = '•'
 	// f.sysPrompt / f.rawCfg 保持多行（表单仅有的多行档）。
 	f.snap = s
 	f.model.SetText(s.Model)
@@ -420,6 +443,29 @@ func newSettingsForm(u *UI) *settingsForm {
 	f.sysPrompt.SetText(s.SystemPrompt)
 	f.rawCfg.SetText(s.RawJSON)
 	f.builtins = s.Builtins
+	// 工具页（v1.0.0）：呈现模式与 decide 表单。decide 数值/阈值按「有值才回填」
+	// （空 = 保持现值的表单规则）；密钥框恒空。
+	f.toolsMode.setValue(toolsModeNorm(s.ToolsMode))
+	f.decideMode.setValue(decideModeNorm(s.DecideMode))
+	f.decideBase.SetText(s.DecideBaseURL)
+	f.decideModel.SetText(s.DecideModel)
+	if s.DecideTimeoutMS > 0 {
+		f.decideTimeout.SetText(strconv.Itoa(s.DecideTimeoutMS))
+	}
+	if s.DecideTaskChars > 0 {
+		f.decideTaskChars.SetText(strconv.Itoa(s.DecideTaskChars))
+	}
+	if s.DecideRiskBelow > 0 {
+		f.decideRisk.SetText(fmt.Sprintf("%g", s.DecideRiskBelow))
+	}
+	if s.DecideHumanBelow > 0 {
+		f.decideHuman.SetText(fmt.Sprintf("%g", s.DecideHumanBelow))
+	}
+	if s.DecideHumanAbove > 0 {
+		f.decideDenyAbove.SetText(fmt.Sprintf("%g", s.DecideHumanAbove))
+	}
+	f.decideWarmup.Value = s.DecideWarmup
+	f.decideDeny.Value = s.DecideDenyEnabled
 	// 语音页填表（D179/D222）：provider 选项来自本窗的 provider 快照；未配置 = 首项。
 	// 端点原样回填；密钥框恒空（只写不回显）。
 	f.setAudioProviderChoices(s.ASRProvider, &f.asrProv)

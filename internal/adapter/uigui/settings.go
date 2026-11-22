@@ -280,6 +280,25 @@ type SettingsSnapshot struct {
 	SamplingTopP        string
 	SamplingMaxTokens   string
 	SamplingStop        string // JSON 数组文本，如 ["\n"]（空 = 不发送）
+
+	// ToolsMode 工具呈现模式（tools.mode）：native | ptc；"" = 缺省 native。
+	// 装配期读，保存只写 config（重启生效）。
+	ToolsMode string
+	// 模型辅助决策（decide，实验性）现值：文件即事实源，段缺失 = 全零值（mode ""）。
+	// 密钥只带形态（D35 同规则），值永不回显。
+	DecideMode        string // "" = off（键缺失）
+	DecideBaseURL     string
+	DecideModel       string
+	DecideKeySaved    bool
+	DecideKeyPlain    bool
+	DecideKeyRef      string
+	DecideTimeoutMS   int
+	DecideTaskChars   int
+	DecideWarmup      bool
+	DecideRiskBelow   float64
+	DecideHumanBelow  float64
+	DecideDenyEnabled bool
+	DecideHumanAbove  float64
 }
 
 // SettingsPatch 设置窗保存提交（表单全量；模型服务走 ProviderManager.Apply，D110②）。
@@ -319,6 +338,9 @@ var (
 	// 首项是缺省（chat-audio）。
 	asrKindValues = []string{"chat-audio", "whisper", "openai", "funasr"}
 	ttsKindValues = []string{"chat-audio", "vits", "gptsovits"}
+	// toolsModeValues / decideModeValues 工具页两台选择器的键值（config 原文；词表冻结）。
+	toolsModeValues  = []string{"native", "ptc"}
+	decideModeValues = []string{"off", "shadow", "on"}
 	// kindLevels 协议档（S11-7③/D173）：展示名短（chat/responses/anthropic），键值为
 	// config 里的 kind 原文；空 = openai-chat（读侧归一）。展示名是协议短名，两种语言
 	// 下同形，故与键值同为包级档位。
@@ -368,6 +390,35 @@ func uiLangLevels() []string {
 		"简体中文",
 		"English",
 	}
+}
+
+// toolsModeLevels / decideModeLevels 工具页两台选择器的展示名（i18n 运行时取词）。
+func toolsModeLevels() []string {
+	return []string{i18n.T("ui.page.tools.mode_native"), i18n.T("ui.page.tools.mode_ptc")}
+}
+
+func decideModeLevels() []string {
+	return []string{
+		i18n.T("ui.page.tools.decide_off"),
+		i18n.T("ui.page.tools.decide_shadow"),
+		i18n.T("ui.page.tools.decide_on"),
+	}
+}
+
+// toolsModeNorm / decideModeNorm 快照值 → 选择器键值：键缺失按各自缺省档（native / off），
+// 否则 setValue 落不到键值上会把选项错挂到首项。
+func toolsModeNorm(v string) string {
+	if v == "" {
+		return "native"
+	}
+	return v
+}
+
+func decideModeNorm(v string) string {
+	if v == "" {
+		return "off"
+	}
+	return v
 }
 
 // asrKindLevels 识别协议档展示名（首项 = 缺省 chat-audio）。

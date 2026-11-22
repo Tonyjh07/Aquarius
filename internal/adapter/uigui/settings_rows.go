@@ -213,6 +213,21 @@ const (
 	rowLogFile   // 一份日志文件（点一行看末尾）
 	rowLogAction // 页级动作（刷新 / 打开目录；不落卡）
 	rowLogStatus // 查看与打开目录的反馈（不落卡）
+	// 工具页三件（v1.0.0）：呈现模式选择行、内置工具分类折叠、模型辅助决策表单。
+	rowToolsMode       // 呈现模式（选择器：native / ptc；保存后重启生效）
+	rowBuiltinGroup    // 内置工具分组头（name = 组 key；点击展开/收起；text = 组名）
+	rowDecideNote      // decide 分组说明（实验、未配全不生效；text 忽略）
+	rowDecideMode      // decide 模式（选择器：off / shadow / on）
+	rowDecideBase      // decide 接口地址
+	rowDecideKey       // decide API 密钥（只写不回显）
+	rowDecideModel     // decide 模型名
+	rowDecideTimeout   // decide 判定超时 ms（空 = 不改）
+	rowDecideWarmup    // decide 启动预热开关
+	rowDecideTaskChars // decide 任务摘要截断（空 = 不改）
+	rowDecideRisk      // decide 放行 risk 上界（空 = 不改）
+	rowDecideHuman     // decide 放行 needs_human 上界（空 = 不改）
+	rowDecideDeny      // decide「明显该拒」开关
+	rowDecideDenyAbove // decide 拒绝 needs_human 下界（空 = 不改）
 )
 
 // provModelCandMax 候选 chip 的上限（D153；欢迎窗「获取模型」仍用 provModelCandMax）：服务端可能列出
@@ -231,6 +246,7 @@ const provModelPageSize = 8
 type rowDesc struct {
 	kind  rowKind
 	text  string // rowSection / rowTitle / rowProvHead 的文案
+	name  string // 行级键（rowBuiltinGroup 的组 key 等；不随语言变）
 	prov  int    // provider 行：provider 下标
 	field int    // rowProvKey/rowProvModel：密钥/模型行下标
 }

@@ -107,6 +107,26 @@ type SettingsPatch struct {
 	SamplingTopP        string
 	SamplingMaxTokens   string
 	SamplingStop        string
+
+	// ToolsMode 工具呈现模式（tools.mode，实验性；"" = 不改）：native | ptc。
+	// 装配期读（决定模型面的工具声明形状），改了只能重启生效。
+	ToolsMode string
+	// 模型辅助决策（decide，实验性；D290）。DecideSet 区分「设置窗保存且确实改了
+	// decide」与「其他页的保存」——decide 段的默认形态是「不存在」（模板不生成），
+	// 没改过的保存不得顺手创建这一段。段内字段全部重启生效（decider 启动时构建）。
+	// DecideKey 只写不回显（空 = 保持原引用）；其余文本空 = 不写该键（清空走高级页）。
+	DecideSet         bool
+	DecideMode        string // off | shadow | on；空 = 不改
+	DecideBaseURL     string
+	DecideKey         string
+	DecideModel       string
+	DecideTimeoutMS   int     // 0 = 不改
+	DecideTaskChars   int     // 0 = 不改（config 显式 0 的「不带」语义走高级页手改）
+	DecideWarmup      *bool   // nil = 不改
+	DecideDenyEnabled *bool   // nil = 不改
+	DecideRiskBelow   float64 // 0 = 不改
+	DecideHumanBelow  float64 // 0 = 不改
+	DecideHumanAbove  float64 // 0 = 不改
 }
 
 // FallbackLink 降级链一项（D173/D176 规则三）：provider + 模型名。模型可为空
@@ -198,4 +218,14 @@ const (
 	// SettingsTopPMin/Max 核采样。三协议规则一致。
 	SettingsTopPMin = 0.0
 	SettingsTopPMax = 1.0
+
+	// 模型辅助决策（decide，实验性）的界面入口区间：与启动期归一化
+	// （config_decide.go 的 decideOptions）同一组数。0 = 不改（留空保持现值）——
+	// 「显式 0」的有效取值（task_chars = 不带）走高级页手改，界面入口不提供。
+	SettingsDecideTimeoutMin    = 200
+	SettingsDecideTimeoutMax    = 10000
+	SettingsDecideTaskCharsMax  = 400
+	SettingsDecideRiskBelowMax  = 2.0
+	SettingsDecideHumanBelowMax = 1.0
+	SettingsDecideHumanAboveMax = 1.0
 )

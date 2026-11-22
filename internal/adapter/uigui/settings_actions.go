@@ -96,8 +96,11 @@ func savedStatus(p SettingsPatch, snap SettingsSnapshot, snapChain []FallbackLin
 		!webProvidersEqual(p.WebFetchProviders, snap.WebFetchProviders) {
 		status = i18n.T("ui.settings.act.saved_web")
 	}
-	// 放最后：语言是这批里**最晚生效**的一个（要重启），同时改了别的也先说这一句，
-	// 免得用户以为界面马上会变。
+	// 放最后：语言与「装配期才读」的两组（呈现模式 / decide）都是要重启的；重启句
+	// 排最晚，同时改了别的也先说这一句，免得用户以为马上生效。
+	if p.ToolsMode != "" || p.DecideSet {
+		status = i18n.T("ui.settings.act.saved_restart")
+	}
 	if langOf(p.Lang) != langOf(snap.Lang) {
 		status = i18n.T("ui.settings.act.saved_lang")
 	}
@@ -116,6 +119,22 @@ func langOf(v string) string {
 // nextSnapshot 保存后的快照基准：文本键直接取 patch，密钥形态按 patch 的新值与旧形态
 // 推出（值不回显，界面只记「已存 / 明文 / 引用名」），联网提供商按 kind 对齐地重算。
 func nextSnapshot(p SettingsPatch, snap SettingsSnapshot) SettingsSnapshot {
+	// 工具页两组（呈现模式 / decide）：patch 带 Set 位才更新快照基准，未改动的保存
+	// 保持原值（与 DecideSet 的「不创建段」规则对齐）。
+	toolsMode := snap.ToolsMode
+	if p.ToolsMode != "" {
+		toolsMode = p.ToolsMode
+	}
+	decMode, decBase, decModel := snap.DecideMode, snap.DecideBaseURL, snap.DecideModel
+	decTimeout, decTask := snap.DecideTimeoutMS, snap.DecideTaskChars
+	decWarm, decDeny := snap.DecideWarmup, snap.DecideDenyEnabled
+	decRisk, decHuman, decDenyAbove := snap.DecideRiskBelow, snap.DecideHumanBelow, snap.DecideHumanAbove
+	if p.DecideSet {
+		decMode, decBase, decModel = p.DecideMode, p.DecideBaseURL, p.DecideModel
+		decTimeout, decTask = p.DecideTimeoutMS, p.DecideTaskChars
+		decWarm, decDeny = *p.DecideWarmup, *p.DecideDenyEnabled
+		decRisk, decHuman, decDenyAbove = p.DecideRiskBelow, p.DecideHumanBelow, p.DecideHumanAbove
+	}
 	return SettingsSnapshot{
 		Permission: p.Permission, Model: p.Model, Think: p.Think, Effort: p.Effort,
 		Hotkey: p.Hotkey, Theme: p.Theme, Lang: p.Lang,
@@ -150,6 +169,20 @@ func nextSnapshot(p SettingsPatch, snap SettingsSnapshot) SettingsSnapshot {
 		WebFetchRobots:     p.WebFetchRobots,
 		WebFetchPrivate:    p.WebFetchPrivate,
 		WebFetchTimeoutSec: p.WebFetchTimeoutSec,
+		ToolsMode:          toolsMode,
+		DecideMode:         decMode,
+		DecideBaseURL:      decBase,
+		DecideModel:        decModel,
+		DecideKeySaved:     keyShapeAfterSave(p.DecideKey, snap.DecideKeySaved),
+		DecideKeyPlain:     keyShapePlainAfterSave(p.DecideKey, snap.DecideKeyPlain),
+		DecideKeyRef:       keyRefAfterSave(p.DecideKey, snap.DecideKeyRef),
+		DecideTimeoutMS:    decTimeout,
+		DecideTaskChars:    decTask,
+		DecideWarmup:       decWarm,
+		DecideRiskBelow:    decRisk,
+		DecideHumanBelow:   decHuman,
+		DecideDenyEnabled:  decDeny,
+		DecideHumanAbove:   decDenyAbove,
 	}
 }
 
@@ -336,8 +369,106 @@ func (f *settingsForm) patch() (SettingsPatch, error) {
 		p.SamplingMaxTokens, p.SamplingStop); err != nil {
 		return SettingsPatch{}, err
 	}
+	// 工具呈现模式与 decide（实验性）：采集与校验收在 decidePatch，patch 只接线
+	// （funcsize 闸门：patch 不得继续长胖）。
+	applyDecide, err := f.decidePatch()
+	if err != nil {
+		return SettingsPatch{}, err
+	}
+	applyDecide(&p)
 	if v := strings.TrimSpace(f.rawCfg.Text()); v != "" && v != strings.TrimSpace(f.snap.RawJSON) {
 		p.RawJSON = v
 	}
 	return p, nil
+}
+
+// decidePatch 采集工具页两组装配期配置（呈现模式 + decide 全键），返回一个把结果
+// 写进 patch 的闭包与校验错误。校验规则与写回侧同表（port.SettingsDecide*）：
+// 数值空 = 不改；decide 任一字段相对快照有变化才置 DecideSet——没改过的保存不得
+// 顺手创建这一段（段缺失 = 实验功能「不存在」的默认形态）。密钥框恒空（只写不回
+// 显），非空才算改。装配期读的配置改了只能重启生效（savedStatus 提示）。
+func (f *settingsForm) decidePatch() (func(*SettingsPatch), error) {
+	noop := func(*SettingsPatch) {}
+	var muts []func(*SettingsPatch)
+	if m := f.toolsMode.value(); m != toolsModeNorm(f.snap.ToolsMode) {
+		mode := m
+		muts = append(muts, func(p *SettingsPatch) { p.ToolsMode = mode })
+	}
+	changed := f.decideMode.value() != decideModeNorm(f.snap.DecideMode) ||
+		strings.TrimSpace(f.decideBase.Text()) != f.snap.DecideBaseURL ||
+		strings.TrimSpace(f.decideKey.Text()) != "" ||
+		strings.TrimSpace(f.decideModel.Text()) != f.snap.DecideModel ||
+		f.decideWarmup.Value != f.snap.DecideWarmup ||
+		f.decideDeny.Value != f.snap.DecideDenyEnabled
+	parseNum := func(v string, min, max int, key string) (int, error) {
+		if v == "" {
+			return 0, nil
+		}
+		n, perr := strconv.Atoi(v)
+		if perr != nil || n < min || n > max {
+			return 0, fmt.Errorf("%s", i18n.Tf(key, "min", min, "max", max))
+		}
+		return n, nil
+	}
+	parseFlt := func(v string, max float64, key string) (float64, error) {
+		if v == "" {
+			return 0, nil
+		}
+		n, perr := strconv.ParseFloat(v, 64)
+		if perr != nil || n <= 0 || n > max {
+			return 0, fmt.Errorf("%s", i18n.Tf(key, "max", max))
+		}
+		return n, nil
+	}
+	timeout, err := parseNum(strings.TrimSpace(f.decideTimeout.Text()),
+		port.SettingsDecideTimeoutMin, port.SettingsDecideTimeoutMax, "ui.settings.err.decide_timeout")
+	if err != nil {
+		return noop, err
+	}
+	taskChars, err := parseNum(strings.TrimSpace(f.decideTaskChars.Text()),
+		0, port.SettingsDecideTaskCharsMax, "ui.settings.err.decide_taskchars")
+	if err != nil {
+		return noop, err
+	}
+	riskBelow, err := parseFlt(strings.TrimSpace(f.decideRisk.Text()),
+		port.SettingsDecideRiskBelowMax, "ui.settings.err.decide_risk")
+	if err != nil {
+		return noop, err
+	}
+	humanBelow, err := parseFlt(strings.TrimSpace(f.decideHuman.Text()),
+		port.SettingsDecideHumanBelowMax, "ui.settings.err.decide_human")
+	if err != nil {
+		return noop, err
+	}
+	denyAbove, err := parseFlt(strings.TrimSpace(f.decideDenyAbove.Text()),
+		port.SettingsDecideHumanAboveMax, "ui.settings.err.decide_deny_above")
+	if err != nil {
+		return noop, err
+	}
+	if changed || timeout != 0 || taskChars != 0 || riskBelow != 0 || humanBelow != 0 || denyAbove != 0 {
+		muts = append(muts, func(p *SettingsPatch) {
+			p.DecideSet = true
+			p.DecideMode = f.decideMode.value()
+			p.DecideBaseURL = strings.TrimSpace(f.decideBase.Text())
+			p.DecideKey = strings.TrimSpace(f.decideKey.Text())
+			p.DecideModel = strings.TrimSpace(f.decideModel.Text())
+			p.DecideTimeoutMS = timeout
+			p.DecideTaskChars = taskChars
+			warmup := f.decideWarmup.Value
+			p.DecideWarmup = &warmup
+			deny := f.decideDeny.Value
+			p.DecideDenyEnabled = &deny
+			p.DecideRiskBelow = riskBelow
+			p.DecideHumanBelow = humanBelow
+			p.DecideHumanAbove = denyAbove
+		})
+	}
+	if len(muts) == 0 {
+		return noop, nil
+	}
+	return func(p *SettingsPatch) {
+		for _, m := range muts {
+			m(p)
+		}
+	}, nil
 }

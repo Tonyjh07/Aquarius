@@ -585,3 +585,72 @@ func TestSettingsLangRow(t *testing.T) {
 		t.Error("空值与 zh 不应归一为同一档")
 	}
 }
+
+// TestPatchDecideFields decide 全键表单的采集与校验（v1.0.0）：填了才带 DecideSet 与
+// 各字段；数值越界整份拒绝（返回零值 patch，不拿半成品提交）；没改过的保存不带 DecideSet。
+func TestPatchDecideFields(t *testing.T) {
+	f := newTestForm(t) // 快照零值：decide 段缺失
+	if p, err := f.patch(); err != nil || p.DecideSet {
+		t.Fatalf("未改动的保存不应带 DecideSet：(err=%v, set=%v)", err, p.DecideSet)
+	}
+
+	f.decideMode.setValue("shadow")
+	f.decideBase.SetText(" http://127.0.0.1:11434 ")
+	f.decideModel.SetText("clef-flash")
+	f.decideTimeout.SetText("2000")
+	f.decideTaskChars.SetText("120")
+	f.decideRisk.SetText("0.4")
+	f.decideHuman.SetText("0.1")
+	f.decideDenyAbove.SetText("0.9")
+	f.decideDeny.Value = true
+	warm := f.decideWarmup.Value
+	p, err := f.patch()
+	if err != nil {
+		t.Fatalf("patch: %v", err)
+	}
+	if !p.DecideSet || p.DecideMode != "shadow" || p.DecideBaseURL != "http://127.0.0.1:11434" ||
+		p.DecideModel != "clef-flash" || p.DecideTimeoutMS != 2000 || p.DecideTaskChars != 120 ||
+		p.DecideRiskBelow != 0.4 || p.DecideHumanBelow != 0.1 || p.DecideHumanAbove != 0.9 ||
+		p.DecideWarmup == nil || *p.DecideWarmup != warm || p.DecideDenyEnabled == nil || !*p.DecideDenyEnabled {
+		t.Fatalf("patch = %+v", p)
+	}
+
+	// 数值非法：整份拒绝。
+	f.decideTimeout.SetText("10")
+	if _, err := f.patch(); err == nil {
+		t.Fatal("timeout 越下界应拒")
+	}
+	f.decideTimeout.SetText("")
+	f.decideRisk.SetText("3")
+	if _, err := f.patch(); err == nil {
+		t.Fatal("risk 越上界应拒")
+	}
+}
+
+// TestPatchToolsModeChangedOnlyOnDiff 呈现模式与快照相同 = 没改（不带键），不同才带。
+func TestPatchToolsModeChangedOnlyOnDiff(t *testing.T) {
+	f := newTestForm(t)
+	f.toolsMode.setValue("native") // 快照缺省即 native
+	p, err := f.patch()
+	if err != nil {
+		t.Fatalf("patch: %v", err)
+	}
+	if p.ToolsMode != "" {
+		t.Fatalf("与快照相同不应带键: %q", p.ToolsMode)
+	}
+	f.toolsMode.setValue("ptc")
+	if p, err = f.patch(); err != nil || p.ToolsMode != "ptc" {
+		t.Fatalf("patch = (%+v, %v)", p, err)
+	}
+}
+
+// newTestForm 带零值快照的空表单（decide/呈现模式采集用例）：快照全零 = decide 段
+// 缺失、呈现模式键缺失（归一为 native）。
+func newTestForm(t *testing.T) *settingsForm {
+	t.Helper()
+	u := newHeadless(t, Options{
+		Settings:      func() SettingsSnapshot { return SettingsSnapshot{} },
+		ApplySettings: func(p SettingsPatch) ([]port.Command, error) { return nil, nil },
+	})
+	return newSettingsForm(u)
+}
