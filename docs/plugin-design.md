@@ -1,5 +1,5 @@
 # pluginapi/v1 设计草稿（Tier-1 Go 插件）
-<!-- docs-sync: 2026-11-22 @ fc720f0 -->
+<!-- docs-sync: 2026-11-22 @ 04ac04d -->
 
 > 定位：Tier-1 进程内 Go 插件（`pluginapi/v1`）的实现规格——接口面、UI 扩展面、宿主服务、
 > 生命周期、版本纪律、能力边界。Tier-2（MCP server）的规格在 [contracts.md](contracts.md) §6.2–§6.4，
@@ -277,10 +277,10 @@ prompt / 消息流注入接口）；替换或宿主 UI（不暴露 Gio、不改�
 
 ## 12. 验收（P3，首个插件）
 
-首个 Tier-1 插件 = 导出文件输出器（`OutputAdapter`，contracts §7.2 形态已留）。一条
-路径同时覆盖四层：供给面实现 + `Init` 里解析 `secret:` + 落盘经 WorkDir（消费面）+
-`/plugin` 与设置窗可见（管理面）+ Shutdown 落盘收尾（生命周期）。这个插件同时是契约的
-验收测试与文档样例。
+首个 Tier-1 插件**选型待定**（候选一：导出文件输出器，`OutputAdapter`，contracts §7.2
+形态已留）。选型标准不随具体插件变：一条路径同时覆盖四层——供给面实现 + `Init` 里解析
+`secret:` + 落盘或附件经消费面（WorkDir / Blobs）+ `/plugin` 与设置窗可见（管理面）+
+Shutdown 收尾（生命周期）。选中的插件同时是契约的验收测试与文档样例。
 
 ## 13. 决策索引
 
