@@ -303,7 +303,7 @@ func (p *pluginSurfaces) refresh() {
 				if err != nil {
 					return "", err
 				}
-				return sess.Handle(ctx, port.UserInput{Text: text})
+				return sess.Handle(ctx, port.UserInput{Text: withPromptSource(name, promptName, text)})
 			}
 			// 动态命令的参数相：MCP prompt 的参数由服务端声明，本地只给一句通用提示
 			//（D250：拿不到逐参数事实时退到 text，只提示不填）。
@@ -318,6 +318,12 @@ func (p *pluginSurfaces) refresh() {
 		}
 	}
 	sess.SetDynamicCommands(dyn, meta)
+}
+
+// withPromptSource MCP prompt 渲染文本的来源标记（contracts §6.3）：渲染结果将作为
+// 用户输入走完整 Turn，外部服务写什么都不能冒充用户本人——首行注明来源与性质。
+func withPromptSource(server, prompt, text string) string {
+	return i18n.Tf("mcp.prompt.source", "plugin", server, "name", prompt) + "\n\n" + text
 }
 
 // sortedStoreNames 取就绪服务器名（排序，extras 闭包用——索引顺序稳定）。

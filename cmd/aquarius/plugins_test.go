@@ -54,6 +54,18 @@ func (f *fakePluginSession) Stats() plugin.Stats {
 	return plugin.Stats{}
 }
 
+// TestWithPromptSource MCP prompt 渲染文本的来源标记（contracts §6.3）：渲染结果将
+// 作为用户输入走完整 Turn，首行注明「来自外部服务」，防止 prompt 文本冒充用户身份。
+func TestWithPromptSource(t *testing.T) {
+	got := withPromptSource("web", "search", "BODY")
+	if !strings.Contains(got, "web") || !strings.Contains(got, "search") {
+		t.Fatalf("标记缺来源信息: %q", got)
+	}
+	if !strings.HasSuffix(got, "\n\nBODY") {
+		t.Fatalf("标记后应跟空行与原文: %q", got)
+	}
+}
+
 // TestPluginSurfacesRefresh 工具面随就绪集增减（session 尚未建好时只刷工具）：
 // 上线注册、下线移除、再上线换新——registered 记录驱动移除。
 func TestPluginSurfacesRefresh(t *testing.T) {

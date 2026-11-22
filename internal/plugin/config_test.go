@@ -3,6 +3,8 @@ package plugin
 import (
 	"strings"
 	"testing"
+
+	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
 )
 
 // TestMCPServerValidate 声明校验：形态必需字段、transport/risk 取值、服务器名合法性。
@@ -39,6 +41,27 @@ func TestMCPServerValidate(t *testing.T) {
 }
 
 // TestStateDefaults 状态默认值（D31）：键缺失 = 启用；granted 精确匹配。
+// TestToolRiskBySource 风险按发现源分档（D328）：显式声明照旧，未声明按来源取默认
+// （config → Safe，plugins → Confirm）。
+func TestToolRiskBySource(t *testing.T) {
+	cases := []struct {
+		label string
+		decl  Decl
+		want  tool.Risk
+	}{
+		{"config 未声明", Decl{Source: SourceConfig}, tool.Safe},
+		{"plugins 未声明", Decl{Source: SourcePlugins}, tool.Confirm},
+		{"plugins 显式 safe", Decl{Risk: RiskSafe, Source: SourcePlugins}, tool.Safe},
+		{"config 显式 confirm", Decl{Risk: RiskConfirm, Source: SourceConfig}, tool.Confirm},
+		{"plugins 显式 confirm", Decl{Risk: RiskConfirm, Source: SourcePlugins}, tool.Confirm},
+	}
+	for _, tc := range cases {
+		if got := tc.decl.ToolRisk(); got != tc.want {
+			t.Errorf("%s: got %v, want %v", tc.label, got, tc.want)
+		}
+	}
+}
+
 func TestStateDefaults(t *testing.T) {
 	if !(State{}).IsEnabled() {
 		t.Fatal("enabled 键缺失应默认启用")

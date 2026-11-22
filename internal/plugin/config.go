@@ -113,8 +113,13 @@ const (
 )
 
 // ToolRisk 声明风险 → 工具风险（domain/tool；confirm 逐次走 Confirmer，§9）。
+// 显式声明照旧生效；未声明（"" = safe）时按发现源取默认（D328）：config 条目是用户
+// 逐条写进配置的，默认 Safe；plugins 目录来源「放进去就加载」，默认 Confirm。
 func (d Decl) ToolRisk() tool.Risk {
 	if d.Risk == RiskConfirm {
+		return tool.Confirm
+	}
+	if d.Risk == "" && d.Source == SourcePlugins {
 		return tool.Confirm
 	}
 	return tool.Safe
