@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-22 @ c3d3831 -->
+<!-- docs-sync: 2026-11-22 @ cba6acc -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -303,7 +303,8 @@
   distinct 确认数超过 `tools.ptc.confirm_limit`（缺省 8）后需要确认的调用回 `OK=false`，
   脚本继续。`tools.ptc.max_steps / max_calls / max_parallel / confirm_limit` 四键可配
   （缺省 200M / 256 / 10 / 8，fail-fast 区间校验），工具描述里的预算数字随配置现取。
-  脚本摘要（调用数 / 去重 / 上限触达）落运行日志；`/code` 只读查看上次脚本；
+  脚本摘要（调用数 / 去重 / 上限触达）落运行日志——确认上限触达（脚本内调用被拒）升 warn，
+  正常路径落 debug，不逐脚本刷 info；`/code` 只读查看上次脚本；
   `tools.describe(name)` 绑定给出单个工具的完整描述与参数（不计调用配额）。
 
 ### 4.4 记忆文档
