@@ -44,8 +44,18 @@ func (u *UI) frameItems() []blockView {
 			groupOf[sub.bi] = tv
 		}
 	}
+	// 展开组的摘要行挂在组首块前铺（摘要常驻：先摘要、后子块）。
+	openStart := map[int]*turnView{}
+	for _, tv := range groups {
+		if u.turnIsOpen(tv) && len(tv.blocks) > 0 {
+			openStart[tv.blocks[0].bi] = tv
+		}
+	}
 	var pendStrips []branchStrip // 折叠组内块锚的分叉条，顺延到摘要行之后输出
 	for bi, b := range u.m.blocks {
+		if tv, ok := openStart[bi]; ok {
+			items = append(items, blockView{kind: blockTurn, turn: tv, bi: bi, id: tv.id})
+		}
 		if folded[bi] {
 			// 组内块不铺条目，但其上锚的分叉条不能丢——攒着，摘要行后统一铺。
 			if next < len(strips) && strips[next].blockIdx == bi {
@@ -64,7 +74,8 @@ func (u *UI) frameItems() []blockView {
 			}
 			// 摘要行在该 assistant 正文之前铺（过程先于结论）；组内块锚的分叉条
 			// 随摘要顺延（D89 纯工具轮锚在 chip 上，折叠后不能丢）。
-			if tv, ok := groups[bi]; ok && !u.turnIsOpen(tv) {
+			if tv, ok := groups[bi]; ok && !u.turnIsOpen(tv) { // 折叠态：摘要行贴在正文前
+				// 展开态的摘要在组首块前铺（openStart），不走这里。
 				items = append(items, blockView{kind: blockTurn, turn: tv, bi: bi, id: tv.id})
 				for _, st := range pendStrips {
 					s := st

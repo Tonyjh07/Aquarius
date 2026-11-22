@@ -133,15 +133,16 @@ func TestTurnFoldExpandCollapse(t *testing.T) {
 	u.layout(gtx)
 	q.Frame(ops)
 	items := u.frameItems()
-	// 展开态：思考 + 两个 chip + 正文（无摘要条目）；键数含正文行（5 + 1 = 6），
-	// 与折叠态（摘要 5 + 正文 1）一致——开合不漂移后续行序号。
-	if len(items) != 4 || items[0].kind != blockThinking ||
-		items[1].kind != blockTool || items[2].kind != blockTool || items[3].kind != blockAssistant {
-		t.Fatalf("展开态 items = %+v, want 子块铺回", items)
+	// 展开态：摘要行常驻 + 思考 + 两个 chip + 正文；键数与折叠态一致（5 + 1 = 6）
+	// ——开合不漂移后续行序号。
+	if len(items) != 5 || items[0].kind != blockTurn ||
+		items[1].kind != blockThinking || items[2].kind != blockTool ||
+		items[3].kind != blockTool || items[4].kind != blockAssistant {
+		t.Fatalf("展开态 items = %+v, want 摘要常驻 + 子块铺回", items)
 	}
 	total := 0
 	for _, it := range items {
-		total += it.selCount()
+		total += u.itemSelCount(it) // 展开态摘要行让位（0 键），子块用自己的键
 	}
 	if total != 6 {
 		t.Fatalf("展开态键数 = %d, want 6（与折叠态一致）", total)
@@ -171,13 +172,13 @@ func TestTurnHeaderText(t *testing.T) {
 		ms, tools int
 		want      string
 	}{
-		{800, 2, i18n.Tf("ui.turn.summary", "sec", i18n.Tf("ui.turn.sec_ms", "n", 800), "n", 2)},
-		{1500, 1, i18n.Tf("ui.turn.summary", "sec", i18n.Tf("ui.turn.sec_s", "n", "1.5"), "n", 1)},
-		{-1, 3, i18n.Tf("ui.turn.summary_plain", "n", 3)},
+		{800, 2, "▸ " + i18n.Tf("ui.turn.summary", "sec", i18n.Tf("ui.turn.sec_ms", "n", 800), "n", 2)},
+		{1500, 1, "▸ " + i18n.Tf("ui.turn.summary", "sec", i18n.Tf("ui.turn.sec_s", "n", "1.5"), "n", 1)},
+		{-1, 3, "▸ " + i18n.Tf("ui.turn.summary_plain", "n", 3)},
 	}
 	for _, c := range cases {
 		tv := &turnView{ms: c.ms, tools: c.tools}
-		if got := turnHeaderText(tv); got != c.want {
+		if got := turnHeaderText(tv, false); got != c.want {
 			t.Fatalf("ms %d / tools %d = %q, want %q", c.ms, c.tools, got, c.want)
 		}
 	}

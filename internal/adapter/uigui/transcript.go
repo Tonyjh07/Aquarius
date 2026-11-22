@@ -56,7 +56,7 @@ func (u *UI) transcript(gtx layout.Context, w, h int) {
 	total, totalKeys := 0, 0
 	for i := range items {
 		items[i].keyBase = totalKeys // D92：整条复制按键区间取渲染文本
-		rs := &rowSel{u: u, base: totalKeys, n: items[i].selCount()}
+		rs := &rowSel{u: u, base: totalKeys, n: u.itemSelCount(items[i])}
 		rows[i] = u.measureRow(gtx, items[i], w, rs)
 		total += rows[i].height()
 		totalKeys += rs.n
@@ -141,8 +141,8 @@ func (u *UI) measureRow(gtx layout.Context, it blockView, w int, rs *rowSel) mea
 	}
 	// 折叠态命令条（D266）：贴合文案的窄条，左右内衬更松一档；展开态铺满容器，
 	// 内衬回到常规——「收起来是一枚薄条，摊开是一块面板」。
-	center := it.kind == blockCommand || it.kind == blockTurn
-	if center && (it.kind == blockTurn || !u.cmdIsOpen(it.bi)) { // 摘要行恒为窄条（无展开态）
+	center := it.kind == blockCommand
+	if center && !u.cmdIsOpen(it.bi) {
 		padX = gtx.Dp(cmdPadXDp)
 	}
 	maxW := w - 2*gtx.Dp(sideMarginDp)
@@ -183,7 +183,7 @@ func (u *UI) paintRow(gtx layout.Context, mr measuredRow, it blockView, w, y int
 	if it.menuable() {
 		u.bubbleRects = append(u.bubbleRects, bubbleHit{
 			rect: bgRect, bi: it.bi, id: it.id, kind: it.kind,
-			keyBase: it.keyBase, keyN: it.selCount(),
+			keyBase: it.keyBase, keyN: u.itemSelCount(it),
 		})
 	}
 	// 待响应引导（D272）整块淡一档：气泡本体与旁边两枚控件一起算，该气泡还不是会话节点，
@@ -330,17 +330,17 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, rs *rowSel) (layout.Widg
 			}
 			return vs.dims()
 		}, tok().cardInject, cardR, false, false
-	case blockTurn: // Turn 过程摘要行（D326）：一行窄条、整条是点击件（同命令折叠行）。
-		// 展开态不产此条目（frameItems 铺回子块），键位由子块占用——折叠态子键不铺开
-		// 但占位（selCount 恒 = 子块和，D265 同规则）。
+	case blockTurn: // Turn 过程摘要行（D326）：左对齐窄条、工具 chip 同款底色，整条是
+		// 点击件；键位由子块占用——折叠态子键不铺开但占位（selCount 恒 = 子块和，D265
+		// 同规则）。摘要行常驻：展开态子块在本行之下铺回，再点收起。
 		return func(gtx layout.Context) layout.Dimensions {
 			cl := u.turnClick(it.bi)
 			return cl.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				s := material.Caption(u.th, turnHeaderText(it.turn))
-				s.Color = cmdHeadColor()
+				s := material.Caption(u.th, turnHeaderText(it.turn, u.turnIsOpen(it.turn)))
+				s.Color = tok().textMuted
 				return s.Layout(gtx)
 			})
-		}, tok().cardCmd, cardR, false, false
+		}, tok().cardTool, cardR, false, false
 	case blockCommand: // 命令折叠条：形状交给 commandRowStyle，与工具 chip、分叉条同法
 		return u.commandRowStyle(gtx, it, rs, cardR)
 	case blockTool:
@@ -764,4 +764,14 @@ func mdTableColWidths(avail int, weights []float64, minW int) []int {
 		}
 	}
 	return widths
+}
+
+// itemSelCount 条目的行选键数（D326）：展开态的 Turn 摘要行让位——子块以独立条目
+// 铺回并用自己的键，摘要行不再占键（否则子键被数两遍）；折叠态摘要仍按子块键数之和
+// 占位（D265 同规则：不铺正文但键数恒定，开合不漂移后续行序号）。
+func (u *UI) itemSelCount(it blockView) int {
+	if it.kind == blockTurn && it.turn != nil && u.turnIsOpen(it.turn) {
+		return 0
+	}
+	return it.selCount()
 }

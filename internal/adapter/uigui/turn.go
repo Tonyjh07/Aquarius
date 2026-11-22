@@ -87,16 +87,23 @@ func (u *UI) scanTurnGroups() map[int]*turnView {
 
 // turnHeaderText 摘要行文案：有思考耗时给「工作 x（秒段），调用了 n 个工具」，
 // 无耗时数据（回放）省略秒段。秒段格式与思考块同一套（<1s 毫秒、≥1s 一位小数秒）。
-func turnHeaderText(tv *turnView) string {
+func turnHeaderText(tv *turnView, open bool) string {
+	arrow := "▸"
+	if open {
+		arrow = "▾"
+	}
+	var body string
 	if tv.ms < 0 {
-		return i18n.Tf("ui.turn.summary_plain", "n", tv.tools)
+		body = i18n.Tf("ui.turn.summary_plain", "n", tv.tools)
+	} else {
+		sec := i18n.Tf("ui.turn.sec_ms", "n", tv.ms)
+		if tv.ms >= 1000 {
+			sec = i18n.Tf("ui.turn.sec_s", "n",
+				strconv.FormatFloat(float64(tv.ms)/1000, 'f', 1, 64))
+		}
+		body = i18n.Tf("ui.turn.summary", "sec", sec, "n", tv.tools)
 	}
-	sec := i18n.Tf("ui.turn.sec_ms", "n", tv.ms)
-	if tv.ms >= 1000 {
-		sec = i18n.Tf("ui.turn.sec_s", "n",
-			strconv.FormatFloat(float64(tv.ms)/1000, 'f', 1, 64))
-	}
-	return i18n.Tf("ui.turn.summary", "sec", sec, "n", tv.tools)
+	return arrow + " " + body
 }
 
 // turnClick 摘要行点击件 get-or-create（按块序缓存，同 cmdClick 规则）。
