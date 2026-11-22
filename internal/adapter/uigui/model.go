@@ -87,6 +87,12 @@ type pendingConfirm struct {
 	// share 本次确认在窗间的投影身份（D157）：由 startConfirm 发布、replyConfirm 撤下；
 	// 次窗应答据此校验「答的是不是这一次」（迟到应答不得落到下一次确认上）。
 	share *confirmShare
+	// chip 本次确认归属的 chip 块序（-1 = 无 chip 承载，如脚本内并行调用/命令确认）。
+	// 排队等待期间也先绑好，否则轮到它时已认不出是哪一次调用。
+	chip int
+	// line 转写里的一行问句（无 chip 承载时显示）：首行 + 折叠空白 + 限长，
+	// 完整问句仍在 prompt（跨窗弹窗与应答回显用）。
+	line string
 }
 
 // model 渲染状态机：事件面规则对齐 uitui/model.go（§15.5）——
@@ -103,6 +109,10 @@ type model struct {
 	thinkAt  time.Time       // 首个思考增量时刻（flush → ms 定稿耗时）
 
 	confirm *pendingConfirm
+	// confirmQueue 排队的后续确认：并行工具调用会同时举手要权限，界面一次只问一条，
+	// 答完自动接上下一条。没有这个队列，后来的问句会直接顶掉前一条——前一条的
+	// Confirm 永远等不到应答，那一轮就卡在那里（界面显示待确认却没有可点的钮）。
+	confirmQueue []*pendingConfirm
 	// ask 进行中的提问面板（D184）：非空时输入栏画面板、按键走面板语义。
 	ask         *pendingAsk
 	confirmChip int                // 确认归属的 chip 块序（D67；-1 = 非 chip 确认，如 /rm）
@@ -325,6 +335,7 @@ func (m *model) clear() {
 	if m.ask != nil {
 		m.askDismiss() // D184：清屏（/switch、/new）时提问面板一并收场（放弃全部）
 	}
+	m.dropConfirms() // 块序随清屏重排，进行中的确认已经指不准 chip，一律收掉
 	m.blocks = nil
 	m.draft.Reset()
 	m.drafting = false

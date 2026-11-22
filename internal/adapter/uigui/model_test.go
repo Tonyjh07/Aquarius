@@ -152,6 +152,87 @@ func TestConfirmReasonEcho(t *testing.T) {
 	}
 }
 
+// TestConfirmQueueKeepsBothAnswers 并行工具调用会同时举手要权限：后来的确认必须排队，
+// 不能顶掉前一条——顶掉的后果是前一条的 Confirm 永远等不到应答，那一轮卡死，
+// 界面上只剩「待确认」的 chip 而没有可点的钮。
+func TestConfirmQueueKeepsBothAnswers(t *testing.T) {
+	t.Parallel()
+	m, _ := newTestModel(t)
+	r1 := make(chan port.ConfirmAnswer, 1)
+	r2 := make(chan port.ConfirmAnswer, 1)
+	m.startConfirm(port.ConfirmRequest{Tool: "term_exec", Prompt: "first?"}, r1)
+	m.startConfirm(port.ConfirmRequest{Tool: "term_exec", Prompt: "second?"}, r2)
+
+	if got := m.confirm.prompt; got != "first?" {
+		t.Fatalf("前台确认 = %q, want 先来的先问", got)
+	}
+	if len(m.confirmQueue) != 1 {
+		t.Fatalf("队列长度 = %d, want 1", len(m.confirmQueue))
+	}
+
+	m.replyConfirm(port.ConfirmAnswer{Allow: true})
+	if ans := <-r1; !ans.Allow {
+		t.Fatalf("第一条应答 = %+v", ans)
+	}
+	if m.confirm == nil || m.confirm.prompt != "second?" {
+		t.Fatalf("第一条答完应接上第二条，实际 %+v", m.confirm)
+	}
+	if len(m.confirmQueue) != 0 {
+		t.Fatalf("队列未清空: %d", len(m.confirmQueue))
+	}
+
+	m.replyConfirm(port.ConfirmAnswer{})
+	if ans := <-r2; ans.Allow {
+		t.Fatalf("第二条应答 = %+v", ans)
+	}
+	if m.confirm != nil {
+		t.Fatal("两条都答完不该还挂着确认态")
+	}
+}
+
+// TestConfirmQueueLineIsOneLine 无 chip 承载的问句（脚本内并行调用）只留一行：
+// 整段参数铺进转写会把正文顶出去。完整问句仍在 pendingConfirm.prompt。
+func TestConfirmQueueLineIsOneLine(t *testing.T) {
+	t.Parallel()
+	m, _ := newTestModel(t)
+	long := "run term_exec? args: {\"command\":\"wmic cpu get Name\\n" + strings.Repeat("x", 400) + "\"}"
+	m.startConfirm(port.ConfirmRequest{Tool: "term_exec", Prompt: long}, make(chan port.ConfirmAnswer, 1))
+
+	if m.confirmChip != -1 {
+		t.Fatalf("没有对应 chip 时应落文本行，实际 chip = %d", m.confirmChip)
+	}
+	var line string
+	for _, b := range m.blocks {
+		if b.kind == blockPlain {
+			line = b.text
+		}
+	}
+	if strings.Contains(line, "\n") {
+		t.Fatalf("转写行不该带换行: %q", line)
+	}
+	if n := len([]rune(line)); n > 170 {
+		t.Fatalf("转写行 %d rune，未截断", n)
+	}
+	if !strings.HasPrefix(m.confirm.prompt, "run term_exec? args:") || len(m.confirm.prompt) <= len(line) {
+		t.Fatal("完整问句应原样留在确认态里（跨窗弹窗要用）")
+	}
+}
+
+// TestDropConfirmsOnCommit 轮次收尾（取消等）：界面不能把确认态留在那儿——
+// 输入栏会一直停在「请回答」上，却没有按钮可点。
+func TestDropConfirmsOnCommit(t *testing.T) {
+	t.Parallel()
+	m, _ := newTestModel(t)
+	m.startConfirm(port.ConfirmRequest{Prompt: "确认？"}, make(chan port.ConfirmAnswer, 1))
+	m.startConfirm(port.ConfirmRequest{Prompt: "还有一条？"}, make(chan port.ConfirmAnswer, 1))
+
+	m.commit(conversation.Message{Role: conversation.RoleAssistant, Outcome: conversation.OutcomeCancelled})
+
+	if m.confirm != nil || len(m.confirmQueue) != 0 {
+		t.Fatalf("收尾后仍有确认态: %+v / %d", m.confirm, len(m.confirmQueue))
+	}
+}
+
 // TestStartConfirmResetsReason D86：确认开启清空原因框并请求焦点让入。
 func TestStartConfirmResetsReason(t *testing.T) {
 	t.Parallel()

@@ -25,10 +25,11 @@ func (u *UI) chipClick(i int) *widget.Clickable {
 	return u.chipClicks[i]
 }
 
-// chipIsOpen chip 展开态（D67）：用户开合按块序缓存；待确认 chip 强制展开
-// （权限问句不可折叠隐藏），应答后回落用户选择。
+// chipIsOpen chip 展开态（D67）：用户开合按块序缓存；正在被问的那块 chip 强制展开
+// （权限问句不可折叠隐藏），应答后回落用户选择。排队等着的其它确认不展开——一次
+// 十几条并行调用会把整屏铺满问句，正文全被挤出去。
 func (u *UI) chipIsOpen(idx int, c *toolChip) bool {
-	if c != nil && c.confirmQ != "" && c.confirmA == "" && u.m.confirm != nil {
+	if c != nil && c.confirmQ != "" && c.confirmA == "" && u.m.confirm != nil && u.m.confirmChip == idx {
 		return true
 	}
 	return u.chipOpen[idx]
@@ -46,7 +47,9 @@ func chipHeaderText(c *toolChip, open bool) string {
 		if !c.ok {
 			status = "✗"
 		}
-	} else if c.confirmQ != "" {
+	} else if c.confirmQ != "" && c.confirmA == "" {
+		// 待确认只在「问到这一块、还没答」时成立：答过但结果未回的这段是运行中，
+		// 继续写待确认会让用户以为还有个按钮没点。
 		status = i18n.T("ui.chat.chip_pending")
 	}
 	args := strings.TrimSpace(c.args)

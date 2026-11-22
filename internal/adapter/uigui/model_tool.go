@@ -85,29 +85,61 @@ func (m *model) closeOpenChips() {
 // startConfirm 打开确认态（Confirm 投递；输入栏切按钮组，§15.2）。
 // 工具权限确认（问句含工具名且最新 chip 未完成）并入该 chip（D67）；
 // 其余（/rm 二次确认等）保持独立文本行。
+// 已有确认在等应答时，新来的排进队列（并行调用会同时举手），不顶掉当前这条。
 func (m *model) startConfirm(req port.ConfirmRequest, reply chan port.ConfirmAnswer) {
-	prompt := sanitizeControl(req.Prompt)
-	m.confirm = &pendingConfirm{prompt: prompt, reply: reply, req: req}
+	pc := &pendingConfirm{
+		prompt: sanitizeControl(req.Prompt),
+		reply:  reply,
+		req:    req,
+		chip:   -1,
+	}
+	pc.line = confirmLine(pc.prompt)
+	// 归属先认下来：排队期间块序不变，轮到它时按这个序回填问答。
+	if i := m.reopenChipFor(req.Tool); i >= 0 {
+		// D282：同一件请求又回来了（选档位后被判 Ask）——沿用那块 chip，只换问句。
+		pc.chip = i
+		m.blocks[i].chip.confirmQ = pc.prompt
+		m.blocks[i].chip.confirmA = ""
+	} else if i := m.openChipFor(req.Tool); i >= 0 {
+		pc.chip = i
+		m.blocks[i].chip.confirmQ = pc.prompt
+	}
+	if m.confirm != nil { // 前一条还等着回答：排队，问句与按钮等轮到它再换
+		m.confirmQueue = append(m.confirmQueue, pc)
+		return
+	}
+	m.activateConfirm(pc)
+}
+
+// activateConfirm 把一条确认推到前台（输入栏按钮组、原因框、跨窗投影、转写行）。
+func (m *model) activateConfirm(pc *pendingConfirm) {
+	m.confirm = pc
+	m.confirmChip = pc.chip
 	// D157：发布跨窗投影（历史窗据此画同步确认弹窗；窗口未开则只存快照）。
-	m.confirm.share = &confirmShare{prompt: prompt}
-	m.u.publishConfirm(m.confirm.share)
+	pc.share = &confirmShare{prompt: pc.prompt}
+	m.u.publishConfirm(pc.share)
 	m.u.reasonEd.SetText("")  // D86：原因框清空待填
 	m.u.reasonFocus = true    // 焦点让入原因框（主编辑器确认态隐藏，D63 一次性规则）
 	m.u.levelPickOpen = false // D282：换一次确认 = 档位列表收起（旧列表不该跟到新问句上）
-	if i := m.reopenChipFor(req.Tool); i >= 0 {
-		// D282：同一件请求又回来了（选档位后被判 Ask）——沿用那块 chip，只换问句。
-		m.blocks[i].chip.confirmQ = prompt
-		m.blocks[i].chip.confirmA = ""
-		m.confirmChip = i
-		return
+	if pc.chip < 0 {
+		// 没有 chip 承载（脚本内并行调用、命令确认）：转写里留一行问句。
+		m.add(blockPlain, pc.line)
 	}
-	if i := m.openChipFor(req.Tool); i >= 0 {
-		m.blocks[i].chip.confirmQ = prompt
-		m.confirmChip = i
-		return
+}
+
+// confirmLine 转写行的单行问句：只取首行，空白压平，超过 160 rune 截断。
+// 与工具侧 confirmPrompt 同一量级——问句里塞着整段参数时，一次进来十几条就
+// 会把转写区顶满，正文全被挤出去。
+func confirmLine(prompt string) string {
+	s := prompt
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
 	}
-	m.confirmChip = -1
-	m.add(blockPlain, prompt)
+	s = strings.Join(strings.Fields(s), " ")
+	if r := []rune(s); len(r) > 160 {
+		s = string(r[:160]) + "…"
+	}
+	return s
 }
 
 // reopenChipFor 刚答过又立刻回来的同一次确认（D282 直选档位 → 判 Ask → 回到确认态）：
@@ -147,28 +179,58 @@ func (m *model) openChipFor(name string) int {
 // replyConfirm 应答进行中的确认（缓冲 1 + default：取消后迟到的应答不阻塞）。
 // chip 确认把问答留痕在 chip 内（D67）；其余保持文本行回显。两条路径都必须把应答
 // 送回 runner（否则权限等待永不解除）。
+// 队列里还有下一条时直接接上：并行调用的确认逐条问，不把后面的丢在待确认里没人问。
 func (m *model) replyConfirm(ans port.ConfirmAnswer) {
 	if m.confirm == nil {
 		return
 	}
-	reply, prompt := m.confirm.reply, m.confirm.prompt
-	if m.confirmChip >= 0 && m.confirmChip < len(m.blocks) {
-		if c := m.blocks[m.confirmChip].chip; c != nil && c.confirmQ != "" {
+	pc := m.confirm
+	if pc.chip >= 0 && pc.chip < len(m.blocks) {
+		if c := m.blocks[pc.chip].chip; c != nil && c.confirmQ != "" {
 			c.confirmA = confirmEcho(ans) // D86：允许 / 拒绝 / 拒绝：<原因>
-			prompt = ""                   // chip 路径留痕在展开体，不再加文本行
 		}
 	}
 	m.confirm = nil
 	m.confirmChip = -1
 	m.u.levelPickOpen = false // D282：答完即收档位列表，不留一张浮卡在下一轮上
-	m.u.publishConfirm(nil)   // D157：收尾即撤下跨窗投影（历史窗下一帧收起弹窗）
-	if prompt != "" {
-		m.add(blockPlain, prompt+" → "+confirmEcho(ans))
+	if pc.chip < 0 {
+		m.add(blockPlain, pc.line+" → "+confirmEcho(ans))
+	}
+	if next := m.takeConfirm(); next != nil {
+		m.activateConfirm(next) // 投影直接换成下一条，中间不撤（否则历史窗会闪一下空弹窗）
+	} else {
+		m.u.publishConfirm(nil) // D157：收尾即撤下跨窗投影（历史窗下一帧收起弹窗）
 	}
 	select {
-	case reply <- ans:
+	case pc.reply <- ans:
 	default:
 	}
+}
+
+// takeConfirm 取队列里的下一条确认（无则 nil，并收掉空队列）。
+func (m *model) takeConfirm() *pendingConfirm {
+	for len(m.confirmQueue) > 0 {
+		pc := m.confirmQueue[0]
+		m.confirmQueue = m.confirmQueue[1:]
+		if pc != nil {
+			return pc
+		}
+	}
+	m.confirmQueue = nil
+	return nil
+}
+
+// dropConfirms 丢掉进行中与排队的确认（轮次收尾：没有工具在等答复了）。
+// 只清界面状态，不回射应答——这些 Confirm 的 ctx 已随本轮结束，给谁答都晚了。
+func (m *model) dropConfirms() {
+	if m.confirm == nil && len(m.confirmQueue) == 0 {
+		return
+	}
+	m.confirm = nil
+	m.confirmChip = -1
+	m.confirmQueue = nil
+	m.u.levelPickOpen = false
+	m.u.publishConfirm(nil)
 }
 
 // confirmEcho 应答回显文案（D86/D282）：改档位 / 允许 / 拒绝 / 拒绝：<原因>（原因消毒

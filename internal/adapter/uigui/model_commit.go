@@ -16,6 +16,9 @@ import (
 // （确认问答留痕不丢），末段从 parts 追加渲染。
 func (m *model) commit(msg conversation.Message) {
 	m.closeOpenChips()
+	// 轮次已收尾：没有工具再等权限答复了。取消时 Confirm 随 ctx 结束返回，
+	// 界面若还把确认态挂着，输入栏会一直停在「请回答」上却无钮可点。
+	m.dropConfirms()
 	m.usage = addUsage(m.usage, msg.Usage)
 	text := partsText(msg.Content)
 	switch msg.Role {
