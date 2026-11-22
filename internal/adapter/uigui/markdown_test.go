@@ -256,6 +256,33 @@ func TestFrameItemsMarkdownTable(t *testing.T) {
 	q.Frame(ops)
 }
 
+// TestFrameMarkdownTableCellsSpread 表格格文本各归其位（2026-11-22 截图回归）：同一行
+// 两格 X 错开，上下两行 Y 递增——格原点必须显式施加 op.Offset。
+func TestFrameMarkdownTableCellsSpread(t *testing.T) {
+	t.Parallel()
+	u := newFrameUI()
+	u.m.add(blockUser, "画个表格")
+	u.m.add(blockAssistant, "表格：\n| A | B |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |")
+	q := new(input.Router)
+	gtx, ops := frameGtx(q.Source())
+	u.layout(gtx)
+	q.Frame(ops)
+	// 键布局：0 = 用户行，1 = 段落「表格：」，2..5 = 表格四格（行主序）。
+	if len(u.keyRects) < 6 || !u.keyRects[2].laid || !u.keyRects[5].laid {
+		t.Fatalf("keyRects = %+v, want 表格四格都已铺开", u.keyRects)
+	}
+	r00, r01, r10 := u.keyRects[2].rect, u.keyRects[3].rect, u.keyRects[4].rect
+	if r00.Min.Y != r01.Min.Y {
+		t.Fatalf("同行两格 Y 不齐: %+v vs %+v", r00, r01)
+	}
+	if r00.Min.X == r01.Min.X {
+		t.Fatalf("同行两格 X 重叠: %+v vs %+v", r00, r01)
+	}
+	if r10.Min.Y <= r00.Min.Y {
+		t.Fatalf("下一行 Y 未下移: %+v vs %+v", r10, r00)
+	}
+}
+
 // TestMdTableColWidths 列宽分配（D325）：权重占比 × 可用宽，窄列保底，总宽超限按比例压回。
 func TestMdTableColWidths(t *testing.T) {
 	t.Parallel()

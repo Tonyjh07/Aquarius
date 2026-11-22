@@ -676,12 +676,16 @@ func mdTableRecord(gtx layout.Context, th *material.Theme, rows [][]string, widt
 					return l.Layout(cg)
 				})
 			}
+			// 格原点显式施加（Gio 不因手动累加 x/y 而挪笔——不施偏移全部文本
+			// 会叠在块原点，2026-11-22 截图实测踩中）。
+			st := op.Offset(image.Pt(x, rowY)).Push(cgx.Ops)
 			var d layout.Dimensions
 			if rs != nil {
 				d = rs.layout(cgx, draw, key, off.Add(image.Pt(x+cellInX, rowY+cellInY)), cellPt)
 			} else {
 				d = draw(cgx)
 			}
+			st.Pop()
 			x += widths[j]
 			if d.Size.Y > rowH[i] {
 				rowH[i] = d.Size.Y
