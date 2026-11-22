@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-21 @ 5c2326a -->
+<!-- docs-sync: 2026-11-22 @ 2b4f1bc -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -318,75 +318,20 @@ port 以接口与 DTO 为主，允许无状态纯函数助手（如 `ResolveJobI
 
 ### 5.1 `llm.go` —— 生成端口
 
-**两套取值**（D227）：`PromptKind` / `PromptRole` 是**装配之后**的取值，与树上的
-`conversation.PartKind` / `Role` 不同——树上含 doc / thinking 这类「怎么存」的区分，投影到
-请求只剩 text|image（thinking 走消息级 `Reasoning`、doc 已在前置摄取拍平成 text）；tool 角色
-仅是 **API 投影概念**（OpenAI 要求 assistant(tool_calls)→tool 应答交错），树上无 tool 节点。
-
-**采样参数用指针**（D204）：浮点 nil = 不发送（交服务端默认），非 nil = 照发——`temperature` 0
-是「要确定性输出」这个有意义的取值，用零值兼作「不发送」就永远表达不出来；整数仍以 0 表示
-不发送。逐模型覆盖全局缺省时按非 nil / 非零字段覆盖，停止串非空即整体替换——没有「部分覆盖」
-的语义。推理强度与思考开关同位：空 / nil = 不发送。
-
-**能力位只描述模型能做什么**（D173）：tools / reasoning / vision 三项独立声明，缺省按协议给
-（§8），空集 = 什么都不假设；「协议怎么写」是适配器的事。单价按**每百万 token**（D205，
-与厂商报价同一套规则），0 = 未声明。
-
-**端点侧的服务端能力另算一档**（D307）：`ModelCaps` 说的是「这个模型会不会」，`ServerCaps`
-（`port/servercap.go`）说的是「这个端点认不认」——会话标题、服务端读链接、文件上传解析、服务
-端联网搜索、内容审核五项，都要在请求里显式声明、由服务端提供。同一个模型挂在官方端点上
-认，挂在只做转发的网关上就可能不认。生效值 = 配置声明（键缺失时取 `family` 的缺省）减去自动
-记录的不认项；**判的是端点行为，不是厂商身份**：`name` 是用户起的、`kind` 只是协议（同一家三种
-协议全支持）、`base_url` 可能是反代官方模型的中转网关，三者都判不出身份。猜错的代价因此被限
-成「发一次 400」或「少发一个字段」，而不是静默降级。
-
-**计数**（D26 三级链②）：`TokenCounter` 是可选的精确计数（本地 tokenizer 或 `count_tokens`
-API）；未实现或报错时 app 回落通用估算（③），并以服务端实测 usage（①）自校准。
-
-**会话标题是请求开关**（D309）：`GenerateRequest.Title` 为真时三套协议都在顶层发
-`"title": {"enabled": true}`，标题从收流末尾读回——Chat Completions 在最后一个 chunk 的
-`delta.title`、Messages 在 `message_delta` 的 `delta.title`、Responses 在结束事件的
-`response.title`，走 `Delta.Title` 一次给全：整串在收流末尾到达。空 = 这次没拿到，是正常回落。
-端点 400 点名 `title` 时记进 `unsupported_server_caps`（D307 那本账），**不进**
-`unsupported_params`——后者是采样参数的清单，混在一起用户会看不出「这个端点连标题都不认」。
-
-**服务端读链接是一次形态切换**（D310）：`GenerateRequest.ServerTools` 非空时，请求只声明服务端
-工具、**不带本地 function tools**——协议里两类工具不能同时声明（服务端会以 400 拒绝）。触发条件
-是「上一轮 `web_fetch` 只拿到壳子」（工具把地址写进 `tool.Result.Fallback`），且该地址出现在本轮
-用户消息里（服务端只在最后一条用户消息里找链接，最多看前 10 个）、整条降级链都认 `read_url`、
-`web.read_url.enabled` 没关。切一次即止：`retryURLs` 消费后清空。
-
-服务端回的内容块（`server_tool_use` 调用块与 `web_fetch_tool_result` 结果块）落成
-`conversation.PartServer`，原文整块存在 `ServerPart.Raw` 里——**网页正文加密在块内的
-`signature` 字段**，客户端解不开也改不得。装配时原样放回 assistant 的 `content`（走
-`PromptMessage.ServerBlocks`），相对位置是「思考之后、正文之前」。没有有效 `signature` 时服务端
-只是不把那一页拼回上下文，请求照常。用过服务端工具的回复**不能续写**（协议 400），`/respond`
-在本地就拒。端点 400 点名工具名时记进 `unsupported_server_caps`。
-
-目前只有 Messages 协议发这个声明：Chat Completions 与 Responses 的服务端块流式形态没有公开文档，
-猜着写等于把「读不到」变成随机行为。
-
-**用量的分项**（D308）：`conversation.Usage` 除输入 / 输出 / 金额外还有四项——`CacheRead` /
-`CacheWrite` 是输入侧的缓存命中与写入，`Thinking` 是输出里的推理 token（**已含在输出里**，只
-作展示），`Safety` 是服务端审核消耗（独立计费，不并进输入输出）。零值一律表示**端点没报**，
-不是「报了 0 个」，展示面据此整行省略。
-
-`InputTokens` 一律是**总输入**：OpenAI 系的 `prompt_tokens` 本来就含命中量，Anthropic 的
-`input_tokens` 不含，由适配器把三段相加折进去。折的目的是让四家协议能用同一个
-`CacheRead / InputTokens` 算命中率——否则同一条 `/cost` 在两家的口径互不可比。金额仍按全价
-折算（`CostUSD` 只看输入输出两项），缓存读入的折扣价要另加价格字段才准，本版只记数不计费。
-
-**流式增量**（D34/D42/D175）：`Delta` 的文本、思维链分片、思考签名分片、工具调用增量
-（按 Index 聚合，app 层装配）、末尾 usage 各占一位；`Stream.Close` 等价 ctx 取消。
-
-**原始响应留档**（D297）：`WireTrace` / `WireMeta` 是 `Delta` 之外的第二层事实——响应体字节，
-加上状态码、收流耗时、首字节、白名单响应头，以及适配器侧的处置（剥离重试）。留档不走端口方法，
-而是适配器经 `llm.Config.Trace` 回调交给装配根：留档是旁路，回调为 nil 即不采，写失败不打断
-收流。`Raw` 有界（2 MiB），超出只置 `Truncated`，生成照常继续。`End` 把「协议宣告结束」与
-「连接直接断了」分开——两者都表现为 `io.EOF`，而排查半截流时这是第一个要分的。
-
-**具名类型止于 JSON 边界**（D227）：`PromptKind` / `PromptRole` 在 `port`、`app` 与各适配器内部一律用具名值，只有真正写进请求体与解析响应体的那一处才转成协议字符串。这样做不是为了类型安全本身——裸 `string` 写错一个字母编译器不管、测试也常常漏——而是让「哪些取值合法」成为可被 `switch` 穷举的事实：跨协议的那几处 `case`（Chat Completions / Anthropic / Responses）攒在同一组常量上，将来协议再加一档时不会只改到其中两家。
-
+> 端口语义与理由的**唯一出处是代码注释**（2026-11-22 起，本文件不再维护第二份复述——
+> 注释离代码最近，改代码的人顺手维护；这份副本注定过期）。各主题的入口：
+>
+> - 装配投影（树上分片 → 请求取值）与「具名类型止于 JSON 边界」：`port/llm.go` 的
+>   `PromptKind` / `PromptRole` 头注（D227）；
+> - 采样参数的指针语义与逐模型覆盖：`Sampling` / `Overlay`（D204）；
+> - 「模型会什么」（`ModelCaps`，D173）与「端点认什么」（`servercap.go` 的 `ServerCaps`，D307）
+>   的分工与自动收敛；
+> - 会话标题开关（`GenerateRequest.Title`，D309）与服务端读链接的形态切换
+>   （`ServerTools` 与 `app/agent.go` 装配处注释，D310）；
+> - 用量分项、零值语义与「总输入」折算：`domain/conversation/message.go` 的 `Usage` 头注（D308）；
+> - 流式增量、思考签名与服务端块：`Delta` / `Stream` / `ServerBlock`（D34/D42/D175）；
+>   原始响应留档：`port/wire.go`（D297）；
+> - 三级 token 计数链：`TokenCounter`（②）与 app 装配处的注释（D26）。
 ### 5.2 `tool.go` —— 工具端口
 
 **两层**：`Tool` 是被调用的那一件（声明 `Spec()` + 执行）；`ToolRunner` 是包在外面那层，

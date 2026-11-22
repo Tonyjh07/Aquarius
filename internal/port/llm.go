@@ -28,6 +28,11 @@ const (
 // PromptRole 装配后一条消息的角色（D227）。tool 仅为 **API 投影概念**（OpenAI 协议要求
 // assistant(tool_calls)→tool 应答交错）；树上无 tool 节点，装配期由 assistant 节点的
 // Tool 分片拆出（D95）。
+//
+// 具名类型止于 JSON 边界：PromptKind / PromptRole 在 port、app 与各适配器内部一律用具名值，
+// 只有真正写进请求体与解析响应体的那一处才转成协议字符串。目的不是类型安全本身——裸 string
+// 写错一个字母编译器不管、测试也常漏——而是让「哪些取值合法」成为可被 switch 穷举的事实：
+// 跨协议的那几处 case 攒在同一组常量上，将来协议再加一档时不会只改到其中两家。
 type PromptRole string
 
 const (
