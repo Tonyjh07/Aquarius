@@ -1,5 +1,5 @@
 # pluginapi/v1 设计草稿（Tier-1 Go 插件）
-<!-- docs-sync: 2026-11-22 @ 161baed -->
+<!-- docs-sync: 2026-11-22 @ 7f109c1 -->
 
 > 定位：Tier-1 进程内 Go 插件（`pluginapi/v1`）的实现规格——接口面、UI 扩展面、宿主服务、
 > 生命周期、版本纪律、能力边界。Tier-2（MCP server）的规格在 [contracts.md](contracts.md) §6.2–§6.4，
@@ -40,6 +40,15 @@ pluginapi/v1/            （独立 go.mod，module path 带 /v1）
 方向规则只有一条：接口里的每个类型都是 v1 自己定义的。v1 不 import `internal/port`，
 `internal/port` 也不 import v1。
 
+**落位事实**（P2 起生效）：独立模块在 `pluginapi/v1/`，module path
+`github.com/Tonyjh07/Aquarius/pluginapi/v1`（包名 `v1`），零依赖、只许标准库。根 go.mod
+以 `require` + `replace`（指向 `./pluginapi/v1`）引入——同仓多模块，不设 go.work；
+外部插件仓库按 tag 依赖同一路径。内核侧的依赖规则由 arch 测试守着（`layerPluginAPI`
+只许自引用，adapter 与 plugin 两层允许 import）；v1 侧的独立性（不 import
+`internal/…`、不引三方）由包内 `independence_test.go` 自查。本版（P2）只落 go.mod、
+manifest 与 value.go 三件；接口面（plugin / host / llm / tool / memory / ingest /
+modality / secrets / uiext）随 P3 落盘。
+
 ## 3. 稳定值类型层（value.go）
 
 v1 最重要的资产是一层语义等价、字段冻结的稳定词汇。现在 `internal/port` 里的值对象
@@ -57,6 +66,26 @@ v1 最重要的资产是一层语义等价、字段冻结的稳定词汇。现�
 
 每个 v1 类型配一条防腐映射点列表，`plugingo` 转换器照单核对；port 侧改字段时按列表
 逐点过。
+
+### 3.1 防腐映射点列表（plugingo 转换器照单核对）
+
+| port 侧 | v1 侧 | 语义口径与易错点 |
+|---|---|---|
+| `conversation.Usage` | `v1.Usage` | `InputTokens` = 总输入（含缓存读写两段，D308 对外口径）；`CostUSD` 不进 v1——成本折算归内核，模型插件只报 token |
+| `port.ModelInfo` / `ModelCaps` | `v1.ModelInfo` / `v1.ModelCaps` | caps 逐位对齐（会什么，D173）；单价字段单位随内核口径（每百万 token） |
+| `llm.Delta` | `v1.Delta` | 七项语义对齐（Text / ToolCall / Usage / Reasoning / ReasoningSignature / Title / ServerBlock）；`ReasoningSignature` 是透传字节，原样保真逐轮回传 |
+| `llm.ServerBlock` | `v1.ServerBlock` | `Raw` 原样保真、逐轮回传——这是「透传不解读」义务的样板字段 |
+| `tool.Spec` | `v1.ToolSpec` | `Schema`（json.RawMessage）按透传字节处理；内核侧 `Describe` 函数字段不进 v1，其对位是可选 `Describer` 接口（D320） |
+| `tool.Call` / `tool.Result` | `v1.ToolCall` / `v1.ToolResult` | 调用 ID 随转换重编；`Images` 经 BlobStore 引用、`Fallback` 语义照抄 |
+| `port.ConfirmRequest` / `ConfirmAnswer` | `v1.ConfirmRequest` / `v1.ConfirmAnswer` | 无任务标识字段（contracts §5.2 并发语义）；`Risk` / `Level` 档位词表冻结，两边常量值必须一致 |
+| `port.MemoryDoc` / `MemoryIndexEntry` / `MemoryHit` | `v1.MemoryDoc` / `v1.MemoryIndexEntry` / `v1.MemoryHit` | `Name` 即文档 ID；`ErrMemoryNotFound` 哨兵的 v1 对位错误必须可 `errors.Is` |
+| `port.SpeechSegment` | `v1.SpeechSegment` | PCM 原样字节，时间戳口径不变 |
+| `port.RawInput` / `Attachment` / `IngestReport` / `OutputRequest` | `v1.RawInput` / `v1.Attachment` / `v1.IngestReport` / `v1.OutputRequest` | `BlobRef` 在 v1 是字符串别名（内容寻址键原样携带）；附件体积上限常量（`MaxAttachments` / `MaxImageBytes`）两边同步 |
+| `port.Secrets`（`Get`） | `v1.SecretResolver`（Host 消费面） | 方向相反的两件分清：插件**供给**密钥走 `SecretProvider` 接口（P3），内核**解析给**插件走 `SecretResolver` |
+| `port.TokenCounter` / `Prober` | `v1.TokenCounter` / `v1.Prober`（P3） | 可选接口，type assertion 探测；转换是纯值搬运，无易错点 |
+
+新增 v1 类型时先在表里补一行再写代码；port 类型新增字段时按本表逐点过（核对清单在
+[development.md](development.md)）。
 
 ## 4. 供给面：九个必选接口 + 三个可选扩展
 

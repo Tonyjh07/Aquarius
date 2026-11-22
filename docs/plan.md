@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-22 @ b41eb04 -->
+<!-- docs-sync: 2026-11-22 @ 7f109c1 -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -31,8 +31,10 @@
      与测试；
   4. ~~MCP 默认风险按来源分流~~——口径已定（D328：只定默认值）并落 contracts §6.3，剩
      `ToolRisk()` 改动与测试。
-- **P2 · pluginapi/v1 契约**（M）：规格已成文——[plugin-design.md](plugin-design.md)（D327）；
-  本批次出独立 go.mod 契约包与防腐映射点列表，接口代码随 P3。
+- **P2 · pluginapi/v1 契约**（M）：规格已成文——[plugin-design.md](plugin-design.md)（D327）。
+  已拍板（2026-11-22 会话）：P2 落独立 go.mod 模块、manifest、稳定值类型层（value.go）
+  与防腐映射点列表（plugin-design.md §3.1）；九接口 / Host / 生命周期 / UI Node 的接口
+  代码随 P3 边实现边写，契约在 P3 收尾时完整冻结。
 - **P3 · plugingo 装载器 + 首个 Tier-1 插件**（M~L，关键路径）：按 plugin-design.md §7/§11/§12
   实现——宿主校验与状态机、`adapter/plugingo` 转换层、main 注册表。**样例插件定为间隔
   重复记忆插件**（独立仓库，设计稿见该仓库 design.md；`MemoryStore` + `ToolProvider` +
