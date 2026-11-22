@@ -148,6 +148,7 @@ func (t *ptcTool) stubs() string {
 func (t *ptcTool) description() string {
 	var b strings.Builder
 	b.WriteString(`Run a Starlark script that calls tools in batch; intermediate results stay in the script and only the final return value goes back to the conversation.
+This is the only tool you can call directly in this mode: every other tool is reached from inside the program as tools.<name>(...) — a direct tool call naming another tool is not available.
 
 Dialect: a subset of Python. No while, no try/except, no recursion, no top-level for/if (they are allowed inside functions — your whole program is wrapped in a function, so plain statements and return work). Loops use "for x in items". Deduplicate with dict keys, not sets.
 Every tool result is a dict: {"ok": true, "output": "..."} or {"ok": false, "error": "..."}. Branch on "ok" — failed calls never raise.

@@ -218,7 +218,8 @@ func TestSpecDescription(t *testing.T) {
 	if spec.Name != port.RunCodeTool || spec.Risk != tool.Confirm {
 		t.Fatalf("spec = %+v", spec)
 	}
-	for _, want := range []string{"No while", "try/except", "tools.echo(", "tools.probe(", "parallel"} {
+	for _, want := range []string{"No while", "try/except", "tools.echo(", "tools.probe(", "parallel",
+		"only tool you can call directly"} {
 		if !strings.Contains(spec.Description, want) {
 			t.Fatalf("描述缺 %q:\n%s", want, spec.Description)
 		}
