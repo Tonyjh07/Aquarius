@@ -1,5 +1,5 @@
 # Aquarius 里程碑进度（完成记录）
-<!-- docs-sync: 2026-11-22 @ e87b0a7 -->
+<!-- docs-sync: 2026-11-22 @ 8a3aa6c -->
 
 > **定位**：本文件是**进度档案**——只记「已经完成了什么、对应哪条决策」，以及里程碑基线。
 > 只记过去，不写未来：**要做什么、按什么顺序**看 [plan.md](plan.md)。
@@ -28,172 +28,20 @@
 | M6 底座与跨平台 | **执行序**：① 配置底座破坏性改造（profile 目录化 + provider 列表化 + fallback）→ ② GUI 跨平台抽象层（平台接口 + `uigui` 去平台化 + 非 Windows 降级实现）→ ③ 对话树 UI（relation-map，形态规格见 [relation-map-design.md](relation-map-design.md)：整树快照 + 左栏会话 + 关系图自绘 + 内核删除任意会话/改名补洞） | 三门禁全绿；① 旧 config 报清晰提示、profile 切换重启生效且数据隔离；② `GOOS=linux go build ./...` 通过、非 Windows Gio 常规窗可交互（降级非桩）、Windows 行为零回归；③ relation-map 正确呈现树/版本链（层号色带、形状=Role、主干可辨，公理集自检清单逐条过）、左栏切会话、点节点 `/goto`、任意会话删除与改名可用 | 已完成 |
 | M11 屏幕捕获与语音 | `port.Capture` + `screencap`（`PrintWindow`/`BitBlt`）；`window_list` / `screen_capture` 内置工具；`port.Transcriber`/`Synthesizer` 实现 + `micwin` 采集 + `audioplay` 播放；`/mic` 命令与 GUI 语音槽；设置窗「语音」页（含风格控制与试听） | 模型能列窗口、抓全屏、抓**被遮挡窗口**并正确描述画面；语音键说话 → 转写回填输入框 → 发送；`output.tts` 开启后回答自动播报，风格指令与标签实际改变音色表现；非 Windows 明示不支持；全门禁通过 | 已完成（S12/S8/S8b） |
 
-**版本基线**：`v0.8.0` 已于 2026-11-17 发布（tag `v0.8.0`）。四批已全部交付：首批语音分段
-（D295），其次 `/context` 与 `/raw` 两个查看口（D296/D297），第四批七条的记录见
-[decisions.md](decisions.md)（D298–D304）。上一版 `v0.7.0` 已于 2026-11-12 发布（tag `v0.7.0`），
-`v0.6.0` 已于 2026-11-08 发布（tag `v0.6.0`），`v0.5.0` 发布于 2026-11-06
-（tag `v0.5.0`）；更早的 `v0.4.0` 发布于 2026-11-01（tag `v0.4.0` → `1e671d2`）、`v0.3.0` 发布于
-2026-10-30（tag `v0.3.0` → `5e14bc8`）、`v0.2.0` 发布于 2026-10-26（tag `v0.2.0` → `20cd9f6`）、
-`v0.1.0` 发布于 2026-10-23（tag `v0.1.0` → `3c2767b`）。
-v0.2.0 的 P0（守规）、P1（聚合根归位）与 P2（收口与归位 + 常驻内存优化，批次 P2-1…P2-10）
-**全部完成**；其中的 `uigui` 拆包按实测评否决，已列入
-[development.md](development.md) 的「已否决的提议」（D234）。
+**版本基线**：`v0.8.0` 已于 2026-11-17 发布（tag `v0.8.0`），当前在发 `v0.9.0`。各版发布
+日期与 tag：v0.1.0 2026-10-23（`3c2767b`）、v0.2.0 2026-10-26（`20cd9f6`）、v0.3.0 2026-10-30
+（`5e14bc8`）、v0.4.0 2026-11-01（`1e671d2`）、v0.5.0 2026-11-06、v0.6.0 2026-11-08、
+v0.7.0 2026-11-12。每版交付了什么、对应哪些决策：逐项事实见 [releases/](releases/) 的发布说明，
+决策结论与动机见 [decisions.md](decisions.md)，本文件不重复：
 
-`v0.3.0`（能力扩张）：**命令注册表**（D245）、**会话进出**（D242）、**命令提示参数相**（D250）、
-**aqx 多会话备份**（D249）、**角色卡只读导入**（D243/D247）与**零碎项收口**（D252/D253/D254：
-提示词宏展开、provider 自定义请求头、会话树备份轮转）已全部完成并随 v0.3.0 发布，无余额
-（收口后另补一笔：备份代数在设置窗「常规」→「存储」可视可调，F-5）。
-`aqx` 容器随之从 A-2 的单树形状换成「一份装一组会话」（`manifest.json` + `conversations/<i>/`），
-**旧单树形状不再读**——`aqx` 未随任何版本发布，故不欠兼容。
-
-`v0.4.0`（转交与改父 + 运行中的插话）：**外部代理转交**（D244/D260/D261/D268/D269/D270）、
-**会话树改父与溯源**（D255–D259）、**运行中的插话**（D272/D273）与**重启对账**
-（D262/D264）已全部完成并随 v0.4.0 发布；同期的 `uigui` 只拆文件（W）、转写区去噪
-（D265–D267）与报告不随切换丢失（D261）一并收在这一版，无余额。
-
-`v0.5.0`（三条主线的收口）：**界面文案收进一处取词口**（D275/D279）、**运行日志收进一处写出点**
-（D276）、**首次运行的五步向导**（D277/D278）已全部完成并随 v0.5.0 发布；`en` 布局走查、
-文档按 STC 重写、测试并行化、长函数与命令分派收口、本机门禁编排（`cmd/ci` 三档）与本轮
-发版前审查修复同收在这一版，无余额。
-
-`v0.6.0`（外部代理立案）：**设置窗直接配 ACP**（新增、字段级编辑、测试连接，D269/D270）、
-**申报 `fs`**（读写过手，越界读按次数问、越界写每次都问、控制文件单列，D283/D284）、
-**申报 `terminal`**（命令由 Aquarius 起进程、每条问一次、输出进报告不进正文，D286）、
-**会话选项**（`delegate.agents[].options` 照代理广告的值设，D287）四批已全部完成并随 v0.6.0
-发布；同期移除 `-yes`（D285），界面文案按 STC 复审一遍（见 [../archive/review.md](../archive/review.md)）。
-无余额。
-
-`v0.7.0`（决策策略）：**放行策略按工具四态**、只存例外、作用域到目录
-（D280）；**确认框里的即时授权**——直选档位与「以后都允许」（D282）；**模型辅助决策**的端口、
-装饰器、System One 客户端与三档开关，默认 `off`（D281/D290）；**数据目录里的双语说明**（D291）
-四批已全部完成并随 v0.7.0 收口。同期收进来的还有：浮层改跟主题（D289）、docsync 改为按每篇
-自己的历史取基线、注入块折成一行（D293），以及 `logs/`、`exports/`、`config.json.bak` 三处目录树
-漏项补进 [storage.md](storage.md)。
-**会话跨日期时的日期说明**（D292）：隔天再开口，先落一条来源为「日期变更」的注入节点，
-把 persona 里那句过期的创建日期改正过来。**世界书按关键词激活**（D294）：卡里带 `keys` 的条目
-按最近几条消息命中、按 `order` 装进上下文预算，装配期合成一段、不进树，`/lore` 与 `/usage`
-看得见激活了什么。
-余额：决策模型的阈值未用真实记录标定，与两条换不成 tag 的伪版本依赖一起留在
-[plan.md](plan.md) 的暂缓事项里。
-
-`v0.8.0`（语音分段）：**采集口从「一次返回整段 WAV」改为连续推帧**、**新分段端口与
-`vadsilero` 适配器**（内嵌 Silero VAD，纯 Go 无 cgo）、**`ingestmic` 边录边判逐段转写**、
-**`audio.vad` 配置面与语音页开关**（D295）四批已完成。这是 v0.8.0 的首批。一次采集仍是一条消息，
-多段切成多个文本分片；纯静音不建附件、不发起转写；`enabled=false` 退回整段录音，
-行为与 D179 逐字一致。余额：阈值未在真实环境中标定（缺省沿用上游）；`go-silerovad`
-无上游 tag，只能钉提交，与另两条伪版本依赖一起留在 [plan.md](plan.md) 的暂缓事项里。
-第二批是**装配结果的查看口**：`/context` 给分块账、单条全文与整份写入磁盘，`last` 回看上一轮
-实际发出的那份，图形界面下整份全文复开只读次窗（D296）。视图只读装配产物，标签由装配函数
-在追加处记下，所以账与请求同源。第三批反过来看**收回来什么**：`/raw` 给协议、状态码、耗时与
-帧目录，按帧号取原文，`full` 整份写入磁盘并复开同一扇只读次窗（D297）。留档由适配器对响应体
-套一层有界 tee 取字节原文，解析路径一行未改；只留最近 4 次、只在内存、单次 2 MiB。
-
-第四批是「看得见、收得回、别在沉默里坏掉」的七条：`/audit` 把审计日志读成表——时间、种类、名字、
-耗时、成败加一行要点，`--tool` 只看某个工具，**不显示参数内容**（D298）；顶层 panic 落一份
-`logs/crash-<ts>.txt` 并以退出码 2 结束，下次启动提示一次（D299）；输入历史写进
-`<profile>/input_history.jsonl`，GUI 与 TUI 共用一份（D300）；`file_grep` 把「按内容找一行」
-从 Confirm 的 `term_exec` 里拆出来做成 Safe 只读工具（D301）；`/cost` 从会话树的用量读账，
-session/model/day 三个视角，不另建台账（D302）；`/diag` 按**一个锚点**（上下文交付时刻）把
-上下文分块账、锚点前后时间窗内的审计行、最近一次原始返回合打成一份可外发的文本，头部写明含
-会话正文（D303）；密钥库页把「收进存量明文」入口放回来，并把导入扩到语音、决策、联网三处
-——范围跟着 `warnPlaintext` 的调用点走（D304）。
-
-`v0.9.0`（在发）第一条是**会话回收站**（D311）：`/rmconv` 的删除改成把整份文件集（主文件、
-各代 `.bak`、残留 `.tmp`、会话记忆 `<id>.memory.md`）改名移进 `<profile>/trash/`，删除时间就是
-主文件的改动时间（不建 meta 文件）；新增 `/trash`（无参列出 / `restore` 还原回原 ID（撞占用 ID
-拒绝）/ `empty` 清空（二次确认））；主文件改动超 30 天的条目启动时清掉、真清掉了几条留一行日志，
-30 天写死不配。能力面是 app 侧消费方小接口 `TrashStore`（storejson 实现，未接入退回硬删），
-`port.ConversationStore` 四件事不变、只添 `TrashEntry` 类型；`storage.md` 目录树与数据目录
-README 加 `trash/`。
-
-第二条是 **`/fork <节点id> [标题]`**（D312）：把当前会话某节点及其整棵子树摘成一份新会话——
-子树结构与兄弟顺序原样保留、Head 落在分叉节点，节点 ID 全部重新生成，「修订自」与溯源路牌
-不跨会话复制，附件引用原样带上（内容寻址，字节共享，GC 扫全部会话不会清）；标题缺省沿用原
-会话，Character 与 Tail 带过去、节点 `CreatedAt` 保留；保存即切换清屏回放，原会话一字不动，
-会话根不可摘（整会话带走走 `/export`，树内复制走 `/edit --copy`）。GUI 入口随批补齐：主窗气泡
-右键与历史窗节点右键各加「分叉新会话」，投 `/fork <id>` 与键入同路径，树编辑期置灰（D312
-决策第 7 条）。
-
-第三条是**会话标签与置顶**（D313）：会话元数据加 `tags`（去重保序）与 `pinned`（缺字段零值，
-旧文件照读）；`/tag <会话> [名...]` 加标签（`--rm` 删，无参显示）、`/pin` 切换置顶、
-`/list --tag <名>`（可重复）交集过滤，置顶行带 `▲` 标记；排序权威在 `ConversationStore.List`
-（置顶在前，组内按更新时间），打标签与置顶不改更新时间；分叉不带走源会话的标签与置顶。
-
-第四条是**人读与可粘贴的导出**（D314）：`/export --format md` / `--format html`——不发明第五种
-互通格式，复用 `openai` 的整套摊平规则（Head 路径、丢弃计数、旁支注记与 `openai` 逐字一致）；
-`md` 正文原样、角色标题跟随界面语言，可整份粘进新对话当上下文；`html` 是同一份内容的单文件壳
-（内联样式、目录、时间戳，转义不渲染）；不进导入识别，不开放 `--all`。
-
-第五条是**文件交给服务端解析**（D315）：DeepSeek Files API——结构化文档摄取时上传（`purpose`
-配置固定一档，`text_recognition` 缺省 / `rich_layout_recognition` 连内嵌图一起交）、拿 `file_id`
-写进 doc 分片（本地提取文本照存），`openai-chat` 装配发 `{"type":"file","file_id":…}` 引用块；
-能力位不生效就照旧拍平本地文本（请求体一字节不差）；超限与上传失败明确报错、不做无谓重试；
-`files.ttl_seconds` 可配服务端自动过期，缺省不过期。
-
-第六条是**DeepSeek 语音后端**（D316）：`audio.asr` / `audio.tts` 的 `kind: "deepseek"`——识别
-`/v1/tools/asr` multipart 只带 `file`（无语种参数，21 种语言自动识别；单段 120 秒 / 8 MiB，选中后
-录音硬顶联动降到 120 秒、VAD 关时启动警告，绝不静默切片）；合成 `/v1/tools/tts` JSON（音色只认
-`stella` / `tide`，fail-fast；`format` 固定 wav，`filter_markdown` 固定开；Style/Tags/Design 配了
-启动警告「已忽略」；超 10000 计费字符或 64 KiB 请求体明确报错，不切分拼接）；`provider: "deepseek"`
-借默认 provider 的端点与密钥（D222），一把 key 跑对话、搜索与语音。
-
-第七条是**Agent 的时间感知**（D317）：`clock.mode` 三档（off 不注入 / live 每次请求末尾一条时间戳
-system / tree 再给历史 user 消息补各自 `CreatedAt`）；戳装配时生成——每个工具轮拿到当下时刻，带
-时区偏移与星期，后接本 Turn 已跑多久与上一批工具各自耗时；`/clock` 会话内切换不写配置；配置缺键 =
-live、app 零值 = off（直接构造 Agent 的路径与旧形状逐字节相同）。`latest_reminder` 角色路径确认
-缓议（端点家族未定）。
-
-第八条是**装配前缀稳定性对比**（D318）：`/context` 概览加一行「与上一轮相比前 N 字符未变（x%）」
-——提示词缓存按前缀命中，这一行是它的体检表。Agent 留两份快照（last 语义不变，新增 prev），
-按 sectionMark 摊平跳过 clock 段取最长公共前缀；跨会话与首次请求不出这一行（缺数据与数据差是
-两回事）。
-
-第九条是**PTC-1：程序化工具调用**（D319，实验性）：`tools.mode: native | ptc`，缺省 native
-请求形状逐字节不变；ptc 档模型面只发 `run_code` 一个声明，模型写一段 Starlark 脚本批量调工具，
-脚本内每次调用回到同一个 tool runtime 过权限矩阵（确认、裁剪、超时与 native 同一条链）。
-解释器 go.starlark.net 进程内（步数 200M、单脚本调用配额 256、parallel 并发 10，数字写进工具
-描述）；脚本整体包进函数体，顶层 for/return 合法，解析错行号映射回原脚本；失败一律是结果
-字段。确认去重、`/code`、UI chip、目录二段式 describe 留 PTC-2。
-
-选型依据是动手前的**首跑通过率实测**（6 道典型题 × 每模型两组首稿，判定用 go.starlark.net
-真解释器加固定夹具）：GLM-5.3-Flash 22/24、deepseek-v4.1-flash 语义 11/12、Hy4 flash 语义
-10/12——三组 flash 级模型语义通过率 ≥ 92%，方言摩擦小且可自纠，无沙箱逃逸或权限绕过；
-带不带方言限制说明通过率相同，限制写进 `run_code` 描述即可。Starlark 主选由此成立。
-
-第十条是**PTC-2**（D320）：脚本内确认去重落在 toolrun 的确认点——`port.ConfirmScope`
-由每次脚本执行创建、经 ctx 带进调用链，同指纹（工具名 + 操作 + 目标 + 规范参数）只问
-一遍，放行与拒绝都记；distinct 确认超过 `tools.ptc.confirm_limit`（可配，缺省 8）后需要
-确认的调用回值、脚本继续。`tools.ptc` 四键限额可配（修正 D319 的写死，缺省值不变），
-工具描述里的预算数字随配置现取；取消经 ctx 打断解释器与在途调用（error 通道上抛，
-Turn 归类取消）；脚本摘要（calls / dedup / capped）落运行日志；`/code` 只读查看最近
-一次脚本；`tools.describe(name)` 二段式按需展开（不计调用配额）。
-
-第十一条是**DeepSeek 会话导入**（D321）：`/import` 新增 deepseek 一档（整库 ZIP 只认不写）
-——`port.PathDetector` 路径级识别（ZIP 条目名在中央目录，64 KB 头与 aqx 无法区分），
-`io.ReaderAt` 流式解包（全量包不进内存）；清单按 `updated_at` 倒序，不带 `--all`/`--pick`
-只列清单；app 按 100 条一块导入落盘（块内失败只回滚本块，sidecar 每块写盘，Ctrl-C 留下
-已完成的整块）；`<profile>/import-sources/deepseek.json` 记「源会话 → 会话 ID 与
-updated_at」，重导同 id 未变跳过、变了导成新会话；图片按 `export_path` 流式入附件库，
-搜索轨迹与非图片文件计数丢弃，`status` 映射节点 `Outcome`，多根版本组挂 Root，不建
-persona 首节点。首轮实测：真实样例包 2 个会话全进、节点数与清单一致。
-
-第十二条是**会话搜索**（D322）：`/search <关键词> [--regex] [--tag <名>…]` 跨会话搜标题
-与正文（text/doc 分片；思考分片不搜、工具分片不作命中来源）——缺省子串不分大小写，
-`--regex` 按正则，`--tag` 与 `/list --tag` 同一交集口径；命中行给会话 ID · 标题 · 节点
-ID · 预览（复用 `nodeSummary`），上限 100 行截断记数，单个会话载入失败只计数继续。
-`/import --filter <正则>` 按标题/源 ID 过滤容器清单并**保留原清单序号**（`--all` 只导
-过滤后的集合，`--pick` 点到被滤掉的序号报越界）。GUI 左栏与导入勾选面板各带一个客户端
-过滤框（对已发布快照过滤，不走内核）；勾选面板里被滤掉的行视同未勾，不会被偷偷导进来。
-
-第十三条是**Markdown 表格渲染**（D325）：单独启用 goldmark 的 GFM Table 扩展（D65
-对其余扩展的否决维持），表格从竖线原文升级为网格渲染——表头加粗 + 底线加重、行间
-列间 1dp 细线、列宽按各列内容权重分配（窄列保底）；单元格各自可选、复制按单元格逐行，
-伪表（缺分隔行）仍按原文段落呈现。
-
-第十四条是**Turn 过程折叠**（D326）：assistant 定稿块出现后，其前紧邻的「已思考」块
-与工具 chip 行在渲染分组层折成一行摘要「工作 x 秒，调用了 x 个工具」（思考耗时求和，
-回放无耗时省略秒段），点击展开按原样铺回；m.blocks 块序不动（开合态缓存与分叉条挂点
-压在上面），键数恒定取子块之和，开合不漂移后续行选择序号。
+- **v0.2.0**：架构守规（P0，D211–D213）、会话聚合根归位（P1，D214–D216）、收口与常驻内存优化（P2，D217/D228–D240）。`uigui` 拆包经实测否决（D234）。
+- **v0.3.0**：命令注册表（D245）、会话进出（D242）、命令提示参数相（D250）、aqx 多会话备份（D249）、角色卡只读导入（D243/D247）、零碎项收口（D252–D254）。aqx 容器换成一份装一组会话，旧单树形状不再读。
+- **v0.4.0**：外部代理转交（D244/D260–D261/D268–D270）、会话树改父与溯源（D255–D259）、运行中的插话（D272/D273）、重启对账（D262/D264）；`uigui` 拆文件与转写区去噪（D265–D267）同期收口。
+- **v0.5.0**：界面文案收进一处取词口（D275/D279）、运行日志收进一处写出点（D276）、首次运行五步向导（D277/D278）；同期收口 i18n 期望值锁定、文档 STC 审阅、测试并行化、命令分派动作表、长函数闸门与本机门禁编排（`cmd/ci`）、发版前审查修复。
+- **v0.6.0**：设置窗直接配 ACP（D269/D270）、申报 `fs` 与 `terminal`（D283/D284/D286）、会话选项（D287）；移除 `-yes`（D285）。
+- **v0.7.0**：放行策略四态与作用域（D280）、确认框即时授权（D282）、模型辅助决策缺省 off（D281/D290）、双语数据目录说明（D291）、日期说明注入（D292）、浮层跟主题（D289）、注入块折行（D293）、世界书关键词激活（D294）。
+- **v0.8.0**：语音分段（D295）、`/context` 与 `/raw` 查看口（D296/D297）、「看得见、收得回」七条（D298–D304：`/audit`、崩溃落盘、输入历史、`file_grep`、`/cost`、`/diag`、明文密钥收口）。
+- **v0.9.0（在发）**：会话回收站（D311）、`/fork`（D312）、标签与置顶（D313）、md/html 导出（D314）、文件交服务端解析（D315）、DeepSeek 语音后端（D316）、时间感知（D317）、前缀稳定性对比（D318）、PTC-1/PTC-2（D319/D320）、DeepSeek 整库导入（D321）、会话搜索（D322）、Markdown 表格渲染（D325）、Turn 过程折叠（D326）均已交付；主窗反馈层（D323）与右键菜单规范化（D324）进行中，见 [plan.md](plan.md)。
 
 ---
 
@@ -283,186 +131,18 @@ ID · 预览（复用 `nodeSummary`），上限 100 行截断记数，单个会�
 | v0.5.0-G | 发版前审查修复：首跑缺密钥不再 fatal（`unconfiguredLLM{err}` 空态覆盖「provider 在、取不到密钥」）、首页与末页跳过硬校验 consent、`rsrc_windows_*.syso` 重生成到 0.5.0.0、i18n 锁判定从「只看汉字」扩到全角字符区并修掉四处漏网标点、切语言后 `probe`/`modelsHint` 改为渲染时取词、日志文本形态单行化转义、`acpgate` 崩溃报因的 happens-before 补齐、`commandLine` 按 `CommandFields` 规则加引号、`postCommand` 丢包不再误报成功、`storejson.Remove` 与 `Save` 共用会话锁、长函数基线 32→31 | 已完成 2026-11-05 |
 | v0.5.0-CI | 本机门禁编排：`cmd/ci` 三档（fast 3 项约 15 秒 / default 9 项约 5 分半 / full 12 项）、能力探测（cgo / WSL / 出网，缺则记跳过）、干净环境复查（清 `AQUARIUS_*` 与密钥后重跑组装与探针）、`.ci/last.json` 留痕（提交号 + 工作区脏否 + 每条结论与耗时，fast 档报上一轮 default / full 是否覆盖当前提交）、pre-push hook 只跑 fast、`--json` 供日后托管 runner 直调 | 已完成 2026-11-05 |
 
-**v0.5.0-D / E 完成情况**：全量 `-race` 341.7s → 约 103s（两轮 104.5 / 101.6 秒；补完 `cmd/aquarius` 后
-106.4 / 102.6 秒），3.3×。逐包数字：`uigui` 290.3s → 52.5s（`-count=5` 均值）、
-`jobproc` 52.7s → 12.4s（`-race -count=3` 均值）、`cmd/aquarius` 52.3s → 16.1s（单包独立跑）。
-保持串行：切语言槽的文件、`t.Setenv` 与 `TestMain`、写包级状态的用例、`jobproc` 里 9 个
-启动真实子进程的墙钟敏感用例、`cmd/aquarius` 里 98 个 E2E 与进程级状态用例。两轮
-`-race -count=5` 压测全绿。全量负载下 `cmd/aquarius` 逐包 58–59 秒、`uigui` 62–64 秒
-互抢 CPU，总墙钟由最慢包决定，所以补完 `cmd/aquarius` 后全量没有再降。
-`acpgate` 的失败路径报告排空竞态（`f0b88ca`）与 `uigui` 的 `logoPx`
-竞态（`5a61446`）已在本版收口，单包 `-race -count=20` 与两轮全量 `-race` 全绿。
-干净 clone 冷缓存全量测试、`govulncheck`（0 条可达）与最终门禁全绿；tag 本轮未打，
-推送仍由用户执行。仍未并行的用例是后续工作，见 [plan.md](plan.md) 的「测试并行的剩余部分」。
-引号按 11-04 拍板保留 `「」`，在 [stc/terms.aquarius.yaml](stc/terms.aquarius.yaml) 记成项目例外；
-非引号错误级问题 425 → 10，剩下 10 处是几何位置术语、测试断言与学科术语，逐条登记理由。
-G20 疑点 55 处复核后保留。`docs/README.md` 的「文风」收成一句指向，`development.md` 的引用同步改。
-逐篇结果、保留项与两篇只报不改的清单在 [../archive/review.md](../archive/review.md)。
+**收口批不逐笔罗列**：v0.2.0 的 P0/P1/P2 逐笔表、v0.3.0 的命令注册表 / 会话进出 / aqx / 角色卡 /
+零碎项逐笔表、v0.4.0 的拆文件 / 改父 / 对账 / 转写去噪 / 转交 / 插话逐笔表、v0.5.0 的 i18n 锁定 /
+并行化 / STC 审阅 / 发版审查 / 门禁编排各批的完成情况——全部已交付，本文件不再逐笔复述。
+提交清单按 `git log` 查；做法与验收判据见对应决策条目与 [releases/](releases/) 发布说明；
+别处若还引用「roadmap 逐笔表」，以决策编号为准。
 
-**v0.5.0-F 完成情况**：`uigui` 拆包按实测否决后从 [plan.md](plan.md) 移出，理由与重启判据
-记在 [development.md](development.md) 的「已否决的提议」。命令分派按「动作表 + 对账锁」收口，
-内核命令表正本仍在 `internal/app/commands.go`；arch 的层白名单不允许 `uigui → app`，所以界面
-另立非导出动作表，只由装配根拿导出的 `UICommandNames()` 对账，不复用内核非导出符号。界面表
-登记 16 条命令，结构化投递与文本拼行分成两条出口，折叠条 `pendingCmd` 仍走文本路径。
-长函数只点名拆四个，不做全仓三十多个函数的逐个体检；守卫用 AST 统计非测试 `.go` 里超过
-100 行的函数，基线 31 个只允许减少，单函数上限 225 行。做法与验收判据见
-[contracts.md](contracts.md) §7.3 和 [releases/v0.5.0.md](releases/v0.5.0.md)。
-
-**v0.5.0-G 完成情况**：发版前按五路分区审查（i18n 文案、日志出口、并发与持久化、五页向导与
-法律文本、结构收口与发版资源）走了一遍，报出的问题去重后按 P0/P1/P2 分级修复，用户拍板范围为
-「P0 + P1 + 低成本 P2」，缺密钥一项选择「走空态」而不是把第 3 页改必填。
-
-- **一条阻塞**：首跑机器没设密钥变量时退出码 1（默认模板带 `secret:DEEPSEEK_API_KEY`，
-  providers 非空 → 装配失败 → fatal）。改为同一条可启动空态，并把原先把这个退出行为钉成
-  期望的测试改成期望空态。具体做法记在 [decisions.md](decisions.md) D278 的 O6 段。
-- **P1**：同意闸门补到首页/末页两个跳过出口；版本资源重生成（三个 `.syso` 的 UTF-16 串
-  0.4.0.0 → 0.5.0.0）；i18n 锁的 CJK 判定扩到 U+3000–303F 与 U+FF00–FFEF，白名单短片段
-  只认整串相等，修掉事实卡、压缩摘要回执、技能回执、历史窗加号四处漏网标点；`probe` /
-  `modelsHint` 从「存已拼好的句子」改成「存 key + 参数，渲染时取词」；日志文本形态对
-  `msg`、行动段与每个 `kv` 值做单行化转义；`acpgate` 的 `abort()` 不再依赖 watchdog 写的
-  `peerGone`（与 `Prompt` 返回无 happens-before），改在 `execute` 返回前主动 select
-  `conn.Done()` 置位。
-- **P2**：长函数基线收紧到实测值 31、单函数上限 225，并让守卫在成功时也打印实测值；
-  `go mod tidy` 让 `acp-go-sdk` 归位到直接依赖、清掉三条已作废旧伪版本的校验和；
-  `commandLine` 按 `CommandFields` 的规则加引号（判据同样用 `unicode.IsSpace`，全角空格
-  也算分隔符），并补了经同一个切分器往返的测试；`postCommand` 两处「丢了还报成功」改成
-  读返回值并提示。
-- **范围外多修一处**：`storejson.Remove` 没有用 `Save` 那把每会话锁，边删边存会让会话复活
-  或让 `Save` 的 `os.Rename` 报错；补两行加锁与 `TestRemoveWaitsForInFlightSave`。
-
-判据与验收：`gofmt` / `go vet` / zh 与 `en` 全量 / `-tags aqvalidate` / `go build` /
-全量 `-race` / `docsync -check` 全绿；`acpgate` 与 `storejson` 各按 `-race -count=3` 复跑。
-`internal/legal` 的正文改动由 `TestEnHasNoCJK` 与解析规则测试覆盖。
-
-**`v0.2.0-P2` 已完成**（批次号固定；完工，无剩余项）：
-
-
-| # | 提交 | 主要结果 |
-|---|---|---|
-| P2-1 | `3a00d69 refactor: resolve identifiers through one prefix matcher` | 四处前缀解析（`ResolveJobID`/`ResolveWatchID`/`resolveNode`/`resolveConversation`）共用 `port.MatchPrefix`，措辞仍分层（工具面英文、命令面中文）；补匹配优先级与命中序单测（5 files, +109/−70，净减 34 行） |
-| P2-2 | `7912324 refactor: split the job port by consumer` | `JobManager` 拆成 `JobStarter`/`JobRunner`/`JobReader`/`JobKiller`，组合体保留；各工具与 `/jobs` 只声明实际用到的方法；`requireJobs` 改泛型以保住入参的窄类型（7 files, +66/−18） |
-| P2-3 | `27c39ad refactor: give prompt parts and messages named kinds and roles` | 文档笔 `d4b5aa2`（[contracts.md](contracts.md) §5.1 + D227）。`PromptPart.Kind` / `PromptMessage.Role` 由裸 `string` 换成 `port.PromptKind`/`PromptRole` 与 6 个常量；四家适配器的 `switch` 从字符串字面量改常量，协议字符串只在写请求体、读响应体处转；生产侧转换点收敛到 `wire.go`/`responses.go` 两处（21 files, +263/−240） |
-| P2-4 | `9c5f3aa refactor: drop the last anonymous callback from the session deps` | 三笔：`159a005` 模型读侧收成 `ModelCatalog` + `ModelProbe`，四个启动期静态值合成 `ModelStatus` 一次取回；`b8555c2` 权限/思考/撤观察者/记忆编辑器收成 `PermissionSettings`/`ThinkingSettings`/`WatcherCanceller`/`MemoryOpener`；`9c5f3aa` 模型切换收成 `ModelSwitcher`（D228）。`SessionDeps` 字段 29→22，匿名回调 14→0，装配根行为不变（三笔合计 13 files, +563/−300） |
-| P2-7a | `40e0197 refactor: delete the unused relation-map variant` | 删掉 d127 对照档：全仓无测试覆盖对照档（`REL_PHYS` 在 `_test.go` 零命中，`step()` 首行就分派到源档），190 行在全部测试路径上不执行。删 `accumulate`、常量块、`step()` 分派、`colGap` 两档分支与只服务对照档的四个字段；两档差异写进 `relation-map-design.md`，原实现留 `relmap-d127` tag（5 files, +72/−335，`relmap_layout.go` 803→567、`relmap_layout_source.go` 441→357） |
-| P2-5 | `07fef4b refactor: split the settings save flow into collect and commit` | 四笔：`d441b7c` 四个设置 DTO 搬进 `port`、`uigui` 留类型别名（D229，2 files, +140/−104，零字面量改动）；`b462ee0` 取值范围收成 20 个 `port.Settings*` 常量，提示文案由常量拼（D230，11 files, +146/−52，数值一处未变）；`6ff9242` 采样四段文本的解析收进 `port.ParseSamplingText`，界面前置校验与写回解析同一份实现（D231，6 files, +228/−110，删 `cmd` 侧重复解析 49 行）；`07fef4b` `saveSettings` 271 行拆成 `patch()` 采集校验 + `commitSettings()` 提交编排，报错返回零值 patch（D232，2 files, +190/−124） |
-| P2-7b | `a3502d6 refactor: keep the theme tokens in one snapshot` | 文档笔 `c0e3023`（D233）。删掉 22 个包级颜色 `var` 与 `applyPalette`/`currentPalette` 的逐字段双向抄写，活动值只留一份 `atomic.Pointer[palette]` 快照，绘制点经 `tok()` 取结构体副本（形态照 `theme_paper.go` 的 `paperOf()`）。110 处绘制点改形态、配色值一处未变；原「同步完整性」测试换成单一来源 / 快照隔离 / 空快照回落三条（23 files, +182/−220） |
-| P2-6 | 取消（2026-10-25） | 拆包移到 backlog，依据是本轮实测：三包合计只占 `uigui` 的 24%，搬完父包仍 1.5 万行、最大单文件不变；代价是 391 处按类型的字段改名、75 个白盒测试的夹具重写、装配根 261 处换限定名（D234）。已落的两笔前置（设置逻辑归位、`theme` 令牌数据化）保留——这两笔各自是净删，不因拆包取消而失去意义 |
-| P2-7c | `dafa77f refactor: name the drain points and scan command flags once` | 文档笔 `0e98e5d`（D235）。注入排空的三个时机收成四个具名排空点（`drainBeforeInput`/`drainAfterTurn`/`drainOnWake`/`drainBeforeReplay`），「是否驱动一轮 / 是否逐条呈现」由一张规则表给出，调用点不再组合 `(driven, announce)` 两个布尔（那个从未被用过的组合随之消失）；三条命令的 flag 解析收成一份 `flagScan`，「位置」与「个数上限」两处真实差异显式声明，其余规则只写一遍（值型吃值、缺参报因、正文拼接）；顺带写明并测住 `/skill` 排空点的前提（队列里只会有本条技能正文，因为外部注入已在入口完成）。新增 `cmdflags_test.go`、`session_drain_test.go`，既有命令测试原样通过（12 files, +507/−81；新增测试 282 行，删三套手写解析循环与五处布尔传参） |
-| P2-8 | `3599fd2 feat: hold the resident heap to 1.5x live and cap leaks at 768MiB` | 文档笔 `2ef7a9f`（D236）→ 修订笔 `1808f51`（D238）→ 归因 `memprofile_test.go`（D239）。初版是进程级堆软上限 256MiB：`main` 在装配前调一次 `debug.SetMemoryLimit`，`GOMEMLIMIT` 显式设置时不覆盖；不改 `GOGC`（3 files, +71/−0）。**真实 profile 复测推翻了初版前提**：空闲期与设计一致（工作集 323→329MB、存活堆 101→154MB、GC 约 120 秒一次），但压力操作（展开/收起、设置翻页、历史管理拖节点与切会话）把存活堆推到 454MB、工作集峰值 972.9MB、私有字节 1093.5MB——256MB 上限低于存活堆，会在这类路径上连续 GC；而空闲工作集里约 170MB 是非堆加字体，封堆对非堆内存无效。D238 改为 `GOGC=50`（摆动收到 1↔1.5 倍）+ 768MiB 只当泄漏保险，两个旋钮各自尊重同名环境变量（3 files, +88/−35）。**同一套压力操作复测**：空闲工作集 323→311MB、峰值 972.9→903.0MB、私有峰值 1093.5→1046.7MB、压力段存活堆 454→479MB（GC 目标 504→705MB）、全程 GC 14→30 次。改善幅度约 5–7%，低于预估——存活堆本身就涨了三倍，压倍数只压缩存活堆上面那一层。**D239 归因**（新增 `memprofile_test.go`，环境变量门控、默认 skip）：按用户操作逐步强制 GC 后读存活堆并落 pprof，结论是**涨的全在字体**——每开一窗各建一份主题（解析字体文件 +75～80MB）并各自首次排版（字形轮廓 +37MB），而四十轮对话 +1.3MB、拖节点 30 帧 / 翻遍设置页 / 展开收起 10 次各 0–2.4MB。三窗合计约 336MB，与实测 454–479MB 同量级。字体侧再拆：第二个 Shaper 复用同一份集合只 +1.3MB（共享可行），`NoSystemFonts` 让首次排版那 37MB 变 +0.0MB（证明这 37MB 来自整机字体库扫描） |
-| P2-9 | `f10f3fb refactor: wake the docked heartbeat every 100ms` | 文档笔 `e2cf1c9`（D237）。停靠/收起态心跳 50ms → 100ms：节拍收成 `heartbeatInterval` 常量，判据 `heartbeatNeed` 一处不改（变的是「多久复评一次」）。代价明写：悬停召回、布防识别、tips 点亮的延迟上限从 ≤50ms 变为 ≤100ms（D84/D85 的延迟描述按新节拍读）；停靠/召回动画另有 16ms ticker，不受影响。绘制帧数减半，长期停留的停靠/输入状态直接省一半合成与提交（1 file, +10/−3） |
-| P2-10 | `d1e7ae2 feat: parse the CJK faces once and share them across windows` | 文档笔 `9512eba`（D240）。D239 量出每窗各解析一遍同一份中文字体（75～80MB/窗），而解析结果在 `ParseCollection` 返回后完全只读，重复解析是纯浪费。改为进程内按候选表内容缓存一份（`sharedFaces`），交给 `NewShaper` 前**封容量**（防调用方 append 改写共享底层数组，`gofont.Collection` 同一条防护）；Shaper 仍每窗各建一份（首次排版要按 Shaper 解析字形轮廓），整机字体扫描按 D240 保持开启（CJK 粗体面的来源，D147）。**实测同一套量法前后对照：整轮存活堆 502.5MB → 281.9MB（−220.6MB）**——历史窗与设置窗主题各从 +74.9MB 降到 +1.4MB；主窗/历史窗/设置窗首排的 +37～80MB 不变（印证「按 Shaper 存」的预判）；展开夹具从 +112.4MB 降到 +38.8MB；四十轮对话、拖节点、翻页仍各 0–2.4MB。新增 `theme_font_shared_test.go` 四条守卫（同候选返回同一底层数组 / 容量封住 / 不同候选分档 / 两主题共享面但不共享 Shaper），`TestWeightTiers*` 两条像素守卫继续通过（粗体零退化），`-race` 与 linux 门禁全绿（2 files, +147/−6）。顺带修掉一处隐式竞态：`monoFace` 是包级单值，原来后建的窗会覆盖前一个窗的等宽面，共享后各窗取到同一个 |
-
-**`v0.2.0-P1` 的落笔顺序**（每笔独立过全门禁、可单独回退）：
-
-| # | 提交 | 主要结果 |
-|---|---|---|
-| P1-1 | `06cb4e3 refactor: read the conversation tree through accessors` | 加 `NodeCount`/`ChildIDs`/`IDs`/`SubtreeSize`/`Edition`；`app` 生产代码直读清零；删掉 `app` 的 `subtreeSize` 副本（5 files, +278/−42） |
-| P1-2 | `77b9e10 refactor: let the domain produce the tree view` | `View()`/`SiblingGroup`/`nodeLess` 归领域；`makeTreeSnapshot` 只做形状转换，`tree.go` 251→194 行（3 files, +176/−79） |
-| P1-3 | `9ff9523 test: verify the whole tree after every change, behind a build tag` | `ValidateEveryChange` 开关 + 四条变更路径接入（含 `Revise` 的 carry/clone 提前返回分支）；`-tags aqvalidate` 下全量绿（4 files, +70） |
-| P1-4 | `2f5f488 refactor: close the conversation tree behind the aggregate root` | 三张 map 私有；`Snapshot`/`Restore` 契约；`storejson` 自带 `wireTree`/`wireNode`；新增聚合根守门测试；测试直读改走访问器（33 files, +777/−393） |
-
-**`v0.3.0-C`（命令注册表）的落笔顺序**：
-
-| # | 提交 | 主要结果 |
-|---|---|---|
-| C-1 | `77dedfe docs: give commands one table that carries both the metadata and the handler` | 文档笔：[contracts.md](contracts.md) §7.3 记录形状 + D245 + 开发指南「新增一个命令」收成一步（4 files, +95/−25） |
-| C-2 | `5171297 refactor: dispatch commands from one table that also carries their metadata` | 29 分支 `switch` 收成 28 条 `commandEntry`（名字们 / 参数用例 / 描述 / 处理函数）；别名 = 同记录多名字；`/quit` 与 `/help` 都走处理函数、不留特殊分支；表在 `init()` 填（`/help` 自引用成环），之后只读；只吃参数的处理器经适配器接上。表自检 + 逐条分派 + 别名等价 + 未知命令报因取代原 AST 对账，`/help` 文案字节不变（3 files, +218/−191） |
-
-**`v0.3.0-A`（会话进出）的落笔顺序**：
-
-| # | 提交 | 主要结果 |
-|---|---|---|
-| A-1 | `05daf1d feat: add the session exchange port and the one format table behind it` | 端口 `SessionExporter`/`SessionImporter`、`ExchangeFormat`/`ExchangeReport`、五格式表（唯一事实源，有损必须写 `LossNote`）；装配前命令报「本构建未接入」（3 files, +142/−0） |
-| A-2 | `c577378 feat: make aqx a lossless round trip over the on-disk tree shape` | `aqx` = ZIP（`manifest.json` + 与磁盘同形的 `tree.json` + `blobs/<sha256>`）；`storejson` 加 `EncodeTree`/`DecodeTree`；节点/边/版本链/Head/时间戳/分片/附件字节逐项往返等价，条目数与字节数上限、zip-slip 防护（5 files, +1010/−3） |
-| A-3 | `6df01c2 feat: speak chatgpt's mapping tree for both export and import` | `mapping` + `current_node` 双向；源 ID 只建边、节点 ID 全重分配、根下补边、`Restore` 自检；空壳与装不下正文的消息跳过、子节点顺父接最近祖先（6 files, +922/−16） |
-| A-4 | `f616eec feat: project the head path into the two linear exchange formats` | `openai` 与 `sillytavern` 双向：只取 Head 路径、只带正文、`system`/`inject` 降级 system、思考/工具/附件计入 `Dropped`、有旁支才写「旁支上的 N 条消息」（7 files, +891/−18） |
-| A-5 | `7f1268c feat: read Open WebUI exports and guard every import the same way` | Open WebUI 两种导出形状只读接入；上限覆盖扁平格式；`Detect` 认 ZIP → `mapping` → `chat` → `.jsonl` → `messages`；map 来源按 ID 排序、边按父排序，同一文件导两次结构相同（6 files, +563/−8） |
-| A-6 | `5e73c13 feat: give /export and /import their command surface` | `/export [--format] [--path]` 与 `/import <文件>` 各一条记录；缺省落 `<profile>/exports`、标题派生文件名、同名加 `-2`、写一半失败删半截；导入落新会话（ID 与 `/new` 同源分配、Root ID 连边一起换再自检），失败不动当前会话；回执两行 + 真丢了才列丢项（8 files, +803/−8） |
-| A-7 | `f20eaee feat: put the exchange entries in the history window` | 历史窗左栏标题行「导入」「导出」两颗文字钮，只拿路径、选完各投一条命令、取消不投；`platform` 新增 `RequestOpenFile`/`RequestSaveFile`（Windows `GetSaveFileNameW`、非 Windows zenity/kdialog/osascript，保存框不设覆盖确认）；标题 → 文件名规则上移 `port.FileStem`（19 files, +913/−35） |
-| A-8 | `5e4fb0f test: accept the exchange end to end and lock the interop output` | 三份互通 golden 锁字节（验收树连节点 ID 一起固定，否则 chatgpt 产物每次不同）+ 导两次字节相同 + 产物读得回；命令面 `/export` → `/import` 逐项等价（ID 抹平后比对），有损路径核对回执与节点数缩减（5 files, +589/−0） |
-
-**`v0.3.0-E`（aqx 多会话备份）的落笔顺序**：
-
-| # | 提交 | 主要结果 |
-|---|---|---|
-| E-1 | `feat: let one aqx archive carry a group of conversations` | 端口 `ExchangeEntry`/`ExchangeReport.Entries`/`ExchangeIndexer` 与两个新签名（导入收 `pick`、返回一组树）；`aqx` 容器写读换成 `manifest.json` + `conversations/<i>/tree.json` + 跨会话共用 `blobs/`（版本仍是 1）、`Index` 只读清单、`resolvePick` 越界并列清单、上限改按**每会话**卡；三份互通格式收到多于一个会话直接报错；导出仍只写当前会话、导入已落全部树并回滚 |
-| E-2 | `feat: back up and restore groups of conversations from the command line` | `/export --all`（整库）与 `--ids <id>[,<id>…]`（互斥、`--format` 非 aqx 报错）、`/import --pick <序号>`；导入「先全部自检、再一次性写入磁盘」（第 3 个坏则库里一个都不多）、切到第一个导入的会话并清屏回放；回执多会话逐条列标题与条数；命令表两条记录 |
-| E-3 | `feat: delete several conversations behind one confirmation` | `/rmconv <id> [<id>…]`：先全部解析、再一次确认、最后才动库；删到当前会话时继任者跳过本批要删的；单个 ID 的用法与回执逐字不变 |
-| E-4 | `feat: pick which conversations to import from an archive` | GUI 勾选面板（每行标题 + 条数、缺省全勾、只一项不弹）、`Options.Indexer` 注入、`modalActive` 认面板、`startImport` 分流（清单取不到也直接投，原因由命令面说） |
-| E-5 | `feat: select conversations in the history list to export or delete them` | 左栏底部「选择」钮 + 行内自绘复选框（`widget.Bool` 嵌在行点击件里收不到指针事件）+ 动作条（全选 / 已选 N 个 / 取消 / 导出 / 删除）+ Esc 退出；导出 = 保存框只一档 aqx、ID 取按下那刻的快照 → `/export --ids`；删除 = `/rmconv`。**「导出全部会话」不单列：全选即整库** |
-| E-6 | `docs: describe the multi-conversation backup and the selection mode` | 5 篇描述文档（contracts §5.16、decisions D249、gui-design、guide、plan 里这一节移走）+ roadmap 的档案条目与逐笔表 |
-
-**`v0.3.0-D`（角色卡只读导入）的落笔顺序**：
-
-| # | 提交 | 主要结果 |
-|---|---|---|
-| D-1 | `1a00ee9` | 端口 `CharacterInfo`/`CharacterProfile`/`BookEntry`/`CharacterCard` 与 `PromptSpec.Character`/`UserName`；装配根留空实现，命令先报「未接入」 |
-| D-2 | `7bb9465` | `@char` 组与六个条件内置叶子（无卡 / 字段空 ⇒ 空模块、不计缺失）；`Compose` 先算 `U` 再展开卡文本；`{{char}}`/`{{user}}`/`{{date}}`/`{{original}}` 与 `<BOT>`/`<USER>`/`<START>` 宏替换器；不带卡输出逐字节不变（golden 锁） |
-| D-3 | `48e6c69` | `adapter/characterfs` 读 V2/V3 纯 JSON 与 PNG（`tEXt` 关键字大小写不敏感、`ccv3` 优先、进场去 BOM）；字段归一、`data` 与顶层镜像的取舍、`nickname` 优先 |
-| D-4 | `8e89f4b` | `.charx`（ZIP）：根 `card.json`、资产 URI 三形态、图标优选 `name=main`、zip-slip 与条目 / 展开门禁、原包留档；缺 `card.json` 报「这是发行包，请导入其中的 `.charx`」 |
-| D-5 | `4ecbdf8` | 头像写入磁盘写去 `tEXt` 重编码的像素 PNG（52 MB → 2.22 MiB 像素无损）；引 `x/image/webp` 认 webp 资产 |
-| D-6 | `c39bf8e` | `<profile>/characters/<slug>/` 落位（`card.json` 逐字节 + `meta.json` 原子写 + `avatar.png` + 可选 `source.charx`）；slug 归一与大小写不敏感查重；`List` 坏条目带警告跳过、`meta.json` 缺失时从卡重建 |
-| D-7 | `59bf9b0` | 卡片字段投影成会话文本：有效引用追加 `["@char.book","@char","@char.system"]`、`prefer_system_prompt` 两态（替换态仍带 `@env`）、`{{original}}` 两处展开、常驻世界书按 `constant && enabled` 过滤、`mes_example` 走注入节点 |
-| D-8 | `5155c5c` | `Conversation.Character`/`Tail` 进 `Snapshot`/`Restore` 与磁盘上的 wire（旧文件缺键 = 空）；装配末尾追加 `Tail`、config 开关控制；`Tail` 存宏替换后的终稿 |
-| D-9 | `0b6f8fb` | `/character start` 走独立新建路径（不改被 `/new`/`/switch`/`/import` 共用的 `newConversation`）：投影 → 选开场白（合并列表，n 从 1 起）→ 建会话 → 写入磁盘 → 清屏回放 |
-| D-10 | `2cd2940` | 卡里 `data.assets` 条数与「宿主不执行的机制」记账（`CharacterInfo.Assets`/`Unsupported`），回执据此分列 |
-| D-11 | `ff4da71` | 导入回执四类（世界书 / 资产 / 不执行机制 / 只展示字段）+ 界面卡降级提示 + 超长开场白提示 |
-| D-12 | `e83e461` | `app.CharacterAdmin` 与装配根实现（范式同 `app.SkillAdmin`）；同名卡不覆盖、删除二次确认 |
-| D-13 | `bf3ce80` | `/character list|show|import|start|remove` 各一条命令表记录 |
-| D-14 | `9be4b2e` | 设置窗「角色」页（列表 / 头像 / 导入 / 删除 / 开始对话，全部经 `/character` 命令通道，UI 不直连 `CharacterAdmin`） |
-| D-15 | `d75e944` | 会话列表行左槽头像（共享 `avatarCache`，每窗各持一份）、`SessionSummary.Character`/`AvatarPath` 数据面；`@char.*` 内置清单标注「仅角色会话生效」 |
-| D-16 | `9804618` | `prompts.user_name` 与 `characters` 段四开关落 config（默认开的开关用 `*bool` 区分「键缺失 = 开」与「显式 false」）；装配根接线 `CharacterOpts`/`ApplyPostHistory` |
-| D-17 | `9000baa` | 端到端验收：三类容器各导一张真卡（V2 JSON / V3 PNG / V3 `.charx`）→ 开新会话 → 首轮请求逐段核对 → 压缩一次后示例被吸收而人格与常驻世界书仍在 → 删卡后照常装配 |
-| D-18 | `docs: close out the character card batch in the archives` | plan 删「B 角色卡只读导入」节并改各处交叉语句 + roadmap 档案条目与逐笔表 + 文档头标记刷新 |
-
-**`v0.3.0-F`（零碎项收口）的落笔顺序**：
-
-| # | 提交 | 主要结果 |
-|---|---|---|
-| F-1 | `3a8918a feat: expand prompt macros in non-character sessions` | `PersonaComposer.expandPromptText` 在 `baseModules` 展开 `@default`（system_prompt）与全部自定义模块，`{{user}}`/`{{date}}`/`<USER>` 在**非角色会话**里也生效；`expandMacros` 在 `char == ""` 时 `{{char}}`/`<BOT>` **原样保留**（不删空）；补两条测试（3 files, +62/−5） |
-| F-2 | `3abdce0 feat: send provider-defined headers on chat requests` | `llm.Config.Headers` + `Client.headers`：`New` 仅 `ProtoChat` 存，`post()` 在默认头与 `authorize` 之后落（同名以声明为准）；config `model.providers[].headers` 与装配根接线；两条测试 |
-| F-3 | `fe825c7 feat: rotate conversation backups across N generations` | `storejson.NewWithKeep`/`Store.keep`/`DefaultKeep=1`、`backupPath`（第 1 代 `.bak`、更旧 `.bak.<i-1>`）、`rotate`、保存前 `rotatable` 完整性校验（坏文件不挤掉更旧的可用备份）、`Load` 按新到旧回退、`Remove` 清各代与遗留高代；config `backup.keep`（默认 3）与装配接线；六条轮转测试（4 files, +325/−25） |
-| F-4 | `docs: close out the remaining v0.3.0 items in the archives` | 决策 D252–D254 + contracts §5.3/§5.4/§7.7 + configuration（`headers`/`backup.keep`）+ plan 删「零碎四项」节并改交叉语句 + roadmap 档案条目与逐笔表 + 文档头标记刷新 |
-| F-5 | `cc106aa feat: expose conversation backup retention in settings` | `port.SettingsPatch`/`SettingsSnapshot` 加 `BackupKeep` 与范围常量 `SettingsBackupKeepMin/Max`（1–20）；uigui「常规」页新增「存储」区（`rowBackupKeep` + 单行编辑档，空 = 默认 3、越界就地拦）；cmd 侧 `textSettings.Backup` 读写 `backup.keep`（仅 `> 0` 才写键）；两条测试（uigui 行位/回填/越界、cmd 往返）（8 files） |
-| F-6 | `docs: record the backup retention setting in the archives` | roadmap §0 补记 + F-5/F-6 逐笔表 + configuration「设置窗与 config 的关系」存储段 + gui-design 常规页行 + guide 10.1 表 + 文档头标记刷新 |
-
-**`v0.4.0-W`（`uigui` 大文件只拆文件）的落笔顺序**（一笔一个文件；每笔只移动代码，测试文件未改）：
-
-| # | 提交 | 主要结果 |
-|---|---|---|
-| W-1 | `767007e refactor: cut settings.go into contract types, form state and provider forms` | 1,100 → `settings.go` 337（契约类型 / 枚举档 / 页常量）+ `settings_form.go` 404（表单状态与两段构造）+ `settings_provider_form.go` 379（provider / 密钥 / 模型 / 降级链四类表单） |
-| W-2 | `6543e0d refactor: cut welcome.go into state, tutorial copy, frame shell and pages` | 1,045 → 371 + `welcome_tutorial.go` 77（只读文案与行计划，契约测试锁定）+ `welcome_view.go` 296（页头 / 步骤条 / 状态行 / 页脚 / 按钮）+ `welcome_pages.go` 337（接入 / 教程 / 完成三页） |
-| W-3 | `ec77fd5 refactor: cut gui.go into the shell, the port surface, message dispatch and headless` | 990 → 571 + `gui_port.go` 197（port 六面实现）+ `gui_msg.go` 201（uiMsg 与 apply/drainInbox）+ `gui_headless.go` 49（无窗口循环与单行输入辅助） |
-| W-4 | `5c904e5 refactor: cut model.go into state, commit/replay, submit and tool chips` | 987 → 197 + `model_commit.go` 266（定稿与回放）+ `model_submit.go` 333（发出侧与附件）+ `model_tool.go` 229（chip 与确认回路） |
-| W-5 | `d4c38d6 refactor: cut history.go into state, window frame and the left column` | 913 → 362 + `history_view.go` 233（帧骨架 / 右图区 / 状态栏）+ `history_left.go` 348（左栏两态与会话行） |
-| W-6 | `e4f304a refactor: cut overlay.go into its state and its drawing` | 855 → 436（状态、事件、动作、提交）+ `overlay_view.go` 438（卡片框 / 页签 / 正文 / 页脚按钮） |
-| W-7 | `ae94586 refactor: cut settings_actions.go into the save flow, field helpers and admin actions` | 890 → 313（保存流与 patch 采集）+ `settings_fields.go` 213（判等与换算）+ `settings_admin_actions.go` 390（profile 与 provider 管理动作、探测） |
-| W-8 | `55c1140 refactor: cut settings_rows.go into row model, frame, layout maths and row bodies` | 778 → 209（尺寸常量与行计划）+ `settings_frame.go` 204（导航与底栏）+ `settings_row_layout.go` 210（卡片分组与缩进）+ `settings_row_body.go` 189（字段行 / 选择框 / 编辑器 / 动作行） |
-| W-9 | `a2c814f refactor: cut prompt_editor.go into the editor, tile gestures, tile drawing and the modal` | 906 → 284（状态与引用编辑）+ `prompt_tiles.go` 246（磁贴手势与拖拽）+ `prompt_tiles_view.go` 181（网格与磁贴绘制）+ `prompt_module_editor.go` 239（编辑弹窗与引用行） |
-
-**`v0.4.0-R`（会话树改父与溯源）的落笔顺序**（先领域后界面，每笔单独过全量测试）：
-
-| # | 提交 | 主要结果 |
-|---|---|---|
-| R-1 | `ff4c702 fix: reject cycles in the edition chain during validation` | `Validate` 沿 `revisedFrom` 上溯查环（自指也算、同一个环只报一次），坏链不再让「找最旧版本」转圈；跨父的链照常合法 |
-| R-2 | `2097663 feat: record provenance when a carry moves a subtree` | 领域新增 `Detachment` 与私有表：Carry 搬孩子时记一条（锚点 = 旧版本、根 = 整批孩子、新位置 = 新版本）；`Detachments()` 现算 `Stale`；`Prune` 删任一端连带清；`Snapshot`/`Restore` 与 `storejson` 的 `detached` 键（缺键即空、不升 wire 版本）；`Validate` 查三端在树；三条单元测试 + 转移属性断言 |
-| R-3 | `6d2289b refactor: share the child transfer between carry and reparent` | Carry 里那段整批边转移收成 `transferChildren(from, to)`：孩子整批搬到 `to` 的末尾、只改这些孩子的 `Parent`，返回被搬的列表；Carry 用这个函数并照旧记路牌，改父那笔直接用，只看新判断 |
-| R-4 | `18ccf44 feat: let a subtree change parents` | `Reparent(id, newParent)`：存在性 → 拦 Root（被搬方与新父）、环（自己/严格后代）、同父 → `detachChild`/`attachChild` → 记路牌（锚点 = 原父、根 = [id]）→ 自检；不动 Head、不改版本链；返回 `ReparentResult{Moved}`。`Validate` 与 `aqvalidate` 下均通过；四条单元测试 + 随机性质测试（合法就成功、非法一律拒且不多记路牌） |
-| R-5 | `9006649 feat: expose reparenting as a command` | `/reparent <id> <新父>` 与 `--undo`（命令注册表加一条：`execReparent` + `execReparent --undo`）：唯一前缀解析两边、会话外立即写入磁盘（失败回滚到上次保存）、被搬子树含 Head 时清屏回放；撤销走 `UndoLastDetachment`（消费记录、不写新记录）；领域补 `UndoLastDetachment` 与 `IsPad`（衬垫落点提示）；三条命令测试 + 两条撤销单元测试；usage 命令表补行 |
-| R-6 | `5239e5c feat: defer tree edits until the session ends` | `/tree-edit [--done|--cancel]`：进入时存整树快照与上下文条数，改父/撤销只改内存（`treeEdit.edits` 计数），退出一次写入磁盘；放弃用快照重建（会话期间落过盘就把回滚结果再写一次）；上下文变少先确认（带 N→M）、变多只提示；`/switch`、`/new` 走同一个出口（保存/放弃/取消两问）；`TreeEditState()` 供 UI；六条会话测试 |
-| R-7 | `feat: put the tree edit switch in the status bar` | `port.TreeView` 加 `TreeEditState()`（app 侧 `TreeEditActive` 更名，`sessionTree` 转发）；`/tree-edit --exit`（关开关走与切会话同一套三选一，不在模式里不算错）；状态栏右端加分隔线 + 常显标签 + 44×24dp 开关（160ms `easeOutCubic` 位移，`relTween` 通用补间，脏时出「已改 N 处」+「放弃」）；开关只投影内核状态、点击只投命令；四条界面测试 + 两条会话测试 |
-| R-8 | `feat: ring the relation map with the edit glow` | `relmap_glow.go`：右图内缘 12dp 四色（顶紫/右蓝/底青/左金）四层光带（12/8/3/1dp，alpha 0.10/0.14/0.32/0.55），八段带子各画一道两色渐变（Gio 只有两色色标）——45° 斜面拼接正好铺满环带（面积断言），外缘 10dp 圆角裁剪；进入 260ms `easeOutCubic` 从顶边中点顺时针扫亮（0.85 扫、扫完 600ms 呼吸到 0.7）、退出 160ms `inSine` 淡出且扫亮就地停住；浅色主题 +25% alpha、降饱和一档；过渡期才续帧。四条测试（扫亮覆盖、铺满、时间线、编辑态整帧）|
-| R-9 | `ec94fb4 feat: reparent by dragging a node onto another` | `relmap_edit.go`：编辑态拖节点即改挂——落点预演按**卡片到卡片**最近边 ≤48dp（屏幕规则）取唯一合法目标（非自身/非自身严格后代/非根），拖起 120ms 淡出旧父边、被拖卡片 2dp 提环、目标 2dp 呼吸环（0.6↔1.0，600ms）、一条 4/4dp 虚线预览；松手有目标 → 投 `/reparent <id> <目标>` 并给目标 400ms 高亮回执，无目标 → 只改位置（槽位固化，不投命令）；压在自己后代上给一句「不能挂到自己的后代下」；通道满不假装成功。五条测试（预演规则、改挂投递、无目标只改位置、后代解释、非编辑态不投命令）|
-| R-10 | `feat: mark the edit mode in the map and freeze the menu` | 图区左上角胶囊「编辑树 · 拖动节点改挂 · 已改 N 处」（光晕说「模式开了」、胶囊说「拖了会怎样」）+ 编辑态光标 `grab`/`grabbing`（落在右图栏 clip 内）；节点右键菜单编辑期置灰七项（编辑三项 / 重新生成 / 生成响应 / 插入摘要 / 删除），只读项与引用照常——`platform.MenuItem.Disabled` → Windows `MF_GRAYED`，分发处再拦一道防时序；五条测试（胶囊文案、置灰项集、置灰位到平台、分发拦截、编辑态整帧）|
-
-完成后 `uigui` 生产文件 107 个 / 29,014 行，九个被点名的文件全部 ≤ 600 行；仍超 600 的
-`select.go` 722 / `dock.go` 635 / `relmap_frame.go` 621 / `fade.go` 604 未在本次范围。
-建子包一项经实测否决，见 [development.md](development.md) 的「已否决的提议」。
-
-**文档整理**：`docs/decisions.md` 于 2026-10-29 压缩到一行一条结论——6,029 行 → 559 行，索引保留
-D1–D249 全部编号（同主题的连续编号并成一行），够格的 51 条在「记录」里展开动机与用户拍掉的方案。
-压缩前的全文（实现细节、当时的推演与否决项）原样进
-[archive/decisions-full.md](archive/decisions-full.md)，要回补只从那里取。
+实测结论单独留档三条：① 全量 `-race` 经并行化 341.7s → 约 103s（3.3×；逐包数字与保持串行的
+用例清单随当时的提交记录）；② `uigui` 拆包与建子包两项经实测否决，判据与重启条件记在
+[development.md](development.md)「已否决的提议」，拆文件批完成后 `uigui` 生产文件 107 个约
+2.9 万行、被点名的九个文件全部 ≤ 600 行；③ `docs/decisions.md` 于 2026-10-29 压缩成一行一条
+（6,029 → 559 行，索引保留全部编号），压缩前的全文在
+[archive/decisions-full.md](archive/decisions-full.md)。
 
 > 里程碑与步骤是两套编号：里程碑（M<n>）是本文 §0 的验收单位，
 > 步骤（S<n>）是当时的执行批次。多个步骤可以落在同一个里程碑里。
@@ -513,25 +193,25 @@ Revise/Carry 语义；流式不进领域；依赖方向 `adapter → port ← ap
 > 这些是早期阶段性问题，**全部已定**。保留在此是因为本文 §0 与 [decisions.md](decisions.md) 里有
 > `§5-Q1`、`Q10`、`Q17` 这类引用。
 
-| # | 问题 | 决议 |
-|---|------|------|
-| Q1 | profile 切换粒度与数据隔离 | **进程级**（`--profile` 启动参数 + 设置窗切换需重启）；会话/记忆数据随 profile **整目录隔离** |
-| Q2 | 气泡右键菜单呈现 | **复用 D72 TPM 管线**（shell 线程 `TrackPopupMenu` + 共享 `menuDispatch`）；Gio 侧只做行命中 + 武装-原位抬手 |
-| Q3 | 「重新生成」语义 | **重发上游用户消息**：取该分支上游最后一条用户消息，开同父兄弟节点重发（旧回答保留为历史分支）；编辑/重生成均分叉新节点 |
-| Q4 | 人格模块化物化时机 | **保持首节点快照**（D20 不变：树内可 `/edit`、压缩水位恒回传）；设置窗明示「对新会话生效」 |
-| Q5 | fallback 触发与提示 | **仅网络类降级**（429/5xx/网络/超时 → 下一 provider）；401/400 不降级（配置错误直接暴露）；降级时状态行一次性提示 |
-| Q6 | tooltip 上下文使用率数据源 | **精确优先、est 兜底**（适配器有精确 tokenizer 用精确，否则 est 估算链）；分母 = `limits.max_context_tokens` |
-| Q7 | ASR/TTS 选型 | **已定（D179 完成时选型，D223 扩展）**——缺省 MiMo chat-completions 音频；语音协议位另开本地 whisper / OpenAI 转写 / FunASR / VITS / GPT-SoVITS 五档 |
-| Q8 | 「形裁成功前隐藏窗口」现象 | **启动时闪现未定制窗口** → 首帧内容/ULW 提交前保持隐藏，首帧就绪后再显示 |
-| Q9 | 内置工具是否可禁用 | **可禁用**——工具管理页统一「内置 + 插件/MCP」两组开关（config 新增禁用清单） |
-| Q10 | 设置窗 raw JSON 入口 | **保留**高级页直接编辑 config.json 原文（解析失败不阻断开窗、泛键保留已有） |
-| Q11 | 主窗口大小调整方式 | **双旋钮、仅配置/设置，暂无直观拖拽**：`ui.scale` 元素缩放（150% = 元素大 50%）+ 窗口尺寸像素配置（304×920 = 更窄更长），布局随空间推导重排 |
-| Q12 | UI 响应式迁移范围 | **主窗布局由可用空间推导**（min/max/比例约束），次窗不迁移；字号/控件基准不随窗口尺寸变，由 `ui.scale` 显式缩放 |
-| Q13 | 底部淡化区 | **常驻视口底缘矮带 + 等高底部留白**（上滚离底后底缘渐隐更自然；贴底时最后一行在带外）。带高 = **12dp**（D79 实测定值） |
-| Q14 | 「附件解析」档位 | **加常见文档转文本**：pdf/docx/html/… → 提取文本入树；图片/音频仍走字节内联与既有路径 |
-| Q15 | 命令提示与补全做哪些端 | **只做 GUI**（§15.2 浮层规则，含动态 `/mcp:*`）；TUI 保持无补全现状 |
-| Q16 | 第二批补充 3 项的归置 | **合成一个「输入行」阶段 S2b**（命令补全 + 附件按钮/解析 + 展开按钮），不加长 S1 |
-| Q17 | 文档转文本实现选型 | **已拍板（D105）**：pdf=`ledongthuc/pdf`、docx=`gomutex/godocx`、xlsx=`xuri/excelize/v2`、html=`golang.org/x/net/html`；pptx/rtf 缓（回落二进制占位） |
+| # | 决议（全部已拍板；动机与被否方案见 [decisions.md](decisions.md) 对应决策） |
+|---|---|
+| Q1 | profile 切换是进程级（`--profile`），数据随 profile 整目录隔离 |
+| Q2 | 气泡右键复用 TPM 管线（D72）；Gio 侧只做行命中与原位抬手 |
+| Q3 | 「重新生成」= 重发上游用户消息、开同父兄弟节点；旧回答留作历史分支 |
+| Q4 | 人格保持首节点快照（D20 不变）；设置窗明示「对新会话生效」 |
+| Q5 | fallback 只接网络类降级（429/5xx/网络/超时）；401/400 直接暴露 |
+| Q6 | 使用率数据源精确优先、est 兜底；分母 = `limits.max_context_tokens` |
+| Q7 | 语音选型随 D179/D223：缺省 MiMo 音频，另开五档协议位 |
+| Q8 | 首帧内容提交前窗口保持隐藏，避免闪现未定制窗口 |
+| Q9 | 内置工具可禁用：工具管理页「内置 + 插件/MCP」两组开关 |
+| Q10 | 高级页保留 config.json 原文编辑入口（解析失败不阻断开窗） |
+| Q11 | 窗口大小双旋钮：`ui.scale` 元素缩放 + 像素尺寸配置，布局随空间推导 |
+| Q12 | 响应式迁移只做主窗；字号控件基准不随窗口变，由 `ui.scale` 显式缩放 |
+| Q13 | 底部淡化带常驻视口底缘，带高 12dp（D79 实测定值） |
+| Q14 | 附件解析加常见文档转文本（pdf/docx/html…）；图片音频走原路径 |
+| Q15 | 命令补全只做 GUI（含动态 `/mcp:*`）；TUI 不做 |
+| Q16 | 三项补充合成「输入行」阶段 S2b，不加长 S1 |
+| Q17 | 文档转文本选型见 D105（pptx/rtf 缓，回落二进制占位） |
 
 ---
 

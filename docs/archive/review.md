@@ -1,5 +1,5 @@
 # 文档 STC 审阅报告（v0.5.0 收尾批）
-<!-- docs-sync: 2026-11-22 @ e87b0a7 -->
+<!-- docs-sync: 2026-11-22 @ e87b0a75 -->
 
 > 2026-11-05 完成。工具 `stc` 0.4.1，命令 `stc check <文件> --profile for-document --anti-echo`。
 > 范围：`docs/` 13 篇 + 仓库 `README.md`；`docs/archive/` 只读，不进范围。
