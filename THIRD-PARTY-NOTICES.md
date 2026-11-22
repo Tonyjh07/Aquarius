@@ -4,7 +4,7 @@
 
 ## 一、范围与维护
 
-- **范围**：`go.mod` 中全部 `require`（直接 + 间接），与 `go list -deps ./cmd/aquarius` 的模块集合一致，共 66 个模块。
+- **范围**：`go.mod` 中全部 `require`（直接 + 间接），与 `go list -deps ./cmd/aquarius` 的模块集合一致，共 67 个模块。
   - `spike/` 下各目录是独立 `go.mod` 的试验工程，不属于交付物，不在本清单内。
   - `assets/` 下图标为本项目自制素材，不含第三方组件。
   - 随源码内嵌、但不是 Go 模块的数据（繁简转换词典）单列在 §二末尾。
@@ -76,6 +76,7 @@
 | `github.com/yosida95/uritemplate/v3` | `v3.0.2` | BSD-3-Clause | `Copyright (C) 2016, Kohei YOSHIDA <https://yosida95.com/>. All rights reserved.` |
 | `github.com/yuin/goldmark` | `v1.8.2` | MIT | `Copyright (c) 2019 Yusuke Inuzuka` |
 | `github.com/yuin/goldmark-emoji` | `v1.0.6` | MIT | `Copyright (c) 2020 Yusuke Inuzuka` |
+| `go.starlark.net` | `v0.0.0-20261021141710-4f4267fb140d` | BSD-3-Clause | `Copyright (c) 2017 The Bazel Authors.  All rights reserved.` |
 | `golang.org/x/crypto` | `v0.58.0` | BSD-3-Clause | `Copyright 2009 The Go Authors.` |
 | `golang.org/x/exp/shiny` | `v0.0.0-20250408133849-7e4ce0ab07d0` | BSD-3-Clause | `Copyright 2009 The Go Authors.` |
 | `golang.org/x/image` | `v0.45.0` | BSD-3-Clause | `Copyright 2009 The Go Authors.` |
@@ -88,7 +89,7 @@
 | `golang.org/x/time` | `v0.15.0` | BSD-3-Clause | `Copyright 2009 The Go Authors.` |
 | `gopkg.in/yaml.v3` | `v3.0.1` | MIT / Apache-2.0（混合，见 §3.7） | `Copyright (c) 2006-2010 Kirill Simonov` / `Copyright (c) 2011-2019 Canonical Ltd` |
 
-许可证分布：MIT 39 个、BSD-3-Clause 18 个、Unlicense OR MIT 2 个、Unlicense OR BSD-3-Clause 1 个、Apache-2.0 3 个、Apache-2.0 / MIT 过渡 1 个、MIT / Apache-2.0 混合 1 个，合计 65 个。
+许可证分布：MIT 39 个、BSD-3-Clause 19 个、Unlicense OR MIT 2 个、Unlicense OR BSD-3-Clause 1 个、Apache-2.0 3 个、Apache-2.0 / MIT 过渡 1 个、MIT / Apache-2.0 混合 1 个，合计 66 个。
 
 ### 附：随源码内嵌、但不是 Go 模块的第三方数据
 
@@ -126,11 +127,11 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### 3.2 BSD-3-Clause（18 个组件）
+### 3.2 BSD-3-Clause（19 个组件）
 
 适用组件：
 
-`github.com/andybalholm/cascadia`、`github.com/gorilla/css`、`github.com/ledongthuc/pdf`、`github.com/microcosm-cc/bluemonday`、`github.com/xuri/efp`、`github.com/xuri/excelize/v2`、`github.com/xuri/nfp`、`github.com/yosida95/uritemplate/v3`、`golang.org/x/crypto`、`golang.org/x/exp/shiny`、`golang.org/x/image`、`golang.org/x/net`、`golang.org/x/oauth2`、`golang.org/x/sync`、`golang.org/x/sys`、`golang.org/x/term`、`golang.org/x/text`、`golang.org/x/time`。
+`github.com/andybalholm/cascadia`、`github.com/gorilla/css`、`github.com/ledongthuc/pdf`、`github.com/microcosm-cc/bluemonday`、`github.com/xuri/efp`、`github.com/xuri/excelize/v2`、`github.com/xuri/nfp`、`github.com/yosida95/uritemplate/v3`、`go.starlark.net`、`golang.org/x/crypto`、`golang.org/x/exp/shiny`、`golang.org/x/image`、`golang.org/x/net`、`golang.org/x/oauth2`、`golang.org/x/sync`、`golang.org/x/sys`、`golang.org/x/term`、`golang.org/x/text`、`golang.org/x/time`。
 
 各组件的版权行见上表（逐字）。许可声明正文取自 `golang.org/x/sys@v0.49.0/LICENSE`（逐字，省去其版权行 `Copyright 2009 The Go Authors.`）；`golang.org/x/*` 十个模块文本完全一致，其余组件的第三条（名称背书条款）措辞以其上游原文为准：
 
