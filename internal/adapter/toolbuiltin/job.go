@@ -20,13 +20,16 @@ func (t *jobStart) Spec() tool.Spec {
 	return tool.Spec{
 		Name: "job_start",
 		Description: "Start a background task (a separate process; logs are written to disk, not cancelled with the conversation). " +
+			"command is a single program to launch, not a shell line - pipes, redirects and shell builtins (cd, for, if) " +
+			"do not work here; put shell syntax in term_exec or wrap the line in cmd /c or sh -c yourself. " +
+			"This differs from watch_start's kind=command, which does take a shell command line. " +
 			"Returns a task ID. The session is notified automatically when the task finishes; do not poll it. " +
 			"If you need the result within this turn (a build, a test run), call job_wait on the returned ID. " +
 			"job_status/job_logs/job_kill remain available for manual checks. May require user confirmation depending on the permission level.",
 		Schema: jsonSchema(fmt.Sprintf(`{
 			"type": "object",
 			"properties": {
-				"command": {"type": "string", "description": "executable file"},
+				"command": {"type": "string", "description": "program to launch (single executable name or absolute path, no shell syntax)"},
 				"args": {"type": "array", "items": {"type": "string"}, "description": "argument list"},
 				"workdir": {"type": "string", "description": "working directory (absolute path; defaults to the home directory)"},
 				"timeout_sec": {"type": "integer", "minimum": 0, "maximum": %d, "description": "the task's own timeout in seconds (0/omitted = no limit, at most %d); this is not the per-call tool timeout"}
