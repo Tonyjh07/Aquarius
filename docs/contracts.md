@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-22 @ b41eb04 -->
+<!-- docs-sync: 2026-11-22 @ c3d3831 -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -291,6 +291,9 @@
   不受 `tools.disabled` 约束——关掉 ptc 的正确方式是不开 mode），其余工具声明不发但**执行面照常可达**：
   脚本绑定 `tools.<name>(args)` 直接回到同一个 tool runtime，权限矩阵、确认、`tool_output_chars` 裁剪、
   超时与 native 档同一条链。绑定结果形状固定 `{"ok": bool, "output"|"error": string}`；
+  产出图片的工具（如 `screen_capture`）在脚本内调用时，绑定值多带一个 `images` 引用列表，
+  图片字节照常进附件库，脚本结束时统一挂到 `run_code` 自己的结果上、投影为脚本应答之后的
+  图片消息（同 D169 口径）——脚本内只有引用可读，读不到像素。
   `tools.parallel([{tool, args}, ...])` 由 Go 宿主并发执行、按序返回。限额（步数、单脚本调用配额、
   并发上限）写进 `run_code` 描述；方言限制（无 while/try、顶层禁 for/if）同写进描述，不占系统提示。
   失败一律是结果字段：解析错（带行列号）、超步数、返回值不可 JSON 化都回 `OK=false`，不上抛。
