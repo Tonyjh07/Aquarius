@@ -151,7 +151,11 @@ func (t *ptcTool) description() string {
 
 Dialect: a subset of Python. No while, no try/except, no recursion, no top-level for/if (they are allowed inside functions — your whole program is wrapped in a function, so plain statements and return work). Loops use "for x in items". Deduplicate with dict keys, not sets.
 Every tool result is a dict: {"ok": true, "output": "..."} or {"ok": false, "error": "..."}. Branch on "ok" — failed calls never raise.
-Use tools.parallel([{...}, ...]) to fan out; results come back in input order.
+Use tools.parallel to fan out; results come back in input order. Each entry is a dict with exactly two keys, "tool" (the bare tool name — "term_exec", never "tools.term_exec") and "args" (the tool's arguments dict):
+  tools.parallel([
+    {"tool": "term_exec", "args": {"command": "git status"}},
+    {"tool": "file_read", "args": {"path": "README.md"}},
+  ])
 Budgets (hard): at most `)
 	b.WriteString(strconv.Itoa(t.lim.MaxCalls))
 	b.WriteString(` tool calls per script (counting failures), at most `)
@@ -359,8 +363,11 @@ func parallelFn(ctx context.Context, rt *runtime) starlark.Value {
 				continue
 			}
 			name, serr := starlark.AsString(entryValue(entry, "tool"))
-			if !serr || name == port.RunCodeTool {
-				out[i] = slot{v: failDict("parallel entry needs a tool name")}
+			// 空名也拦下（2026-11-22 实测：模型抄了别家 harness 的 recipient_name/
+			// parameters 形状，缺 "tool" 键时 entryValue 回空串，漏判会把空名送进
+			// callOne 报 "unknown tool \"\""——七次尝试全是同一句，读不出形状错在哪）。
+			if !serr || name == "" || name == port.RunCodeTool {
+				out[i] = slot{v: failDict(`parallel entry needs {"tool": <bare name>, "args": {...}} — the tool name without a "tools." prefix`)}
 				continue
 			}
 			raw, jerr := json.Marshal(plainValue(entryValue(entry, "args")))

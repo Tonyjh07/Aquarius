@@ -241,3 +241,21 @@ func TestDescribeEchoesScript(t *testing.T) {
 		t.Fatal("超长 describe 没有截断标注")
 	}
 }
+
+// TestParallelBadShape 2026-11-22 实测回归：条目抄了别家 harness 的键名（缺 "tool"）
+// 时不得把空名送进 callOne（那会报七次一样的 unknown tool ""，读不出形状错在哪），
+// 而是每条回一句可照改的形状错误；描述文本里也钉了完整示例。
+func TestParallelBadShape(t *testing.T) {
+	f := runnerFixture()
+	res := runCode(t, f, specsFn(f), `rs = tools.parallel([{"recipient_name": "tools.term_exec", "parameters": {"command": "dir"}}])`+"\n"+`return rs[0]["error"]`)
+	if !res.OK || !strings.Contains(res.Output, "parallel entry needs") || strings.Contains(res.Output, "unknown tool") {
+		t.Fatalf("res = %+v, want 形状报因", res)
+	}
+	// 描述里钉住形状示例（模型照抄即对）。
+	desc := New(Deps{Inner: f, AllSpecs: specsFn(f)}).Spec().Description
+	for _, want := range []string{`"tool": "term_exec"`, "bare tool name", "never \"tools.term_exec\""} {
+		if !strings.Contains(desc, want) {
+			t.Fatalf("描述缺 %q", want)
+		}
+	}
+}
