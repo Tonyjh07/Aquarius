@@ -210,11 +210,22 @@ func TestConfirmQueueLineIsOneLine(t *testing.T) {
 	if strings.Contains(line, "\n") {
 		t.Fatalf("转写行不该带换行: %q", line)
 	}
-	if n := len([]rune(line)); n > 170 {
+	if n := len([]rune(line)); n > 90 {
 		t.Fatalf("转写行 %d rune，未截断", n)
 	}
 	if !strings.HasPrefix(m.confirm.prompt, "run term_exec? args:") || len(m.confirm.prompt) <= len(line) {
 		t.Fatal("完整问句应原样留在确认态里（跨窗弹窗要用）")
+	}
+	// 应答写回同一块：问句一行 + 「→ 允许」一行，等于同一次确认在转写里出现两遍。
+	m.replyConfirm(port.ConfirmAnswer{Allow: true})
+	plain := 0
+	for _, b := range m.blocks {
+		if b.kind == blockPlain {
+			plain++
+		}
+	}
+	if plain != 1 {
+		t.Fatalf("一次确认应只占一个块，实际 %d 块", plain)
 	}
 }
 

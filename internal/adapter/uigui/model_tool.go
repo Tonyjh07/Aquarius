@@ -92,6 +92,7 @@ func (m *model) startConfirm(req port.ConfirmRequest, reply chan port.ConfirmAns
 		reply:  reply,
 		req:    req,
 		chip:   -1,
+		bi:     -1,
 	}
 	pc.line = confirmLine(pc.prompt)
 	// 归属先认下来：排队期间块序不变，轮到它时按这个序回填问答。
@@ -123,21 +124,26 @@ func (m *model) activateConfirm(pc *pendingConfirm) {
 	m.u.levelPickOpen = false // D282：换一次确认 = 档位列表收起（旧列表不该跟到新问句上）
 	if pc.chip < 0 {
 		// 没有 chip 承载（脚本内并行调用、命令确认）：转写里留一行问句。
-		m.add(blockPlain, pc.line)
+		// 记下块序，应答时就地改成「问句 → 应答」，不再追加一行。
+		if strings.TrimSpace(pc.line) != "" {
+			m.blocks = append(m.blocks, block{kind: blockPlain, text: pc.line, part: -1})
+			pc.bi = len(m.blocks) - 1
+		}
 	}
 }
 
-// confirmLine 转写行的单行问句：只取首行，空白压平，超过 160 rune 截断。
-// 与工具侧 confirmPrompt 同一量级——问句里塞着整段参数时，一次进来十几条就
-// 会把转写区顶满，正文全被挤出去。
+// confirmLine 转写行的单行问句：只取首行，空白压平，超过 80 rune 截断。
+// 上限按「一行放得下」定：问句里塞着整段参数，一次并行发几条就能把转写区顶满。
+// 被截掉的参数在对应工具 chip 里仍看得见（脚本内调用看 run_code 的参数），
+// 这一行只要能认出是哪一次调用。
 func confirmLine(prompt string) string {
 	s := prompt
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
 		s = s[:i]
 	}
 	s = strings.Join(strings.Fields(s), " ")
-	if r := []rune(s); len(r) > 160 {
-		s = string(r[:160]) + "…"
+	if r := []rune(s); len(r) > 80 {
+		s = string(r[:80]) + "…"
 	}
 	return s
 }
@@ -194,7 +200,7 @@ func (m *model) replyConfirm(ans port.ConfirmAnswer) {
 	m.confirmChip = -1
 	m.u.levelPickOpen = false // D282：答完即收档位列表，不留一张浮卡在下一轮上
 	if pc.chip < 0 {
-		m.add(blockPlain, pc.line+" → "+confirmEcho(ans))
+		m.echoConfirmLine(pc, ans)
 	}
 	if next := m.takeConfirm(); next != nil {
 		m.activateConfirm(next) // 投影直接换成下一条，中间不撤（否则历史窗会闪一下空弹窗）
@@ -205,6 +211,16 @@ func (m *model) replyConfirm(ans port.ConfirmAnswer) {
 	case pc.reply <- ans:
 	default:
 	}
+}
+
+// echoConfirmLine 把应答写回那一行问句（就地改，不追加）：一行就是这次确认的
+// 全部留痕——问句与「→ 允许」各占一行，等于同一次确认在转写里出现两遍。
+func (m *model) echoConfirmLine(pc *pendingConfirm, ans port.ConfirmAnswer) {
+	if pc.bi >= 0 && pc.bi < len(m.blocks) && m.blocks[pc.bi].kind == blockPlain {
+		m.blocks[pc.bi].text = pc.line + " → " + confirmEcho(ans)
+		return
+	}
+	m.add(blockPlain, pc.line+" → "+confirmEcho(ans)) // 行已被清屏：补一条完整的
 }
 
 // takeConfirm 取队列里的下一条确认（无则 nil，并收掉空队列）。
