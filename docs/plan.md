@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-22 @ 161baed -->
+<!-- docs-sync: 2026-11-22 @ b41eb04 -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -24,12 +24,13 @@
 > 承诺——插件契约没冻结、隐含契约没显式化、稳定声明没写。本版把这三笔立干净。
 
 - **P1 · 契约显式化**（S~M）：
-  1. Agent/Runner 共享可变状态的并发模型落 contracts（M2 审查遗留三条：`Confirmer` 无任务
-     标识的语义、注入队列满时的重试、watcher 表生命周期）；
-  2. 稳定声明成文（新篇 `docs/stability.md`）：存储格式兼容承诺、平台支持矩阵、不承诺项
-     （自动更新、代码签名、PTC 实验性、上游字体缺陷）；发布说明「已知限制」今后只引这篇；
-  3. MCP 提示文本冒充身份的最小处置（来源标记 + system 注明「以下来自外部服务」）；
-  4. MCP 默认风险按来源分流（config 来源 `safe`、plugins 目录来源 `confirm`）。
+  1. ~~Agent/Runner 共享可变状态的并发模型落 contracts~~（已完成：三条落 contracts
+     §5.2 / §7.1.1 / §5.9）；
+  2. ~~稳定声明成文~~（已完成：新篇 [stability.md](stability.md)，README 地图已加行）；
+  3. MCP 提示文本冒充身份的最小处置——口径已落 contracts §6.3，剩 prompt 来源标记的代码
+     与测试；
+  4. ~~MCP 默认风险按来源分流~~——口径已定（D328：只定默认值）并落 contracts §6.3，剩
+     `ToolRisk()` 改动与测试。
 - **P2 · pluginapi/v1 契约**（M）：规格已成文——[plugin-design.md](plugin-design.md)（D327）；
   本批次出独立 go.mod 契约包与防腐映射点列表，接口代码随 P3。
 - **P3 · plugingo 装载器 + 首个 Tier-1 插件**（M~L，关键路径）：按 plugin-design.md §7/§11/§12
