@@ -29,6 +29,7 @@ require (
 require (
 	gioui.org/shader v1.0.9 // indirect
 	github.com/JohannesKaufmann/dom v0.3.1 // indirect
+	github.com/Tonyjh07/Aquarius/pluginapi v0.0.0-00010101000000-000000000000
 	github.com/alecthomas/chroma/v2 v2.20.0 // indirect
 	github.com/andybalholm/cascadia v1.3.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
@@ -74,3 +75,5 @@ require (
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 )
+
+replace github.com/Tonyjh07/Aquarius/pluginapi => ./pluginapi

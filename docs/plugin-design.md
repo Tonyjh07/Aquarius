@@ -1,7 +1,7 @@
-# pluginapi/v1 设计草稿（Tier-1 Go 插件）
-<!-- docs-sync: 2026-11-22 @ 7f109c1 -->
+# Tier-1 Go 插件契约（pluginapi，v1）设计规格
+<!-- docs-sync: 2026-11-22 @ 9729957 -->
 
-> 定位：Tier-1 进程内 Go 插件（`pluginapi/v1`）的实现规格——接口面、UI 扩展面、宿主服务、
+> 定位：Tier-1 进程内 Go 插件契约包（`pluginapi`，本代为 v1）的实现规格——接口面、UI 扩展面、宿主服务、
 > 生命周期、版本纪律、能力边界。Tier-2（MCP server）的规格在 [contracts.md](contracts.md) §6.2–§6.4，
 > 本文不重复也不改动 Tier-2 的规格；两级模型的总形状同样见那一节。决策动机与否决见
 > [decisions.md](decisions.md) 的 D327。
@@ -15,7 +15,7 @@ Tier-2（MCP server）已是交付成品，见 contracts §6.2–§6.4；本文�
 
 1. **Tier-1 装载是编译期的**：main 显式注册、随二进制分发（D29）。运行期动态装载（.so）
    与无 cgo、单二进制两条交付规则冲突，不做（D29 否决理由，本文重申）。
-2. **插件永远编译到 `pluginapi/v1` 上，不编译到内核类型上**：v1 类型与 `internal/port`
+2. **插件永远编译到 v1 契约包（`pluginapi`）上，不编译到内核类型上**：v1 类型与 `internal/port`
    完全独立，双向转换只在 `adapter/plugingo` 一处（硬性规则 4 的展开）。
 3. **Tier-1 是同进程 Go 代码，没有沙箱**：安全边界是契约边界。插件技术上能做契约之外的
    事（自开网络、自读文件），契约对此的立场是「允许、不审计、不承诺」，见 §9。
@@ -23,7 +23,7 @@ Tier-2（MCP server）已是交付成品，见 contracts §6.2–§6.4；本文�
 ## 2. 总形状：三块面，一个方向规则
 
 ```
-pluginapi/v1/            （独立 go.mod，module path 带 /v1）
+pluginapi/              （独立 go.mod；目录名不带版本——Go 规则 /v1 后缀非法）
   manifest.go            清单与 API 版本
   plugin.go              生命周期（工厂 + 实例）与注册表
   host.go                Host：插件可用的内核服务
@@ -40,10 +40,12 @@ pluginapi/v1/            （独立 go.mod，module path 带 /v1）
 方向规则只有一条：接口里的每个类型都是 v1 自己定义的。v1 不 import `internal/port`，
 `internal/port` 也不 import v1。
 
-**落位事实**（P2 起生效）：独立模块在 `pluginapi/v1/`，module path
-`github.com/Tonyjh07/Aquarius/pluginapi/v1`（包名 `v1`），零依赖、只许标准库。根 go.mod
-以 `require` + `replace`（指向 `./pluginapi/v1`）引入——同仓多模块，不设 go.work；
-外部插件仓库按 tag 依赖同一路径。内核侧的依赖规则由 arch 测试守着（`layerPluginAPI`
+**落位事实**（P2 起生效）：独立模块在仓库 `pluginapi/` 目录，module path
+`github.com/Tonyjh07/Aquarius/pluginapi`（包名 `pluginapi`），零依赖、只许标准库。
+module path **不带** `/v1` 后缀——Go 的规则是 v1 隐式、v2 起才要后缀，`…/v1` 是非法
+module path；「v1」由包文档与 `APIVersion` 常量承载，将来破坏性变更开 `pluginapi/v2`
+独立模块并存。根 go.mod 以 `require` + `replace`（指向 `./pluginapi`）引入——同仓
+多模块，不设 go.work；外部插件仓库按 tag 依赖同一路径。内核侧的依赖规则由 arch 测试守着（`layerPluginAPI`
 只许自引用，adapter 与 plugin 两层允许 import）；v1 侧的独立性（不 import
 `internal/…`、不引三方）由包内 `independence_test.go` 自查。本版（P2）只落 go.mod、
 manifest 与 value.go 三件；接口面（plugin / host / llm / tool / memory / ingest /
@@ -77,10 +79,10 @@ v1 最重要的资产是一层语义等价、字段冻结的稳定词汇。现�
 | `llm.ServerBlock` | `v1.ServerBlock` | `Raw` 原样保真、逐轮回传——这是「透传不解读」义务的样板字段 |
 | `tool.Spec` | `v1.ToolSpec` | `Schema`（json.RawMessage）按透传字节处理；内核侧 `Describe` 函数字段不进 v1，其对位是可选 `Describer` 接口（D320） |
 | `tool.Call` / `tool.Result` | `v1.ToolCall` / `v1.ToolResult` | 调用 ID 随转换重编；`Images` 经 BlobStore 引用、`Fallback` 语义照抄 |
-| `port.ConfirmRequest` / `ConfirmAnswer` | `v1.ConfirmRequest` / `v1.ConfirmAnswer` | 无任务标识字段（contracts §5.2 并发语义）；`Risk` / `Level` 档位词表冻结，两边常量值必须一致 |
+| `port.ConfirmRequest` / `ConfirmAnswer` | `v1.ConfirmRequest` / `v1.ConfirmAnswer` | 无任务标识字段（contracts §5.2 并发语义）；`Risk` / `Level` 档位词表冻结，两边常量值必须一致；`perm.Op` 是 int 枚举（iota 顺序不是契约），v1 侧投影为字符串（`"read"` / `"write"` / 空） |
 | `port.MemoryDoc` / `MemoryIndexEntry` / `MemoryHit` | `v1.MemoryDoc` / `v1.MemoryIndexEntry` / `v1.MemoryHit` | `Name` 即文档 ID；`ErrMemoryNotFound` 哨兵的 v1 对位错误必须可 `errors.Is` |
 | `port.SpeechSegment` | `v1.SpeechSegment` | PCM 原样字节，时间戳口径不变 |
-| `port.RawInput` / `Attachment` / `IngestReport` / `OutputRequest` | `v1.RawInput` / `v1.Attachment` / `v1.IngestReport` / `v1.OutputRequest` | `BlobRef` 在 v1 是字符串别名（内容寻址键原样携带）；附件体积上限常量（`MaxAttachments` / `MaxImageBytes`）两边同步 |
+| `port.RawInput` / `Attachment` / `IngestReport` / `OutputRequest` | `v1.RawInput` / `v1.Attachment` / `v1.IngestReport` / `v1.OutputRequest` | `conversation.BlobRef` 结构体（Hash/MIME/Name/Size）在 v1 原样重述，不是字符串别名；`Part` 按**正文投影**重述（Kind/Text/Ref/Transcript/Signature/服务端块原文）——`Tool` 分片不进 v1（对外播报与摄取只用正文，工具往返是内核协作面）；附件体积上限常量（`MaxAttachments` / `MaxImageBytes`）两边同步 |
 | `port.Secrets`（`Get`） | `v1.SecretResolver`（Host 消费面） | 方向相反的两件分清：插件**供给**密钥走 `SecretProvider` 接口（P3），内核**解析给**插件走 `SecretResolver` |
 | `port.TokenCounter` / `Prober` | `v1.TokenCounter` / `v1.Prober`（P3） | 可选接口，type assertion 探测；转换是纯值搬运，无易错点 |
 
@@ -263,7 +265,7 @@ Draining → Stopped 是唯一出路。Go 同进程里「挂起」没有可执�
 
 ## 8. 版本纪律（只增不改的执行细则）
 
-1. `pluginapi/v1` 独立 go.mod；内核对 pluginapi/v1 的依赖是唯一入口，插件作者 `go get` 这一个包。
+1. 独立 go.mod；内核对 pluginapi 的依赖是唯一入口，插件作者 `go get` 这一个包。
 2. 不改已有字段的语义与类型；新字段只加在结构体末尾，且必须注释「零值语义」。
 3. 新方法只加在新的独立接口上（断言探测），不扩已发布接口。
 4. 接口方法签名冻结；要改就开 v2 包并存，宿主按 major 各自转换，v1 插件不必动。
