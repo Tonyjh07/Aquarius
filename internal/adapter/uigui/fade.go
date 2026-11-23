@@ -116,61 +116,74 @@ func encodeLUTAt(v float64) float64 {
 	return encodeLUT[int(v*4096)]
 }
 
+// blendPremul 以 over 语义把一层像素（预乘分量 r/g/b，alpha av）合成到 out 的**既有**
+// 像素上：上层 alpha 未满时与下层混合，而不是覆盖。
+//
+// 逐形状覆盖写会把下层不透明像素打成半透明：元素边缘的羽化带叠在另一个元素上时，
+// 那条带里透出的是桌面，视觉上就是一条硬边/暗线（D335：胶囊压在正文卡片右缘上时
+// 「与气泡衔接生硬」——卡片侧透出壁纸，黑背景侧却仍是正常羽化）。av == 1 时 keep = 0，
+// 退化为覆盖，既有的 z 序（后画的在上）不变。
+func blendPremul(out []byte, oi int, r, g, b, av float64) bool {
+	if av <= 0 {
+		return false // 本层无贡献：下层原样保留（旧实现在此清零，等于挖掉下层）
+	}
+	if av > 1 {
+		av = 1
+	}
+	keep := 1 - av
+	for ch, src := range [3]float64{r, g, b} {
+		v := src + float64(out[oi+(2-ch)])*keep
+		if v > 255 {
+			v = 255
+		}
+		out[oi+(2-ch)] = byte(math.Round(v)) // R,G,B → BGRA
+	}
+	a := av + float64(out[oi+3])/255*keep
+	if a > 1 {
+		a = 1
+	}
+	out[oi+3] = byte(math.Round(a * 255))
+	return out[oi+3] != 0
+}
+
 // writePremul 单像素转换（淡出带与边缘渐隐共用同一套规则）：源 = headless 语义
-// （A 直通 alpha、C = sRGB_encode(线性预乘值)），目标 alpha = av（0..1）→ 输出
-// 字节空间预乘 BGRA（out[oi..oi+3]）。返回是否写入非透明像素。
+// （A 直通 alpha、C = sRGB_encode(线性预乘值)），目标 alpha = av（0..1）→ 以 over
+// 语义合成进字节空间预乘 BGRA（out[oi..oi+3]）。返回是否留下非透明像素。
 func writePremul(src []byte, si int, av float64, out []byte, oi int) bool {
 	a := src[si+3]
 	if a == 0 || av <= 0 {
-		out[oi], out[oi+1], out[oi+2], out[oi+3] = 0, 0, 0, 0
-		return false
+		return false // 本形状在此无内容：不落笔（保留下层像素）
 	}
 	al := float64(a) / 255
-	aOut := int(math.Round(av * 255))
-	if aOut == 0 {
-		out[oi], out[oi+1], out[oi+2], out[oi+3] = 0, 0, 0, 0
-		return false
-	}
-	if aOut > 255 {
-		aOut = 255
-	}
+	var c [3]float64
 	for ch := 0; ch < 3; ch++ {
 		colorLin := decodeLUT[src[si+ch]] / al
 		if colorLin > 1 {
 			colorLin = 1
 		}
-		out[oi+(2-ch)] = byte(math.Round(encodeLUTAt(colorLin) * av * 255)) // R,G,B → BGRA
+		c[ch] = encodeLUTAt(colorLin) * av * 255
 	}
-	out[oi+3] = byte(aOut)
-	return true
+	return blendPremul(out, oi, c[0], c[1], c[2], av)
 }
 
 // writePremulFill 用元素底色写一个预乘像素——headless 内容不可用（src 缺省、或尺寸小于
 // 本帧）时的兜底取色：底色恒定，处处均匀、与形状无关（若在圆角/窄条处盲目外扩采样，
 // 采样点会落到形状外的透明区 → writePremul 丢弃 → 直边有边、圆角没有的"十字/阶梯"伪影）。
-// fill 为直通 sRGB（A 直通 alpha），av = 渐隐不透明度（0..1）→ 输出字节空间预乘 BGRA。
+// fill 为直通 sRGB（A 直通 alpha），av = 渐隐不透明度（0..1）→ 以 over 语义合成进
+// 字节空间预乘 BGRA。
 func writePremulFill(fill color.NRGBA, av float64, out []byte, oi int) bool {
 	if av <= 0 || fill.A == 0 {
-		out[oi], out[oi+1], out[oi+2], out[oi+3] = 0, 0, 0, 0
-		return false
+		return false // 无内容：不落笔（保留下层像素）
 	}
 	if fill.A != 0xFF {
 		av *= float64(fill.A) / 255
 	}
-	aOut := int(math.Round(av * 255))
-	if aOut == 0 {
-		out[oi], out[oi+1], out[oi+2], out[oi+3] = 0, 0, 0, 0
-		return false
-	}
-	if aOut > 255 {
-		aOut = 255
-	}
+	var c [3]float64
 	for ch := 0; ch < 3; ch++ {
 		lin := decodeLUT[[3]byte{fill.R, fill.G, fill.B}[ch]]
-		out[oi+(2-ch)] = byte(math.Round(encodeLUTAt(lin*av) * 255)) // R,G,B → BGRA
+		c[ch] = encodeLUTAt(lin*av) * 255
 	}
-	out[oi+3] = byte(aOut)
-	return true
+	return blendPremul(out, oi, c[0], c[1], c[2], av)
 }
 
 // rrectSD 点到圆角矩形填充区的有符号距离（外正内负；iq 标准 SDF，px/py 为像素中心）。
@@ -259,7 +272,9 @@ type fadeBands struct {
 //     **反向 1 → 0** 收零于带底（= 转写区底，D79），带下恢复 1——断点两侧无同形状
 //     跨越（转写形状裁剪上沿即带底、状态行/输入栏形状自带底起），故不留横缝；且底带
 //     **只作用于转写视口登记的形状**（clip 底 ≤ 带底），chrome 跨带也保持 g=1。
-//   - 形状按 record 顺序落笔（= 绘制顺序），重叠处后者覆盖 → z 序与单遍渲染一致。
+//   - 形状按 record 顺序落笔（= 绘制顺序），重叠处**后者 over 前者**（alpha 未满时与
+//     下层混合，见 blendPremul）→ z 序与单遍渲染一致。早期的覆盖写在重叠处会把下层
+//     不透明像素打成半透明（D335：胶囊压住卡片右缘时接缝处透出桌面）。
 //
 // src 不可用（nil 或尺寸小于本帧）时用元素底色兜底（writePremulFill：形状可见
 // 可点、无文字）。返回是否写入非零像素（false = 全透明帧）。

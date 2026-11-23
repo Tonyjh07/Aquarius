@@ -2,6 +2,7 @@ package uigui
 
 import (
 	"image"
+	"image/color"
 	"math"
 	"os"
 	"testing"
@@ -366,5 +367,48 @@ func TestEnvBool(t *testing.T) {
 	os.Unsetenv("AQUARIUS_NO_FEATHER")
 	if envBool("AQUARIUS_NO_FEATHER") {
 		t.Fatal("未设应为假")
+	}
+}
+
+// TestFadeFrameOverlapBlendsOver 重叠处的 over 合成（D335）：上层元素（回底钮）压在
+// 下层不透明元素（正文卡片）上时，羽化带里的像素必须仍是**不透明**的混合色——旧实现
+// 逐形状覆盖写，把卡片的不透明像素改写成 av < 1，接缝处于是透出桌面，看起来是一条
+// 硬边（用户所见「胶囊与气泡衔接生硬」就是这么来的：胶囊跨在卡片右缘上，卡片侧透出
+// 壁纸、黑背景侧却是正常羽化，两半在卡片边缘突变）。
+func TestFadeFrameOverlapBlendsOver(t *testing.T) {
+	t.Parallel()
+	w, h := 200, 100
+	src := image.NewRGBA(image.Rect(0, 0, w, h))
+	for i := 0; i < len(src.Pix); i += 4 {
+		src.Pix[i], src.Pix[i+1], src.Pix[i+2], src.Pix[i+3] = 250, 250, 252, 255
+	}
+	card := drawShape{
+		outline: image.Rect(0, 0, 120, h), radius: 8,
+		fill: color.NRGBA{R: 250, G: 250, B: 252, A: 0xFF},
+		clip: image.Rect(0, 0, w, h),
+	}
+	// 胶囊横跨卡片右缘（x=120）：左半压在卡片上，右半悬在透明背景上。
+	pill := drawShape{
+		outline: image.Rect(80, 40, 160, 70), radius: 15,
+		fill: color.NRGBA{R: 125, G: 212, B: 246, A: 0xFF},
+		clip: image.Rect(0, 0, w, h),
+	}
+	out := make([]byte, w*h*4)
+	if !fadeFrame(src, []drawShape{card, pill}, fadeBands{}, m1x(), out, image.Pt(w, h)) {
+		t.Fatal("应有内容")
+	}
+	alphaAt := func(x, y int) byte { return out[(y*w+x)*4+3] }
+	// 交叠区横向整条带（含胶囊的左右羽化带）：下层卡片不透明 → 结果必须不透明。
+	// 旧实现里胶囊左缘的羽化像素会把卡片写成 av≈64，这条断言必红。
+	for y := 45; y <= 65; y++ {
+		for x := 80; x < 120; x++ {
+			if a := alphaAt(x, y); a != 255 {
+				t.Fatalf("交叠区 (%d,%d) alpha = %d, want 255（羽化不得打穿下层卡片）", x, y, a)
+			}
+		}
+	}
+	// 卡片外（x ≥ 120）保留正常的边缘羽化：胶囊轮廓外的像素仍是透明的。
+	if a := alphaAt(159, 30); a != 0 {
+		t.Errorf("胶囊轮廓外 (%d,%d) alpha = %d, want 0", 159, 30, a)
 	}
 }
