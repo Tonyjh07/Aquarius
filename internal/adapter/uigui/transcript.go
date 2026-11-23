@@ -332,11 +332,17 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, rs *rowSel) (layout.Widg
 		}, tok().cardInject, cardR, false, false
 	case blockTurn: // Turn 过程摘要行（D326）：左对齐窄条、工具 chip 同款底色，整条是
 		// 点击件；键位由子块占用——折叠态子键不铺开但占位（selCount 恒 = 子块和，D265
-		// 同规则）。摘要行常驻：展开态子块在本行之下铺回，再点收起。
+		// 同规则）。摘要行常驻：展开态子块在本行之下铺回，再点收起。点击件槽取组自身的
+		// slot（组尾 assistant 块序）——不用条目上的 bi，两态（折在正文前 / 铺在组首块
+		// 前）就都点得回同一条。
 		return func(gtx layout.Context) layout.Dimensions {
-			cl := u.turnClick(it.bi)
+			tv := it.turn
+			if tv == nil { // 防御：无数据的摘要行不渲染也不登记形状
+				return layout.Dimensions{}
+			}
+			cl := u.turnClick(tv.slot)
 			return cl.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				s := material.Caption(u.th, turnHeaderText(it.turn, u.turnIsOpen(it.turn)))
+				s := material.Caption(u.th, turnHeaderText(tv, u.turnIsOpen(tv)))
 				s.Color = tok().textMuted
 				return s.Layout(gtx)
 			})

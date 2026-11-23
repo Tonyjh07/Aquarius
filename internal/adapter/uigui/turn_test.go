@@ -8,6 +8,7 @@ package uigui
 //   - 清屏复位开合态。
 
 import (
+	"strings"
 	"testing"
 
 	"gioui.org/io/input"
@@ -163,6 +164,69 @@ func TestTurnFoldExpandCollapse(t *testing.T) {
 	if len(items) != 2 || items[0].kind != blockTurn {
 		t.Fatalf("折回后 items = %+v, want 摘要 + 正文", items)
 	}
+}
+
+// TestTurnFoldSpansMidTextAndConfirm 一轮里中途落过正文段、又插过确认条时，前面的
+// 工具 chip 仍要收进同一行摘要（回归：中途段落曾把整轮切成两截，前半截的工具与确认条
+// 孤零零留在转写区顶上看不住）。中途正文段原位不动，确认条折进去但报数进摘要。
+func TestTurnFoldSpansMidTextAndConfirm(t *testing.T) {
+	t.Parallel()
+	m, u := newTestModel(t)
+	u.m = m
+	m.handleEvent(portReasoning("想一想"))
+	m.handleEvent(portToolCall("c1", "file_read"))
+	m.handleEvent(portToolResult("c1", true, "完毕"))
+	// D95 中途段：工具边界 flush 出来的正文块，没有节点 ID。
+	m.blocks = append(m.blocks, block{kind: blockAssistant, text: "先看看"})
+	m.handleEvent(portToolCall("c2", "term_exec"))
+	m.handleEvent(portToolResult("c2", false, "炸了"))
+	m.blocks = append(m.blocks, block{kind: blockConfirm, part: -1,
+		confirms: []confirmEntry{{q: "run term_exec? args: y", a: "允许"}}})
+	m.flushThink()
+	m.commit(conversation.Message{ID: "a1", Role: conversation.RoleAssistant,
+		Content: textPartsOf("回答")})
+
+	items := u.frameItems()
+	if len(items) != 3 || items[0].kind != blockAssistant ||
+		items[1].kind != blockTurn || items[2].kind != blockAssistant {
+		t.Fatalf("items = %+v, want [中途正文, 摘要, 正文]", items)
+	}
+	tv := items[1].turn
+	if tv.tools != 2 || tv.confirms != 1 || len(tv.blocks) != 4 {
+		t.Fatalf("turn = tools %d / confirms %d / blocks %d, want 2 / 1 / 4（两个 chip + 确认条 + 思考）",
+			tv.tools, tv.confirms, len(tv.blocks))
+	}
+	if want := " · " + i18n.Tf("ui.confirm.strip_total", "n", 1); !strings.Contains(turnHeaderText(tv, false), want) {
+		t.Fatalf("摘要 = %q, want 含 %q（确认条收起来了，数不能跟着消失）", turnHeaderText(tv, false), want)
+	}
+}
+
+// TestTurnSummarySlotStable 摘要行的点击件槽两态一致（回归：展开态曾用组首块序取
+// 点击件，和点击消费端的组尾块序对不上，展开后就点不回去）。
+func TestTurnSummarySlotStable(t *testing.T) {
+	t.Parallel()
+	m, u := turnFixture(t)
+	want := -1
+	for bi, b := range m.blocks { // 组尾 assistant 块序
+		if b.kind == blockAssistant && b.id != "" {
+			want = bi
+		}
+	}
+	check := func(state string) {
+		items := u.frameItems()
+		if len(items) == 0 || items[0].kind != blockTurn {
+			t.Fatalf("%s: items = %+v, want 摘要行在首位", state, items)
+		}
+		if items[0].bi != want {
+			t.Fatalf("%s: 摘要行 bi = %d, want %d（槽 = 组尾 assistant 块序）", state, items[0].bi, want)
+		}
+		if tv, ok := u.turnAnchors[items[0].bi]; !ok || tv == nil || tv.slot != want {
+			t.Fatalf("%s: turnAnchors[%d] = %+v, want 组自身的 slot %d", state, items[0].bi, tv, want)
+		}
+	}
+	check("折叠态")
+	u.turnOpen = map[conversation.MessageID]bool{"a1": true}
+	check("展开态")
 }
 
 // TestTurnHeaderText 摘要文案：秒段格式与思考块同一套；回放（无耗时）省略秒段。

@@ -54,7 +54,7 @@ func (u *UI) frameItems() []blockView {
 	var pendStrips []branchStrip // 折叠组内块锚的分叉条，顺延到摘要行之后输出
 	for bi, b := range u.m.blocks {
 		if tv, ok := openStart[bi]; ok {
-			items = append(items, blockView{kind: blockTurn, turn: tv, bi: bi, id: tv.id})
+			items = append(items, blockView{kind: blockTurn, turn: tv, bi: tv.slot, id: tv.id})
 		}
 		if folded[bi] {
 			// 组内块不铺条目，但其上锚的分叉条不能丢——攒着，摘要行后统一铺。
@@ -75,8 +75,9 @@ func (u *UI) frameItems() []blockView {
 			// 摘要行在该 assistant 正文之前铺（过程先于结论）；组内块锚的分叉条
 			// 随摘要顺延（D89 纯工具轮锚在 chip 上，折叠后不能丢）。
 			if tv, ok := groups[bi]; ok && !u.turnIsOpen(tv) { // 折叠态：摘要行贴在正文前
-				// 展开态的摘要在组首块前铺（openStart），不走这里。
-				items = append(items, blockView{kind: blockTurn, turn: tv, bi: bi, id: tv.id})
+				// 展开态的摘要在组首块前铺（openStart），不走这里。两态的行内点击件
+				// 用同一个槽（组尾 assistant 块序），否则展开后就点不回去了。
+				items = append(items, blockView{kind: blockTurn, turn: tv, bi: tv.slot, id: tv.id})
 				for _, st := range pendStrips {
 					s := st
 					items = append(items, blockView{kind: blockBranch, branch: &s})
@@ -279,9 +280,10 @@ func (u *UI) updateClicks(gtx layout.Context) {
 		}
 	}
 	// Turn 过程摘要行点击 → 展开/收起（D326；开合按 turnID 记，跨块序稳定；
-	// turnAnchors 是 frameItems 每帧重算的分组，bi 即点击件缓存槽）。
-	for bi, tv := range u.turnAnchors {
-		if u.turnClick(bi).Clicked(gtx) {
+	// turnAnchors 是 frameItems 每帧重算的分组，槽位恒取组尾 assistant 块序——
+	// 展开态摘要行铺在组首块前，行内的点击件也用这个槽，两态才连得上。
+	for _, tv := range u.turnAnchors {
+		if u.turnClick(tv.slot).Clicked(gtx) {
 			if u.turnOpen == nil {
 				u.turnOpen = map[conversation.MessageID]bool{}
 			}
