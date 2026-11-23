@@ -83,9 +83,16 @@ func (u *UI) confirmClick(i int) *widget.Clickable {
 	return u.confirmClicks[i]
 }
 
-// confirmIsOpen 折叠条展开态：默认折叠（map 零值 = 收起）；视图态只存 UI、不进 model；
-// 清屏复位（与 cmdOpen/chipOpen 同规则）。
-func (u *UI) confirmIsOpen(i int) bool { return u.confirmOpen[i] }
+// confirmIsOpen 折叠条展开态：**正在问的那一条强制展开**——问句藏着，用户就只看到一行
+// 「待答 1」，等于没问（与 chip 的强制展开同规则）。其余按用户手动开合：应答后前台上换成
+// 下一条（同一块则继续展开）或清空，条自动回到收起；用户自己点开的仍保持展开。
+// 视图态只存 UI、不进 model；清屏复位（与 cmdOpen/chipOpen 同规则）。
+func (u *UI) confirmIsOpen(i int) bool {
+	if u.m != nil && u.m.confirm != nil && u.m.confirm.bi == i && u.m.confirm.ci >= 0 {
+		return true
+	}
+	return u.confirmOpen[i]
+}
 
 // addConfirmEntry 把一次没有 chip 承载的确认并入末尾的确认条（连续确认共用一条），
 // 否则新开一条。返回块序与条内序号，应答时按这两项就地回填。
