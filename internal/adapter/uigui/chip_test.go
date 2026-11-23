@@ -83,8 +83,8 @@ func TestToolChipConfirmDeny(t *testing.T) {
 	}
 }
 
-// TestConfirmNonToolStaysPlain 非工具确认（/rm 二次确认，问句不含工具名）不并入
-// chip：独立文本行 + 原回显（D67）。
+// TestConfirmNonToolStaysUnchipped 非工具确认（/rm 二次确认，问句不含工具名）不并入
+// chip：进确认折叠条 + 原回显（D67）。
 func TestConfirmNonToolStaysPlain(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestModel(t)
@@ -96,8 +96,8 @@ func TestConfirmNonToolStaysPlain(t *testing.T) {
 	if m.confirmChip != -1 {
 		t.Fatalf("confirmChip = %d, want -1（不并入）", m.confirmChip)
 	}
-	if len(m.blocks) != 2 || m.blocks[1].kind != blockPlain {
-		t.Fatalf("blocks = %+v, want chip + plain 行", m.blocks)
+	if len(m.blocks) != 2 || m.blocks[1].kind != blockConfirm || len(m.blocks[1].confirms) != 1 {
+		t.Fatalf("blocks = %+v, want chip + 确认条一项", m.blocks)
 	}
 	m.replyConfirm(port.ConfirmAnswer{Allow: true})
 	if m.blocks[0].chip.confirmA != "" {

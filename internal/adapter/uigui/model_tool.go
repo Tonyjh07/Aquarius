@@ -123,12 +123,8 @@ func (m *model) activateConfirm(pc *pendingConfirm) {
 	m.u.reasonFocus = true    // 焦点让入原因框（主编辑器确认态隐藏，D63 一次性规则）
 	m.u.levelPickOpen = false // D282：换一次确认 = 档位列表收起（旧列表不该跟到新问句上）
 	if pc.chip < 0 {
-		// 没有 chip 承载（脚本内并行调用、命令确认）：转写里留一行问句。
-		// 记下块序，应答时就地改成「问句 → 应答」，不再追加一行。
-		if strings.TrimSpace(pc.line) != "" {
-			m.blocks = append(m.blocks, block{kind: blockPlain, text: pc.line, part: -1})
-			pc.bi = len(m.blocks) - 1
-		}
+		// 没有 chip 承载（脚本内并行调用、命令确认）：并进确认折叠条，收起只报数与成败。
+		pc.bi, pc.ci = m.addConfirmEntry(pc.line)
 	}
 }
 
@@ -200,7 +196,7 @@ func (m *model) replyConfirm(ans port.ConfirmAnswer) {
 	m.confirmChip = -1
 	m.u.levelPickOpen = false // D282：答完即收档位列表，不留一张浮卡在下一轮上
 	if pc.chip < 0 {
-		m.echoConfirmLine(pc, ans)
+		m.echoConfirmEntry(pc, ans)
 	}
 	if next := m.takeConfirm(); next != nil {
 		m.activateConfirm(next) // 投影直接换成下一条，中间不撤（否则历史窗会闪一下空弹窗）
@@ -211,16 +207,6 @@ func (m *model) replyConfirm(ans port.ConfirmAnswer) {
 	case pc.reply <- ans:
 	default:
 	}
-}
-
-// echoConfirmLine 把应答写回那一行问句（就地改，不追加）：一行就是这次确认的
-// 全部留痕——问句与「→ 允许」各占一行，等于同一次确认在转写里出现两遍。
-func (m *model) echoConfirmLine(pc *pendingConfirm, ans port.ConfirmAnswer) {
-	if pc.bi >= 0 && pc.bi < len(m.blocks) && m.blocks[pc.bi].kind == blockPlain {
-		m.blocks[pc.bi].text = pc.line + " → " + confirmEcho(ans)
-		return
-	}
-	m.add(blockPlain, pc.line+" → "+confirmEcho(ans)) // 行已被清屏：补一条完整的
 }
 
 // takeConfirm 取队列里的下一条确认（无则 nil，并收掉空队列）。
@@ -238,9 +224,16 @@ func (m *model) takeConfirm() *pendingConfirm {
 
 // dropConfirms 丢掉进行中与排队的确认（轮次收尾：没有工具在等答复了）。
 // 只清界面状态，不回射应答——这些 Confirm 的 ctx 已随本轮结束，给谁答都晚了。
+// 前台上那条已在确认条里落过项：改写成「未作答」，否则那一行会永远挂在「待答 1」上。
 func (m *model) dropConfirms() {
 	if m.confirm == nil && len(m.confirmQueue) == 0 {
 		return
+	}
+	if pc := m.confirm; pc != nil && pc.chip < 0 && pc.bi >= 0 && pc.bi < len(m.blocks) {
+		if es := m.blocks[pc.bi].confirms; pc.ci >= 0 && pc.ci < len(es) && es[pc.ci].a == "" {
+			es[pc.ci].a = i18n.T("ui.confirm.strip_unanswered")
+			es[pc.ci].silent = true
+		}
 	}
 	m.confirm = nil
 	m.confirmChip = -1

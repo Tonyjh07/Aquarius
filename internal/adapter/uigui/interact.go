@@ -93,6 +93,7 @@ func (u *UI) frameItems() []blockView {
 			items = append(items, blockView{
 				kind: b.kind, text: b.text, ms: b.ms, bi: bi, id: b.id,
 				imgs: b.imgs, source: b.source, trigger: b.trigger, cmds: b.cmds,
+				confirms: b.confirms,
 			})
 		}
 		if next < len(strips) && strips[next].blockIdx == bi {
@@ -294,6 +295,15 @@ func (u *UI) updateClicks(gtx layout.Context) {
 				u.cmdOpen = map[int]bool{}
 			}
 			u.cmdOpen[i] = !u.cmdOpen[i]
+		}
+	}
+	// 权限确认折叠条点击 → 展开/收起（整条都是热区，默认只报数与成败）。
+	for i, b := range u.m.blocks {
+		if b.kind == blockConfirm && u.confirmClick(i).Clicked(gtx) {
+			if u.confirmOpen == nil {
+				u.confirmOpen = map[int]bool{}
+			}
+			u.confirmOpen[i] = !u.confirmOpen[i]
 		}
 	}
 	// 注入块折叠行点击 → 展开/收起（D166 形态修订；默认折叠只留「类别 · 来源」一行）。

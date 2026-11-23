@@ -39,6 +39,8 @@ type blockView struct {
 	trigger bool
 	// cmds 命令折叠条的条目（D265）：命令行与命令自身的返回文本。
 	cmds []cmdEntry
+	// confirms 权限确认折叠条的条目：没有 chip 承载的确认，收起只报数与成败。
+	confirms []confirmEntry
 	// turn Turn 过程摘要的数据面（D326）：被折叠的本轮思考/chip 子块视图。
 	turn *turnView
 	// pendID 待发清单里那条「引导」的 ID（D272）：非空 = 这块不算会话节点：用户
@@ -72,6 +74,10 @@ func (it blockView) selCount() int {
 		return 0
 	case it.kind == blockCommand:
 		return 2 * len(it.cmds)
+	case it.kind == blockConfirm:
+		// 确认折叠条 = 每条一问：折叠时不铺正文，但键数恒定——否则展开一次就把后面
+		// 所有行的选择序号推移一位（D265 同规则）。
+		return len(it.confirms)
 	case it.kind == blockAssistant && len(it.md) > 0:
 		// D325：表格块占 行×列 枚键（单元格各自可选），其余块各一枚。
 		total := 0

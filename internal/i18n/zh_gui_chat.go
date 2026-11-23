@@ -99,6 +99,13 @@ var zhGuiChatTexts = map[string]string{
 	"ui.confirm.needed":             "需要确认",
 	"ui.confirm.shared_note":        "主窗与本窗显示的是同一次确认，任一处作答即可。",
 	"ui.confirm.reason_placeholder": "拒绝原因（可留空）…",
+	"ui.confirm.strip_total":        "{n} 次权限确认",
+	"ui.confirm.strip_allowed":      "允许 {n}",
+	"ui.confirm.strip_denied":       "拒绝 {n}",
+	"ui.confirm.strip_level":        "改档位 {n}",
+	"ui.confirm.strip_pending":      "待答 {n}",
+	"ui.confirm.strip_silent":       "未答 {n}",
+	"ui.confirm.strip_unanswered":   "未作答（本轮已结束）",
 
 	// ── 附件（attach.go / paste.go / model_submit.go）
 	"ui.attach.pasted_image":  "粘贴的图片",

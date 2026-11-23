@@ -343,6 +343,8 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, rs *rowSel) (layout.Widg
 		}, tok().cardTool, cardR, false, false
 	case blockCommand: // 命令折叠条：形状交给 commandRowStyle，与工具 chip、分叉条同法
 		return u.commandRowStyle(gtx, it, rs, cardR)
+	case blockConfirm: // 权限确认折叠条：同法，收起只报数与成败
+		return u.confirmRowStyle(it, rs, cardR)
 	case blockTool:
 		if it.chip == nil { // 兜底：无 chip 的工具行（防御，正常路径都有 chip）
 			return func(gtx layout.Context) layout.Dimensions {
@@ -482,6 +484,56 @@ func (u *UI) commandRowStyle(gtx layout.Context, it blockView, rs *rowSel, cardR
 					}, 2*k+1, off, image.Point{})
 				})
 			}
+		}
+		return vs.dims()
+	}, tok().cardCmd, cardR, false, false
+}
+
+// confirmRowStyle 权限确认折叠条的形状：与命令条同款（收起贴合文案、展开铺满），
+// 只是条内的每一项是「问句 → 应答」。问句已在入条时限长，这里不再截断。
+func (u *UI) confirmRowStyle(it blockView, rs *rowSel, cardR int) (layout.Widget, color.NRGBA, int, bool, bool) {
+	open := u.confirmIsOpen(it.bi)
+	cl := u.confirmClick(it.bi)
+	head := func(gtx layout.Context) layout.Dimensions {
+		plain := func(gtx layout.Context) layout.Dimensions {
+			s := material.Caption(u.th, confirmHeaderText(it.confirms, open))
+			s.Color = cmdHeadColor()
+			if _, _, deny, _, pending, _ := confirmCounts(it.confirms); deny > 0 && pending == 0 {
+				// 有条被拒、且没有还在等的：收起态也要一眼看到（同命令条的错误着色）。
+				s.Color = tok().textError
+			}
+			return s.Layout(gtx)
+		}
+		if !open {
+			return cl.Layout(gtx, plain)
+		}
+		return cl.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return centerStrip(gtx, plain)
+		})
+	}
+	return func(gtx layout.Context) layout.Dimensions {
+		vs := beginVStack(gtx)
+		vs.add(head)
+		if !open {
+			return vs.dims()
+		}
+		for k, e := range it.confirms {
+			if k > 0 {
+				vs.gap(mdBlockGapDp)
+			}
+			line := e.q
+			if e.a != "" {
+				line += " → " + e.a
+			}
+			off := image.Pt(0, vs.y)
+			vs.add(func(gtx layout.Context) layout.Dimensions {
+				return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					s := material.Body2(u.th, line)
+					s.Color = tok().textDim
+					s.State = rs.sel(k)
+					return s.Layout(gtx)
+				}, k, off, image.Point{})
+			})
 		}
 		return vs.dims()
 	}, tok().cardCmd, cardR, false, false

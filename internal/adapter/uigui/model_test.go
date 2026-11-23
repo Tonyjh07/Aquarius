@@ -40,6 +40,14 @@ func allText(m *model) string {
 			b.WriteString(e.err)
 			b.WriteByte('\n')
 		}
+		for _, e := range blk.confirms { // 权限确认折叠条：问句一行、作答接在同一行
+			b.WriteString(e.q)
+			if e.a != "" {
+				b.WriteString(" → ")
+				b.WriteString(e.a)
+			}
+			b.WriteByte('\n')
+		}
 		if c := blk.chip; c != nil { // D67：chip 的参数/问答/结果一并纳入消毒与合并断言
 			b.WriteString(c.name)
 			b.WriteByte('\n')
@@ -199,12 +207,12 @@ func TestConfirmQueueLineIsOneLine(t *testing.T) {
 	m.startConfirm(port.ConfirmRequest{Tool: "term_exec", Prompt: long}, make(chan port.ConfirmAnswer, 1))
 
 	if m.confirmChip != -1 {
-		t.Fatalf("没有对应 chip 时应落文本行，实际 chip = %d", m.confirmChip)
+		t.Fatalf("没有对应 chip 时应落确认折叠条，实际 chip = %d", m.confirmChip)
 	}
 	var line string
 	for _, b := range m.blocks {
-		if b.kind == blockPlain {
-			line = b.text
+		if b.kind == blockConfirm && len(b.confirms) > 0 {
+			line = b.confirms[0].q
 		}
 	}
 	if strings.Contains(line, "\n") {
@@ -216,16 +224,55 @@ func TestConfirmQueueLineIsOneLine(t *testing.T) {
 	if !strings.HasPrefix(m.confirm.prompt, "run term_exec? args:") || len(m.confirm.prompt) <= len(line) {
 		t.Fatal("完整问句应原样留在确认态里（跨窗弹窗要用）")
 	}
-	// 应答写回同一块：问句一行 + 「→ 允许」一行，等于同一次确认在转写里出现两遍。
+	// 应答写回同一项：问句一项 + 应答另起一行，等于同一次确认在转写里出现两遍。
 	m.replyConfirm(port.ConfirmAnswer{Allow: true})
-	plain := 0
+	blocks, entries := 0, 0
 	for _, b := range m.blocks {
-		if b.kind == blockPlain {
-			plain++
+		if b.kind == blockConfirm {
+			blocks++
+			entries += len(b.confirms)
 		}
 	}
-	if plain != 1 {
-		t.Fatalf("一次确认应只占一个块，实际 %d 块", plain)
+	if blocks != 1 || entries != 1 {
+		t.Fatalf("一次确认应只占一条一项，实际 %d 条 %d 项", blocks, entries)
+	}
+}
+
+// TestConfirmStripFoldsConsecutivePrompts 连续多次确认（并行调用逐个问）合成一条：
+// 收起态一行报数与成败，展开态逐条铺「问句 → 应答」。
+func TestConfirmStripFoldsConsecutivePrompts(t *testing.T) {
+	t.Parallel()
+	m, _ := newTestModel(t)
+	for i, p := range []string{"a?", "b?", "c?"} {
+		reply := make(chan port.ConfirmAnswer, 1)
+		m.startConfirm(port.ConfirmRequest{Prompt: p}, reply)
+		if i < 2 {
+			m.replyConfirm(port.ConfirmAnswer{Allow: true})
+		} else {
+			m.replyConfirm(port.ConfirmAnswer{})
+		}
+	}
+	var strip *block
+	for i := range m.blocks {
+		if m.blocks[i].kind == blockConfirm {
+			if strip != nil {
+				t.Fatal("连续确认应合成一条")
+			}
+			strip = &m.blocks[i]
+		}
+	}
+	if strip == nil || len(strip.confirms) != 3 {
+		t.Fatalf("确认条条目数 = %+v, want 3", strip)
+	}
+	head := confirmHeaderText(strip.confirms, false)
+	want := i18n.Tf("ui.confirm.strip_total", "n", 3) + " · " +
+		i18n.Tf("ui.confirm.strip_allowed", "n", 2) + " · " +
+		i18n.Tf("ui.confirm.strip_denied", "n", 1) + " · " + i18n.T("ui.cmd.expand")
+	if head != want {
+		t.Fatalf("头行 = %q, want %q", head, want)
+	}
+	if head := confirmHeaderText(strip.confirms, true); !strings.HasSuffix(head, i18n.T("ui.cmd.collapse")) {
+		t.Fatalf("展开态应提示收起: %q", head)
 	}
 }
 

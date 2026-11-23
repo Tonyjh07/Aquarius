@@ -461,6 +461,10 @@ type UI struct {
 	// 按块序缓存、不进 model、清屏复位。
 	cmdOpen   map[int]bool
 	cmdClicks []*widget.Clickable
+	// confirmOpen/confirmClicks 权限确认折叠条视图态：连续确认默认折成一行，点开才铺
+	// 逐条问答。同规则按块序缓存、不进 model、清屏复位。
+	confirmOpen   map[int]bool
+	confirmClicks []*widget.Clickable
 	// turnOpen/turnClicks Turn 过程折叠（D326）：开合按 turnID（组尾 assistant 节点
 	// ID）记，跨块序稳定；点击件按块序缓存（同 cmdClick）。turnAnchors 是 frameItems
 	// 每帧重算的折叠分组（bi → 组，供点击消费期回查）。

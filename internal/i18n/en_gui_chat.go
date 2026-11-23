@@ -97,6 +97,13 @@ var enGuiChatTexts = map[string]string{
 	"ui.confirm.needed":             "Confirmation needed",
 	"ui.confirm.shared_note":        "Both windows show the same confirmation; answering in either one is enough.",
 	"ui.confirm.reason_placeholder": "Reason (optional)…",
+	"ui.confirm.strip_total":        "{n} permission prompts",
+	"ui.confirm.strip_allowed":      "{n} allowed",
+	"ui.confirm.strip_denied":       "{n} denied",
+	"ui.confirm.strip_level":        "{n} level changes",
+	"ui.confirm.strip_pending":      "{n} waiting",
+	"ui.confirm.strip_silent":       "{n} unanswered",
+	"ui.confirm.strip_unanswered":   "not answered (turn ended)",
 
 	// ── 附件
 	"ui.attach.pasted_image":  "Pasted image",

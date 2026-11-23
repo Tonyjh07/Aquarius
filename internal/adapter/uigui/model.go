@@ -30,6 +30,7 @@ const (
 	blockInject                     // 注入节点（D166）：暗卡片 + 来源/触发头部，正文可选
 	blockCommand                    // 命令折叠条（D265）：连续命令合成一条，默认只留一行
 	blockTurn                       // Turn 过程摘要（D326）：本轮思考+工具折成一行，点击展开铺回
+	blockConfirm                    // 权限确认折叠条（D329）：连续确认合成一条，收起只报数与成败
 )
 
 // block 一段定稿转写（text 已剥控制序列，§9）。
@@ -59,6 +60,9 @@ type block struct {
 	// turn 仅摘要块使用（D326）：被折叠的本轮思考/chip 子块视图（m.blocks 不动，
 	// 摘要只在渲染分组层产出，展开态按原样铺回）。
 	turn *turnView
+	// confirms 权限确认折叠条的条目：没有 chip 承载的确认（脚本内并行调用、命令确认）
+	// 逐条进这里，收起态只报数与成败——每次确认各占一行会把正文顶出去。
+	confirms []confirmEntry
 }
 
 // toolChip 一次工具调用的合并视图（D67/§15.3）：调用 + 权限确认 + 结果同组，
@@ -93,9 +97,11 @@ type pendingConfirm struct {
 	// line 转写里的一行问句（无 chip 承载时显示）：首行 + 折叠空白 + 限长，
 	// 完整问句仍在 prompt（跨窗弹窗与应答回显用）。
 	line string
-	// bi 这一行问句所占的块序（-1 = 没有落行或已被清屏）：应答时就地改写这一块，
-	// 不再追加一行——问句与「→ 允许」各占一行等于同一次确认在转写里出现两遍。
+	// bi/ci 这一行问句所在折叠条的块序与条内序号（bi < 0 = 没有落行或已被清屏）：
+	// 应答时就地改写这一项，不再追加——问句与「→ 允许」各占一行等于同一次确认在
+	// 转写里出现两遍。
 	bi int
+	ci int
 }
 
 // model 渲染状态机：事件面规则对齐 uitui/model.go（§15.5）——
@@ -354,9 +360,10 @@ func (m *model) clear() {
 	// D182：思考块折叠态按块序缓存（块只增不减），清屏后块序从 0 重排——一并复位，
 	// 新会话的思考块回到默认折叠，不继承上一会话某个序位的开合。
 	m.u.thinkOpen = nil
-	m.u.cmdOpen = nil    // D265 同一套规则：命令条的开合也不跨清屏继承
-	m.u.injectOpen = nil // 注入块的折叠态同一套规则
-	m.u.turnOpen = nil   // D326：Turn 过程摘要的开合同规则
+	m.u.cmdOpen = nil     // D265 同一套规则：命令条的开合也不跨清屏继承
+	m.u.confirmOpen = nil // 权限确认条同规则：新会话不继承上一会话某条的开合
+	m.u.injectOpen = nil  // 注入块的折叠态同一套规则
+	m.u.turnOpen = nil    // D326：Turn 过程摘要的开合同规则
 	m.u.turnClicks = m.u.turnClicks[:0]
 	m.u.turnAnchors = nil
 	// pendingCmd **不清**（D265）：清屏正发生在 /switch、/regen 这类命令中途，
