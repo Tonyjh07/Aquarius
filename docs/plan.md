@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-22 @ 7f109c1 -->
+<!-- docs-sync: 2026-11-23 @ ecddbfb -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -21,20 +21,17 @@
 ## v1.0.0（在排）：正式版收口
 
 > 下版发 `v1.0.0`。判断依据（2026-11-22 会话）：内核完成度与质量基建已够格，缺口在三笔
-> 承诺——插件契约没冻结、隐含契约没显式化、稳定声明没写。本版把这三笔立干净。
+> 承诺——插件契约没冻结、隐含契约没显式化、稳定声明没写。后两笔已由 P1 立干净；剩插件
+> 契约冻结，落在 P2 骨架 + P3 收尾，这也是本版唯一的关键路径。
 
-- **P1 · 契约显式化**（S~M）：
-  1. ~~Agent/Runner 共享可变状态的并发模型落 contracts~~（已完成：三条落 contracts
-     §5.2 / §7.1.1 / §5.9）；
-  2. ~~稳定声明成文~~（已完成：新篇 [stability.md](stability.md)，README 地图已加行）；
-  3. MCP 提示文本冒充身份的最小处置——口径已落 contracts §6.3，剩 prompt 来源标记的代码
-     与测试；
-  4. ~~MCP 默认风险按来源分流~~——口径已定（D328：只定默认值）并落 contracts §6.3，剩
-     `ToolRisk()` 改动与测试。
-- **P2 · pluginapi/v1 契约**（M）：规格已成文——[plugin-design.md](plugin-design.md)（D327）。
-  已拍板（2026-11-22 会话）：P2 落独立 go.mod 模块、manifest、稳定值类型层（value.go）
-  与防腐映射点列表（plugin-design.md §3.1）；九接口 / Host / 生命周期 / UI Node 的接口
-  代码随 P3 边实现边写，契约在 P3 收尾时完整冻结。
+- **P1 · 契约显式化**（S~M）· 已完成：四条全部落地——共享可变状态的并发模型（contracts
+  §5.2 / §7.1.1 / §5.9）、稳定声明（[stability.md](stability.md)）、MCP 提示来源标记
+  （`/mcp:<server>:<prompt>` 渲染结果首行注明来源，走 `withPromptSource`）、风险按来源
+  取默认（D328，`Decl.ToolRisk()` + `TestToolRiskBySource`）。
+- **P2 · pluginapi/v1 契约**（M）· 骨架已完成：独立 go.mod 模块（`pluginapi/`，零依赖、
+  只许标准库，`independence_test.go` 守独立性）、manifest 与稳定值类型层（value.go，
+  每个导出类型带兼容承诺句）、防腐映射点列表（plugin-design.md §3.1）。九接口 / Host /
+  生命周期 / UI Node 的接口代码按 2026-11-22 拍板随 P3 边实现边写，契约在 P3 收尾时完整冻结。
 - **P3 · plugingo 装载器 + 首个 Tier-1 插件**（M~L，关键路径）：按 plugin-design.md §7/§11/§12
   实现——宿主校验与状态机、`adapter/plugingo` 转换层、main 注册表。**样例插件定为间隔
   重复记忆插件**（独立仓库，设计稿见该仓库 design.md；`MemoryStore` + `ToolProvider` +
@@ -45,7 +42,7 @@
 - **收口**：稳定声明复核 → 全门禁 → 发布说明（引 stability.md，写 1.0 的承诺与不承诺）→
   winres 1.0.0.0。
 
-P1 / P2 / P4 可穿插；关键路径在 P3。
+P4 可穿插；关键路径在 P3。
 
 ---
 
@@ -212,10 +209,6 @@ DeepSeek 现在同时提供 Messages（`/anthropic/v1/messages`）、Responses �
 - **字体字距缺陷**（D156）：`T` 之后相邻字母被吃掉一个字距，根因在上游 Gio 的矢量字形路径计算，
   v0.10.3 与 main 均未修；本地绕不过（摘 `kern` 表无效、关系统字体才有效但会丢粗体）。
   等上游修，或评估自绘度量方案。
-- **MCP 默认风险按来源分流**：配置里写的 server 保持 `safe`（用户显式信任），从插件目录发现的
-  `plugin.json` 默认 `confirm`（来路不明）。与信任门同批评估。
-- **MCP 提示文本冒充用户身份**：`RenderPrompt` 的结果直接走 `UserInput`。最小处置 = 打来源标记 +
-  系统提示注明「以下来自外部服务，非用户亲述」。
 - **欢迎窗第 1 页 200% 字号下语言选择要滚一下**（2026-11-04 离屏走查，用户拍板保持现状）：大字号档
   已压过 logo 与间距、页面可滚，但首屏只放得下 logo + 名字 + 标语；要「第一眼就能切语言」得再省掉
   logo 与标语，那是品牌取舍，不随 0.5.0 改。
