@@ -128,10 +128,25 @@ func (m *model) submit(text string) {
 		return
 	}
 	if m.confirm != nil {
+		// 确认态下的命令不是应答（D330）：照常投递，等待期间由 Confirm 转存进 deferred，
+		// 本轮结束后执行。原先一律按 y/N 判，`/permission full-access` 会被当成拒绝
+		// 送回 runner——用户看着调了档，模型拿到的是「用户拒绝」，这次调用白挨一次。
+		if line := strings.TrimSpace(text); strings.HasPrefix(line, "/") {
+			if m.hotCommand(line) {
+				return
+			}
+			m.dispatchLine(line)
+			return
+		}
 		m.replyConfirm(port.ConfirmAnswer{Allow: isYes(text)})
 		return
 	}
 	line := strings.TrimSpace(text)
+	// 运行中改档不必等本轮结束（D331）：命令通道只在轮次边界被主循环取用，
+	// 而改权限档改的是工具判定读的活值——晚一步就是「调了档也不管用」。
+	if m.u.generating.Load() && m.hotCommand(line) {
+		return
+	}
 	// D186 暂存随文发：有暂存附件 → Raw 提交（文本可空 = 仅附件，暂存清空）；编辑态不
 	// 走这条（D188：编辑态的新增附件要随 /edit 走 Command.Attachments）。
 	if m.editTarget == "" && len(m.stagedFiles) > 0 {
@@ -193,6 +208,34 @@ func (m *model) submit(text string) {
 		}
 		return
 	}
+	m.dispatchLine(line)
+}
+
+// hotCommand 运行中可旁路的命令（D331）：眼下只有改权限档。返回 true = 已就地执行。
+//
+// 判据是「这条命令改的是执行链上的活值」：`/permission` 写回的就是工具判定读的那一个
+// 档位，等到本轮结束再改，本轮剩下的调用全按旧档判。其余命令（/new、/export 等）
+// 与树、磁盘、其他装配面纠缠，照旧排队，本轮结束后执行。
+func (m *model) hotCommand(line string) bool {
+	in := parseInput(line)
+	if in.Command == nil || in.Command.Name != uiCmdPermission || len(in.Command.Args) != 1 {
+		return false
+	}
+	if m.u.opts.Perms == nil {
+		return false // 未接热路径：仍走命令通道（轮末生效）
+	}
+	m.addCommand(line) // 回显与正常命令同一处（命令折叠条）
+	txt, err := m.u.opts.Perms.SetLevel(in.Command.Args[0])
+	if err != nil {
+		m.addErr(err.Error())
+		return true
+	}
+	m.attachCommandOut(txt)
+	return true
+}
+
+// dispatchLine 投递一行输入并回显（缓冲满时标注未执行）。
+func (m *model) dispatchLine(line string) {
 	select {
 	case m.u.inCh <- parseInput(line):
 		m.echoInput(line)

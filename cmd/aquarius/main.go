@@ -30,7 +30,6 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolrun"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uicommon"
 	"github.com/Tonyjh07/Aquarius/internal/app"
-	"github.com/Tonyjh07/Aquarius/internal/domain/perm"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/inhistory"
 	"github.com/Tonyjh07/Aquarius/internal/logging"
@@ -242,8 +241,7 @@ type wiring struct {
 	cfgPath     string
 	cfg         *fileConfig
 	primary     *providerConfig
-	level       perm.Level
-	lvl         *levelHolder
+	lvl         *levelHolder // 权限档活值（唯一事实源，D331）
 	policy      *policyHolder
 	unattended  *unattendedHolder
 	persist     *cfgWriter
@@ -554,7 +552,7 @@ func (w *wiring) sessionDeps(agent *app.Agent, ids port.IDGen, sessPersona *app.
 		IDs:              ids,
 		Clock:            systemClock{},
 		Persona:          sessPersona,
-		Level:            w.level,
+		Level:            w.lvl.Get, // D331：直接读活等级，改档后 /permission 报告立刻跟着变
 		SandboxPath:      w.sandboxDir,
 		Perms:            permSettings{w: w},
 		Confirmer:        confirmer,

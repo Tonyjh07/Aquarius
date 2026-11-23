@@ -24,16 +24,17 @@ var enSessionTexts = map[string]string{
 		"for instance) and plugin grants still ask. The opposite of -yes, which approves everything.",
 
 	// /permission
-	"usage.permission":              "Usage: /permission [read-only|strict|permissive|full-access]",
-	"session.permission.already":    "Permission level is already {level}",
-	"session.permission.switched":   "Permission level switched to {level} (written back to config; takes effect immediately for tool calls)",
-	"session.permission.head":       "Current permission level: {level} (strict by default)",
-	"session.permission.sandbox":    "Privileged directory: {path}",
-	"session.permission.matrix":     "Pre-approved matrix (anything outside it is confirmed case by case):",
-	"session.permission.privileged": "privileged",
-	"session.permission.other":      "other",
-	"session.permission.tools_ask":  "tools: confirm each time",
-	"session.permission.tools_free": "tools: all pre-approved",
+	"usage.permission":                    "Usage: /permission [read-only|strict|permissive|full-access]",
+	"session.permission.already":          "Permission level is already {level}",
+	"session.permission.switched":         "Permission level switched to {level} (written back to config; takes effect immediately for tool calls)",
+	"session.permission.switched_unsaved": "Permission level switched to {level} (tool calls take effect immediately, but writing the config failed: {err} — it reverts after a restart)",
+	"session.permission.head":             "Current permission level: {level} (strict by default)",
+	"session.permission.sandbox":          "Privileged directory: {path}",
+	"session.permission.matrix":           "Pre-approved matrix (anything outside it is confirmed case by case):",
+	"session.permission.privileged":       "privileged",
+	"session.permission.other":            "other",
+	"session.permission.tools_ask":        "tools: confirm each time",
+	"session.permission.tools_free":       "tools: all pre-approved",
 
 	// /memory
 	"usage.memory":          "Usage: /memory [conversation id prefix] (the global memory file by default)",

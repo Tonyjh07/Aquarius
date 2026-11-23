@@ -28,16 +28,17 @@ var zhSessionTexts = map[string]string{
 		"你自己输入的命令（删除会话等）与插件授权照常询问。与 -yes 相反——那个是自动放行。",
 
 	// /permission
-	"usage.permission":              "用法: /permission [read-only|strict|permissive|full-access]",
-	"session.permission.already":    "权限等级已是 {level}",
-	"session.permission.switched":   "权限等级已切换为 {level}（已写回 config；工具调用立即生效）",
-	"session.permission.head":       "当前权限等级: {level}（默认 strict）",
-	"session.permission.sandbox":    "特权目录: {path}",
-	"session.permission.matrix":     "免确认矩阵（矩阵之外的操作一律逐次确认）:",
-	"session.permission.privileged": "特权",
-	"session.permission.other":      "其他",
-	"session.permission.tools_ask":  "工具 Confirm 逐次",
-	"session.permission.tools_free": "工具全免确认",
+	"usage.permission":                    "用法: /permission [read-only|strict|permissive|full-access]",
+	"session.permission.already":          "权限等级已是 {level}",
+	"session.permission.switched":         "权限等级已切换为 {level}（已写回 config；工具调用立即生效）",
+	"session.permission.switched_unsaved": "权限等级已切换为 {level}（工具调用立即生效，但写回 config 失败：{err}——重启后回到原档）",
+	"session.permission.head":             "当前权限等级: {level}（默认 strict）",
+	"session.permission.sandbox":          "特权目录: {path}",
+	"session.permission.matrix":           "免确认矩阵（矩阵之外的操作一律逐次确认）:",
+	"session.permission.privileged":       "特权",
+	"session.permission.other":            "其他",
+	"session.permission.tools_ask":        "工具 Confirm 逐次",
+	"session.permission.tools_free":       "工具全免确认",
 
 	// /memory
 	"usage.memory":          "用法: /memory [会话 ID 前缀]（缺省打开全局记忆文件）",

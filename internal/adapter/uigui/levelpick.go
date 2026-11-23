@@ -34,6 +34,18 @@ const (
 	levelFootGap unit.Dp = 4
 )
 
+// LevelSwitcher 权限档热切换的消费方定义（装配根实现，D331）。
+//
+// 界面只报「用户选了哪一档」，写回 config 与切运行态都在装配根：那两件事都要落在同一个
+// 地方（配置面与工具判定读的是同一个活值），界面两处各写一遍迟早不一致。
+//
+// 走这条而不投 `/permission` 的原因：命令只在轮次边界被主循环取用。运行中要权限时改档，
+// 等的是本轮结束——这期间每次工具调用仍按旧档判，用户看到的正是「调了档也不管用」。
+type LevelSwitcher interface {
+	// SetLevel 切换权限档并返回回执文案；error 非空 = 没切成（档名解析不出、未接线）。
+	SetLevel(level string) (string, error)
+}
+
 // levelPickOpen 档位列表是否展开：随确认态存在，随应答/换问句收起。
 func (u *UI) levelPickable() bool {
 	return u.m.confirm != nil && u.m.confirm.req.Origin == port.OriginTool
@@ -146,10 +158,19 @@ func (u *UI) currentPermLevel() string {
 	return u.opts.Status().Level
 }
 
-// pickLevel 选了一档（D282）：先投 /permission（永久改档，托盘/设置同一条路径），
-// 再把选中的档报给 runner——放不放行由 runner 按新档重判，界面不做安全判定。
+// pickLevel 选了一档（D282）：改档后再把选中的档报给 runner——放不放行由 runner 按新档
+// 重判，界面不做安全判定。
+//
+// 改档走热路径（D331）：先切运行态再写回 config，本次与后续调用都按新档判。投
+// `/permission` 会排在命令通道里等本轮结束，那时这条调用的确认早就答过（或已经卡死）。
 func (u *UI) pickLevel(lv string) {
 	u.levelPickOpen = false
-	u.m.submitCommand(commandLine(uiCmdPermission, lv))
+	if u.opts.Perms != nil {
+		if _, err := u.opts.Perms.SetLevel(lv); err != nil {
+			u.m.addErr(err.Error())
+		}
+	} else {
+		u.m.submitCommand(commandLine(uiCmdPermission, lv)) // 未接热路径：照旧走命令通道
+	}
 	u.m.replyConfirm(port.ConfirmAnswer{Level: lv})
 }

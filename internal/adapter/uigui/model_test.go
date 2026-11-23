@@ -198,6 +198,93 @@ func TestConfirmQueueKeepsBothAnswers(t *testing.T) {
 	}
 }
 
+// fakeLevelSwitcher 权限档热路径替身（D331）：只记下被要求切到哪一档。
+type fakeLevelSwitcher struct {
+	levels []string
+	err    error
+}
+
+func (f *fakeLevelSwitcher) SetLevel(level string) (string, error) {
+	if f.err != nil {
+		return "", f.err
+	}
+	f.levels = append(f.levels, level)
+	return "switched to " + level, nil
+}
+
+// TestSubmitPermissionDuringTurnGoesHot 运行中的改档走热路径（D331）：投命令会排在通道里
+// 等本轮结束，那时按旧档判定的调用早就答完或被拒了。确认态下同样走热路径，且不当应答。
+func TestSubmitPermissionDuringTurnGoesHot(t *testing.T) {
+	t.Parallel()
+	m, u := newTestModel(t)
+	sw := &fakeLevelSwitcher{}
+	u.opts.Perms = sw
+	u.generating.Store(true)
+
+	m.submit("/permission full-access")
+	if len(sw.levels) != 1 || sw.levels[0] != "full-access" {
+		t.Fatalf("热路径调用 = %v, want [full-access]", sw.levels)
+	}
+	select {
+	case in := <-u.inCh:
+		t.Fatalf("热路径不该再投命令通道: %+v", in)
+	default:
+	}
+
+	// 确认态：改档既不答掉确认，也不进命令通道。
+	reply := make(chan port.ConfirmAnswer, 1)
+	m.startConfirm(port.ConfirmRequest{Tool: "term_exec", Prompt: "run?"}, reply)
+	m.submit("/permission strict")
+	if len(sw.levels) != 2 || sw.levels[1] != "strict" {
+		t.Fatalf("确认态热路径调用 = %v", sw.levels)
+	}
+	if m.confirm == nil {
+		t.Fatal("改档不是应答，确认态应留着")
+	}
+	select {
+	case in := <-u.inCh:
+		t.Fatalf("确认态热路径同样不该投命令通道: %+v", in)
+	default:
+	}
+}
+
+// TestSubmitCommandDuringConfirmIsNotAnswer 确认态下键入的斜杠命令不是应答（D330）：
+// 原先把任何一行都按 y/N 判，`/permission full-access` 会变成「拒绝」送回 runner，
+// 用户以为调了档，模型收到的是拒绝，命令也没投递出去。
+func TestSubmitCommandDuringConfirmIsNotAnswer(t *testing.T) {
+	t.Parallel()
+	m, u := newTestModel(t)
+	reply := make(chan port.ConfirmAnswer, 1)
+	m.startConfirm(port.ConfirmRequest{Tool: "term_exec", Prompt: "run?"}, reply)
+
+	m.submit("/permission full-access")
+	if m.confirm == nil {
+		t.Fatal("命令不该关掉确认态")
+	}
+	select {
+	case ans := <-reply:
+		t.Fatalf("命令被当成应答: %+v", ans)
+	default:
+	}
+	select {
+	case in := <-u.inCh:
+		if in.Command == nil || in.Command.Name != "permission" {
+			t.Fatalf("投递的输入 = %+v, want /permission 命令", in)
+		}
+	default:
+		t.Fatal("确认态下的命令应照常投递（等待期间由 Confirm 转存）")
+	}
+
+	// 纯文本仍按应答处理（y/N 语义不变）。
+	m.submit("y")
+	if m.confirm != nil {
+		t.Fatal("y 应答后确认态应收尾")
+	}
+	if ans := <-reply; !ans.Allow {
+		t.Fatalf("y 应答 = %+v, want 允许", ans)
+	}
+}
+
 // TestConfirmQueueLineIsOneLine 无 chip 承载的问句（脚本内并行调用）只留一行：
 // 整段参数铺进转写会把正文顶出去。完整问句仍在 pendingConfirm.prompt。
 func TestConfirmQueueLineIsOneLine(t *testing.T) {

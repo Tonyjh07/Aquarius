@@ -188,6 +188,47 @@ func TestConfirmDrainsQueuedAnswer(t *testing.T) {
 	}
 }
 
+// TestConfirmDoesNotEatCommands 确认等待期间从输入通道取到的命令不是应答（D330）：
+// 既不能当成「拒绝」送回 runner，也不能丢——转存后由 Next 交回主循环，顺序不乱。
+func TestConfirmDoesNotEatCommands(t *testing.T) {
+	t.Parallel()
+	u := newHeadless(t, Options{})
+	ctx, cancel := ctx5(t)
+	defer cancel()
+
+	type result struct {
+		ans port.ConfirmAnswer
+		err error
+	}
+	resCh := make(chan result, 1)
+	go func() {
+		ans, err := u.Confirm(ctx, port.ConfirmRequest{Prompt: "允许执行？"})
+		resCh <- result{ans, err}
+	}()
+	time.Sleep(100 * time.Millisecond) // 等 Confirm 进入等待（与 TestConfirmFromModelReply 同法）
+	drainSync(t, u)
+
+	u.inCh <- port.UserInput{Command: &port.Command{Name: "permission", Args: []string{"full-access"}}}
+	time.Sleep(50 * time.Millisecond) // 给 Confirm 取走这一行的机会
+	select {
+	case r := <-resCh:
+		t.Fatalf("命令被当成应答: %+v, %v", r.ans, r.err)
+	default:
+	}
+
+	u.post(confirmResultMsg{ans: port.ConfirmAnswer{Allow: true}})
+	drainSync(t, u)
+	r := <-resCh
+	if r.err != nil || !r.ans.Allow {
+		t.Fatalf("confirm = %v, %v, want (true, nil)", r.ans, r.err)
+	}
+
+	in, err := u.Next(ctx)
+	if err != nil || in.Command == nil || in.Command.Name != "permission" {
+		t.Fatalf("next = %+v, %v, want 被挡下的 /permission", in, err)
+	}
+}
+
 // TestConfirmFromModelReply 模型侧应答（输入栏允许/拒绝按钮 → replyConfirm 经
 // 事件循环应用）是 Confirm 的主路径。
 func TestConfirmFromModelReply(t *testing.T) {

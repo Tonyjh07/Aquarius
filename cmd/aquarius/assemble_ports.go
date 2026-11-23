@@ -37,6 +37,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolbuiltin"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolrun"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/ttsdeepseek"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/vadsilero"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/vitstts"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/zhconv"
@@ -896,6 +897,25 @@ func (p permSettings) Unattended() bool { return p.w.unattended != nil && p.w.un
 func (p permSettings) PersistUnattended(on bool) error { return p.w.persist.persistUnattended(on) }
 
 func (p permSettings) PersistLevel(level perm.Level) error { return p.w.persist.persistLevel(level) }
+
+var _ uigui.LevelSwitcher = permSettings{}
+
+// SetLevel 界面侧的改档热路径（D331）：确认卡选档与运行中的菜单改档直接调这里。
+// 走的是与 `/permission` 同一条写回（先切活等级再落盘），区别只在不经命令通道——
+// 命令要等主循环回到取用边界才执行，而运行中改档等的就是这一次。
+func (p permSettings) SetLevel(level string) (string, error) {
+	lv, err := perm.Parse(level)
+	if err != nil {
+		return "", err
+	}
+	if lv == p.w.lvl.Get() {
+		return i18n.Tf("session.permission.already", "level", lv), nil
+	}
+	if err := p.w.persist.persistLevel(lv); err != nil {
+		return i18n.Tf("session.permission.switched_unsaved", "level", lv, "err", err.Error()), nil
+	}
+	return i18n.Tf("session.permission.switched", "level", lv), nil
+}
 
 // thinkSettings 实现 app.ThinkingSettings（`/think` 与 `/effort` 的写回）。
 type thinkSettings struct{ w *wiring }

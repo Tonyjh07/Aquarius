@@ -73,6 +73,9 @@ type Status struct {
 
 // Options 装配选项（装配根注入）。
 type Options struct {
+	// Perms 权限档热切换（D331）：确认卡选档与菜单改档直接走这里，不等命令通道
+	// （主循环在轮内不读输入，投 /permission 要等本轮结束才执行）。nil = 走命令通道。
+	Perms LevelSwitcher
 	// Status 状态栏数据源；nil = 底栏只显示"思考中/生成中"。
 	Status func() Status
 	// Log 运行日志出口（D288）：托盘、快捷键、图标、首帧上屏这些界面外的诊断走这里，
@@ -245,13 +248,18 @@ type UI struct {
 	zoom atomic.Value
 
 	// 桥接通道（装配根 goroutine ↔ 事件循环 goroutine）。
-	inbox   chan uiMsg
-	inCh    chan port.UserInput
-	wakeCh  chan struct{} // 空闲唤醒（D167）：容量 1，多次后台完成合并成一次
-	eofCh   chan struct{} // 关闭 = 输入流结束（广播：Next/Confirm 同时唤醒，天然粘滞）
-	eofOnce sync.Once
-	eofErr  error         // 写于 close 之前；close 提供 happens-before，读者安全
-	done    chan struct{} // 事件循环退出（close）
+	inbox chan uiMsg
+	inCh  chan port.UserInput
+	// deferred 确认等待期间从输入通道取到、但不是应答的输入（命令、附件、唤醒）。
+	// 确认态只吃 y/N，命令不能当拒绝也不能丢：先存这里，Next 取输入时优先取出
+	// （顺序与入队一致），本轮结束后照常执行。
+	deferredMu sync.Mutex
+	deferred   []port.UserInput
+	wakeCh     chan struct{} // 空闲唤醒（D167）：容量 1，多次后台完成合并成一次
+	eofCh      chan struct{} // 关闭 = 输入流结束（广播：Next/Confirm 同时唤醒，天然粘滞）
+	eofOnce    sync.Once
+	eofErr     error         // 写于 close 之前；close 提供 happens-before，读者安全
+	done       chan struct{} // 事件循环退出（close）
 
 	interrupt  atomic.Pointer[func()]
 	generating atomic.Bool // 生成中（SetInterrupt 非空 = 一轮 Turn 进行中；驱动停止键）

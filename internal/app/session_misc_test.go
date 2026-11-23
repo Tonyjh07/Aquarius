@@ -164,6 +164,7 @@ func TestSessionPermissionCommand(t *testing.T) {
 		Clock:       fixedClock{testTime},
 		SandboxPath: "/data/sandbox",
 		Perms:       perms,
+		Level:       perms.Level,
 	})
 	if err != nil {
 		t.Fatalf("new session: %v", err)

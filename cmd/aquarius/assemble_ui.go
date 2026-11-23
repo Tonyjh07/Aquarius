@@ -200,6 +200,7 @@ func (w *wiring) newUI(stdin io.Reader, stdout io.Writer) {
 			WindowHeight:        w.cfg.UI.WindowHeight,
 			Welcome:             &welcomeManager{cfgPath: w.cfgPath, secrets: w.secrets, bin: w.secretsBin, stderr: w.stderr, hotkey: w.cfg.UI.Hotkey, onStore: func() { w.secretsRev.Add(1) }}, // D141：欢迎 / 首次运行引导数据面（S9-6b/D163：明文写进密钥库后递增快照 Revision）
 			Tools:               &toolsAdmin{w: w},                                                                                                                                              // S6/D143：工具与 MCP 管理面（host/runner 由 wiring 后绑定，开窗时已就绪）
+			Perms:               permSettings{w: w},                                                                                                                                             // D331：权限档热切换（确认卡选档 / 运行中菜单改档不等轮末）
 			Secrets:             &secretsAdmin{w: w},                                                                                                                                            // S9-6b/D161：密钥库管理面（secretsBin 由 bootstrap 填，开窗时已就绪）
 			Delegates:           &delegateAdmin{w: w},                                                                                                                                           // D270：外部代理管理面（显示配置事实 + 现探 PATH，改动重启生效）
 			Skills:              &skillsAdmin{w: w},                                                                                                                                             // D202/D203：技能管理面（清单来自 skillfs.Catalog，安装走 skillfs.Installer）

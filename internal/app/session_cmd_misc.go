@@ -90,16 +90,17 @@ func (s *Session) execPermission(ctx context.Context, cmd port.Command) (string,
 	if err != nil {
 		return "", err
 	}
-	if level == s.level {
+	if level == s.levelNow() {
 		return i18n.Tf("session.permission.already", "level", level), nil
 	}
 	if s.perms == nil {
 		return "", errors.New("session: " + i18n.T("err.permissions_unwired"))
 	}
+	// D331：运行态先切（本行之后工具判定即按新档），写盘失败只影响下次启动——
+	// 说清这一点，而不是报一句「写回失败」让用户以为档位没变。
 	if err := s.perms.PersistLevel(level); err != nil {
-		return "", wrapSession("err.write_config", err)
+		return i18n.Tf("session.permission.switched_unsaved", "level", level, "err", err.Error()), nil
 	}
-	s.level = level
 	return i18n.Tf("session.permission.switched", "level", level), nil
 }
 
@@ -366,7 +367,7 @@ func (s *Session) execMic(ctx context.Context, cmd port.Command) (string, error)
 // permissionReport /permission 无参输出：当前等级 + 全档免确认矩阵（由 perm 判定推导，单一事实源）+ 特权目录。
 func (s *Session) permissionReport() string {
 	var b strings.Builder
-	b.WriteString(i18n.Tf("session.permission.head", "level", s.level))
+	b.WriteString(i18n.Tf("session.permission.head", "level", s.levelNow()))
 	b.WriteByte('\n')
 	b.WriteString(i18n.Tf("session.permission.sandbox", "path", s.sandboxPath))
 	b.WriteByte('\n')
@@ -374,7 +375,7 @@ func (s *Session) permissionReport() string {
 	b.WriteByte('\n')
 	for _, l := range perm.Levels {
 		mark := "  "
-		if l == s.level {
+		if l == s.levelNow() {
 			mark = "* "
 		}
 		sandbox, other, free := l.Matrix()

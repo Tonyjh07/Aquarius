@@ -250,9 +250,8 @@ func (w *wiring) bootstrap(dataDir, profileFlag, modelName, baseURL string) erro
 			return err
 		}
 	}
-	w.level = level
-
-	// 权限等级活状态（D22 执行接入）：persistLevel 写回成功后同步，ToolRunner 经 func 读取。
+	// 权限等级活状态（D22 执行接入）：persistLevel 先切这里再落盘（D331），ToolRunner 与
+	// 命令面报告都经 func 读这一处——不再另存一份，免得改档后两处不一致。
 	// atomic 存取（审查修复）：TUI 状态行在事件循环 goroutine 读、/permission 在主
 	// goroutine 写——D33 之后"单 goroutine"前提不再成立。
 	w.lvl = newLevelHolder(level)

@@ -127,8 +127,13 @@ func (u *UI) Wake() {
 // io.EOF = 用户关窗（DestroyEvent）/ 输入流结束；扫描错误原样上抛；ctx 取消原样上抛。
 // 广播到达时先取尽排队输入（eofMsg 经 inbox 排队，先于 eofMsg 的提交必已入队），
 // 取空才返回 EOF——任何 select 次序下都不丢输入、也不吞 EOF（uitui 审查修复同款）。
+//
+// 先取 deferred（确认等待期间被挡下的命令）：那是更早的输入，先取才不越过它。
 func (u *UI) Next(ctx context.Context) (port.UserInput, error) {
 	for {
+		if in, ok := u.takeDeferred(); ok {
+			return in, nil
+		}
 		select {
 		case in := <-u.inCh:
 			return in, nil
@@ -155,10 +160,42 @@ func (u *UI) Next(ctx context.Context) (port.UserInput, error) {
 	}
 }
 
+// deferInput 存下一条「不是应答」的输入（确认等待期间从通道取到的命令等）。
+func (u *UI) deferInput(in port.UserInput) {
+	u.deferredMu.Lock()
+	u.deferred = append(u.deferred, in)
+	u.deferredMu.Unlock()
+}
+
+// takeDeferred 取一条先前存下的输入（先进先出）。
+func (u *UI) takeDeferred() (port.UserInput, bool) {
+	u.deferredMu.Lock()
+	defer u.deferredMu.Unlock()
+	if len(u.deferred) == 0 {
+		return port.UserInput{}, false
+	}
+	in := u.deferred[0]
+	u.deferred = u.deferred[1:]
+	if len(u.deferred) == 0 {
+		u.deferred = nil
+	}
+	return in, true
+}
+
+// isAnswerInput 这条输入算不算确认应答：只有纯文本（y/N）算。命令、附件、唤醒都
+// 不是用户在对权限表态，一律转存——把它们当 `isYes("")` 判成拒绝，既让调用白挨一次
+// 拒绝，也把那条命令吞掉（D330）。
+func (u *UI) isAnswerInput(in port.UserInput) bool {
+	return in.Command == nil && in.Raw == nil && !in.Wake
+}
+
 // Confirm 逐次确认：状态机记提示行、输入栏切确认态（§15.2 非模态按钮组）；
 // 应答三路，优先级：模型侧已应答（reply）→ 排队输入 → 输入流结束（拒，
 // 对齐 repl"不替用户做破坏性决定"）。取排队输入或走 EOF 时同步发 confirmResultMsg
 // 关闭模型侧确认态，避免残留（uitui 审查修复同款结构）。
+//
+// 排队输入只在是纯文本时算应答：命令与附件转存进 deferred（D330），本轮结束后
+// 由 Next 交回主循环——把它当 `isYes("")` 判成拒绝，等于凭空调一次拒绝并吞掉那条命令。
 func (u *UI) Confirm(ctx context.Context, req port.ConfirmRequest) (port.ConfirmAnswer, error) {
 	if err := ctx.Err(); err != nil {
 		return port.ConfirmAnswer{}, err
@@ -174,6 +211,10 @@ func (u *UI) Confirm(ctx context.Context, req port.ConfirmRequest) (port.Confirm
 		select { // 排队输入优先于 EOF：eofCh 一旦关闭恒就绪，与 inCh 同时就绪时
 		// select 随机选中会把 y 误拒——必须先非阻塞取（与 Next 同款结构）。
 		case in := <-u.inCh:
+			if !u.isAnswerInput(in) {
+				u.deferInput(in) // 命令/附件/唤醒不是表态：转存，本轮结束后执行
+				continue
+			}
 			ans := port.ConfirmAnswer{Allow: isYes(in.Text)}
 			u.post(confirmResultMsg{ans: ans})
 			return ans, nil
@@ -183,6 +224,10 @@ func (u *UI) Confirm(ctx context.Context, req port.ConfirmRequest) (port.Confirm
 		case ans := <-reply:
 			return ans, nil
 		case in := <-u.inCh:
+			if !u.isAnswerInput(in) {
+				u.deferInput(in)
+				continue
+			}
 			ans := port.ConfirmAnswer{Allow: isYes(in.Text)}
 			u.post(confirmResultMsg{ans: ans})
 			return ans, nil

@@ -163,8 +163,9 @@ type SessionDeps struct {
 	// Persona 人格组合器（D144/S7）：新建会话时展开为最终 system 文本快照进 persona 首节点
 	// （@env.date 取展开时刻 ⇒ 创建当天）。nil = 空规格默认人格。
 	Persona *PersonaComposer
-	// Level 权限等级（D22）；空 = perm.DefaultLevel。
-	Level perm.Level
+	// Level 权限档读侧（D22/D331）：装配根持有活值，改档后无需回写 Session 副本——
+	// 单一份事实源也免掉「界面 goroutine 写、主循环读」的竞争。nil = perm.DefaultLevel。
+	Level func() perm.Level
 	// SandboxPath 特权目录（<dataDir>/sandbox），仅用于 /permission 展示。
 	SandboxPath string
 	// Perms 权限面写回（/permission 与 /unattended，D22/D185）；nil 时有参切换报错。
@@ -266,7 +267,7 @@ type Session struct {
 	ids              port.IDGen
 	clock            port.Clock
 	persona          *PersonaComposer
-	level            perm.Level
+	levelFn          func() perm.Level
 	sandboxPath      string
 	perms            PermissionSettings
 	confirmer        port.Confirmer
@@ -375,9 +376,8 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 	case d.Clock == nil:
 		return nil, errors.New("session: " + i18n.T("session.deps.clock_missing"))
 	}
-	level := d.Level
-	if level == "" {
-		level = perm.DefaultLevel
+	if d.Level == nil { // 未注入读侧：按缺省档（测试与最小装配）
+		d.Level = func() perm.Level { return perm.DefaultLevel }
 	}
 	persona := d.Persona
 	if persona == nil { // nil = 空规格默认人格（内置 @default + @env）
@@ -389,7 +389,7 @@ func NewSession(ctx context.Context, d SessionDeps) (*Session, error) {
 		ids:              d.IDs,
 		clock:            d.Clock,
 		persona:          persona,
-		level:            level,
+		levelFn:          d.Level,
 		sandboxPath:      d.SandboxPath,
 		perms:            d.Perms,
 		confirmer:        d.Confirmer,
@@ -721,6 +721,17 @@ func (s *Session) cancelWatchersFor(id conversation.ID) {
 	if s.watchCancel != nil {
 		s.watchCancel.CancelSession(id)
 	}
+}
+
+// levelNow 当前权限档（读装配根持有的活值，D331）。
+func (s *Session) levelNow() perm.Level {
+	if s.levelFn == nil {
+		return perm.DefaultLevel
+	}
+	if lv := s.levelFn(); lv != "" {
+		return lv
+	}
+	return perm.DefaultLevel
 }
 
 // execCommand 命令分发（§7.3）：静态注册表 → 动态命令 → 未知。

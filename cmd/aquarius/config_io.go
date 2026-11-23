@@ -397,20 +397,21 @@ type cfgWriter struct {
 	unattended *unattendedHolder
 }
 
-// persistLevel 实现 /permission 写回 config（D22）：成功后同步活等级。
+// persistLevel 实现 /permission 写回 config（D22）：运行态**先**切，再写盘（D331）。
+//
+// 顺序反过来的话，运行中改档要等写盘回来才生效——而写盘在轮内可能根本轮不到
+// （命令通道只在轮次边界被读）。写完失败也只影响下次启动的缺省档，本进程已按新档
+// 判定；调用方据返回值把这一点说清楚。
 func (c *cfgWriter) persistLevel(l perm.Level) error {
-	if err := persistConfig(c.path, func(generic map[string]any) {
+	c.lvl.Set(l) // 工具链的活等级（D22 执行接入）：先切，下一次判定立刻用新档
+	return persistConfig(c.path, func(generic map[string]any) {
 		perms, _ := generic["permissions"].(map[string]any)
 		if perms == nil {
 			perms = map[string]any{}
 			generic["permissions"] = perms
 		}
 		perms["level"] = string(l)
-	}); err != nil {
-		return err
-	}
-	c.lvl.Set(l) // 工具链的活等级（D22 执行接入）
-	return nil
+	})
 }
 
 // persistUnattended 实现 /unattended 与菜单/设置窗开关写回 config 的

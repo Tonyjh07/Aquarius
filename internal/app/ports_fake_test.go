@@ -17,6 +17,9 @@ type fakePerms struct {
 	levels     []perm.Level
 	unattend   []bool
 	err        error
+	// live 活等级（D331）：真实实现把档位落在装配根的持有者上，Session 经 func 读它。
+	// 替身也得有一份，否则「切换后报告」看到的是从未变过的缺省档。
+	live perm.Level
 }
 
 var _ PermissionSettings = (*fakePerms)(nil)
@@ -37,7 +40,16 @@ func (f *fakePerms) PersistLevel(level perm.Level) error {
 		return f.err
 	}
 	f.levels = append(f.levels, level)
+	f.live = level
 	return nil
+}
+
+// Level 活等级读侧（注入 SessionDeps.Level）。
+func (f *fakePerms) Level() perm.Level {
+	if f.live == "" {
+		return perm.DefaultLevel
+	}
+	return f.live
 }
 
 // fakeThinking app.ThinkingSettings 替身：记录写回的开关与档位。
