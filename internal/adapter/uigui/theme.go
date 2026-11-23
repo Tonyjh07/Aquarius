@@ -16,8 +16,22 @@ package uigui
 
 import (
 	"image/color"
+	"math"
 	"sync/atomic"
 )
+
+// latestBrandShare 「↓ 最新」回底钮底色里品牌色的占比（D335）：与气泡底对半混，
+// 落在「实心品牌色的发送键」与「气泡底色」之间——这就是它作为次要操作的色阶。
+// 想让它更收敛就调小（0.3 左右会明显更像一块淡色底），调大则向发送键靠拢。
+const latestBrandShare = 0.5
+
+// mixColor 两色线性混合（t=0 全 a，t=1 全 b），alpha 取 a 的。
+func mixColor(a, b color.NRGBA, t float64) color.NRGBA {
+	mix := func(x, y uint8) uint8 {
+		return uint8(math.Round(float64(x)*(1-t) + float64(y)*t))
+	}
+	return color.NRGBA{R: mix(a.R, b.R), G: mix(a.G, b.G), B: mix(a.B, b.B), A: a.A}
+}
 
 // palette 颜色令牌全集（§15.4：背景/文字/气泡双色/思考暗块/状态行/错误色/禁用态；
 // fg/bg = material 默认文字/底——编辑器与助手/纯文本默认取色、次窗铺底）。
@@ -50,6 +64,11 @@ type palette struct {
 	actionElevate color.NRGBA // 🔑 选档位
 	actionPersist color.NRGBA // ✓✓ 以后都允许
 	tipBg         color.NRGBA // 悬浮 tips 底色
+	// 「↓ 最新」回底钮（D334/D335）：**品牌色与气泡底的中间色**。它是次于发送键的操作
+	// （发送键是实心品牌色 + 白字），既要从正文卡片里浮出来（纯 pillBg 压在卡片上分不
+	// 清边界），又不能与发送键同重。两版各自按同一比例混合，深色版自然更沉。
+	pillLatest     color.NRGBA
+	pillLatestText color.NRGBA // 中间色上的文字：浅色版深墨、深色版白（对比度）
 	// 浮层面（D282 起：提示卡 / 补全候选 / 档位列表共用一套）——跟主题走，不固定深色：
 	// 浅色版是白面 + 细描边，深色版是比窗底亮一阶的深面 + 更深一档的描边。浮层在
 	// 主窗没有阴影可用（ULW 位图），分层只能靠描边与面阶差。
@@ -80,7 +99,7 @@ func (p palette) isDark() bool { return p.dark }
 
 // lightPalette 浅色预设（= MVP 既有配色，逐值不变——§15.4 品牌色 + 浅白/浅灰）。
 func lightPalette() palette {
-	return palette{
+	p := palette{
 		brandColor:    color.NRGBA{R: 0x00, G: 0xAE, B: 0xEF, A: 0xFF},
 		pillBg:        color.NRGBA{R: 0xFA, G: 0xFA, B: 0xFC, A: 0xFF},
 		windowBg:      color.NRGBA{R: 0xEC, G: 0xEF, B: 0xF3, A: 0xFF},
@@ -121,12 +140,17 @@ func lightPalette() palette {
 		fg: color.NRGBA{R: 0x00, G: 0x00, B: 0x00, A: 0xFF},
 		bg: color.NRGBA{R: 0xFF, G: 0xFF, B: 0xFF, A: 0xFF},
 	}
+	// 回底钮（D335）：品牌色与气泡底对半混。浅色版得到一枚淡蓝底，压在白色正文卡片上
+	// 边界清楚，又比发送键的实心品牌色轻一档；文字用深墨（中间色上白字对比不够）。
+	p.pillLatest = mixColor(p.pillBg, p.brandColor, latestBrandShare)
+	p.pillLatestText = p.popText
+	return p
 }
 
 // darkPalette 深色预设（同构异值：底压暗、文字提亮、卡片同阶降亮；
 // 品牌色与 tips 白字恒定——§15.4 两版预设）。
 func darkPalette() palette {
-	return palette{
+	p := palette{
 		brandColor:    color.NRGBA{R: 0x00, G: 0xAE, B: 0xEF, A: 0xFF},
 		pillBg:        color.NRGBA{R: 0x26, G: 0x2A, B: 0x2F, A: 0xFF},
 		windowBg:      color.NRGBA{R: 0x15, G: 0x18, B: 0x1C, A: 0xFF},
@@ -167,6 +191,10 @@ func darkPalette() palette {
 		fg: color.NRGBA{R: 0xEC, G: 0xEF, B: 0xF3, A: 0xFF},
 		bg: color.NRGBA{R: 0x15, G: 0x18, B: 0x1C, A: 0xFF},
 	}
+	// 回底钮（D335）：同比例混合。深色版得到一枚深青蓝底，与深灰卡片分得开；文字提亮。
+	p.pillLatest = mixColor(p.pillBg, p.brandColor, latestBrandShare)
+	p.pillLatestText = p.whiteText
+	return p
 }
 
 // resolvePalette 档位 → 预设：light/dark 直取；其余（""/"system"/未识别）

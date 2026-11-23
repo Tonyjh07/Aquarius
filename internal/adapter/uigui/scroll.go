@@ -244,7 +244,7 @@ func (u *UI) scrollPill(gtx layout.Context, w, h int, viewport image.Rectangle) 
 		return
 	}
 	l := material.Caption(u.th, i18n.T("ui.scroll.latest"))
-	l.Color = tok().textMuted
+	l.Color = tok().pillLatestText
 	// 量宽要给宽松约束：帧级 gtx 常带 Exact(w,h)，直接量会把整窗尺寸当成文字宽。
 	mg := gtx
 	mg.Constraints = layout.Constraints{Max: image.Pt(1<<30, 1<<30)}
@@ -261,7 +261,7 @@ func (u *UI) scrollPill(gtx layout.Context, w, h int, viewport image.Rectangle) 
 
 	// 淡变 + 上浮：只用透明度与 6dp 位移，不改行几何。
 	st := op.Record(gtx.Ops)
-	paint.FillShape(gtx.Ops, tok().pillBg, clip.UniformRRect(rect, radius).Op(gtx.Ops))
+	paint.FillShape(gtx.Ops, tok().pillLatest, clip.UniformRRect(rect, radius).Op(gtx.Ops))
 	o := op.Offset(image.Pt(rect.Min.X+(pw-tw)/2, rect.Min.Y+(ph-th)/2)).Push(gtx.Ops)
 	l.Layout(gtx)
 	o.Pop()
@@ -269,7 +269,14 @@ func (u *UI) scrollPill(gtx layout.Context, w, h int, viewport image.Rectangle) 
 	opacity := paint.PushOpacity(gtx.Ops, float32(u.pillAn.v))
 	mac.Add(gtx.Ops)
 	opacity.Pop()
-	u.record(rect, radius, tok().pillBg, viewport)
+	// chrome 语义的 clip（同 tips / 输入胶囊 / 状态行：整窗）：底带只乘「clip 底 ≤ 带底」
+	// 的形状，挂转写视口会让按钮下半截被底带一起淡化——它浮在内容之上，不继承滚动内容
+	// 的淡化。frameSize 未定（headless 直接铺转写区）时退回视口，避免不登记形状。
+	clipRect := image.Rectangle{Max: u.frameSize}
+	if clipRect.Empty() {
+		clipRect = viewport
+	}
+	u.record(rect, radius, tok().pillLatest, clipRect)
 
 	if clickRect(gtx, &u.pillBtn, rect) {
 		u.jumpToBottom()

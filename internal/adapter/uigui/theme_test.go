@@ -5,6 +5,7 @@ package uigui
 
 import (
 	"image/color"
+	"math"
 	"testing"
 )
 
@@ -164,4 +165,57 @@ func TestThemeMessagesHeadless(t *testing.T) {
 	if slots(currentPalette()) != slots(resolvePalette("system", u.plat.DarkMode())) {
 		t.Error("system 档系统广播后未按系统解析")
 	}
+}
+
+// TestPillLatestTint 回底钮的中间色（D336）：两版底色都落在「气泡底 → 品牌色」之间
+// （逐通道介于两者之间，且不等于任一端），文字与底色的对比度够 AA（≥ 4.5）——它比
+// 发送键轻一档，但必须能从正文卡片上分出来，也要读得清。
+func TestPillLatestTint(t *testing.T) {
+	t.Parallel()
+	between := func(v, a, b uint8) bool {
+		lo, hi := a, b
+		if lo > hi {
+			lo, hi = hi, lo
+		}
+		return v >= lo && v <= hi
+	}
+	for _, tc := range []struct {
+		name string
+		p    palette
+	}{{"light", lightPalette()}, {"dark", darkPalette()}} {
+		c := tc.p.pillLatest
+		if !between(c.R, tc.p.pillBg.R, tc.p.brandColor.R) ||
+			!between(c.G, tc.p.pillBg.G, tc.p.brandColor.G) ||
+			!between(c.B, tc.p.pillBg.B, tc.p.brandColor.B) {
+			t.Errorf("%s: pillLatest %v 不在 pillBg %v 与 brandColor %v 之间",
+				tc.name, c, tc.p.pillBg, tc.p.brandColor)
+		}
+		if c == tc.p.pillBg || c == tc.p.brandColor {
+			t.Errorf("%s: pillLatest 取到了端点，等于没分档", tc.name)
+		}
+		if got := contrastRatio(c, tc.p.pillLatestText); got < 4.5 {
+			t.Errorf("%s: 文字对比度 %.2f < 4.5（pillLatest %v / text %v）",
+				tc.name, got, c, tc.p.pillLatestText)
+		}
+	}
+}
+
+// contrastRatio WCAG 对比度（1..21）：两色的相对亮度按分段 sRGB 线性化后取比值。
+func contrastRatio(a, b color.NRGBA) float64 {
+	la, lb := relLuminance(a), relLuminance(b)
+	if la < lb {
+		la, lb = lb, la
+	}
+	return (la + 0.05) / (lb + 0.05)
+}
+
+func relLuminance(c color.NRGBA) float64 {
+	lin := func(v uint8) float64 {
+		s := float64(v) / 255
+		if s <= 0.03928 {
+			return s / 12.92
+		}
+		return math.Pow((s+0.055)/1.055, 2.4)
+	}
+	return 0.2126*lin(c.R) + 0.7152*lin(c.G) + 0.0722*lin(c.B)
 }
