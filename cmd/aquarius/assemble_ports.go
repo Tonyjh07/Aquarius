@@ -788,7 +788,9 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 				return specs
 			},
 		}))
-		w.note(logging.LevelWarn, logging.Boot, "log.boot.ptc_experimental", "log.act.mode", toolsMode)
+		// kv 是「名, 值」成对给（与 i18n.Tf 同一套）：单给一个值不会被填进 {mode}，
+		// 占位符原样印在终端上。
+		w.note(logging.LevelWarn, logging.Boot, "log.boot.ptc_experimental", "log.act.mode", "mode", toolsMode)
 	}
 	return nil
 }
