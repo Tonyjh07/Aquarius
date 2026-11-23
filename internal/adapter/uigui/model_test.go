@@ -21,6 +21,9 @@ func newTestModel(t *testing.T) (*model, *UI) {
 	u := &UI{plat: newFakePlat(),
 		inCh:  make(chan port.UserInput, inputCap),
 		eofCh: make(chan struct{}),
+		// D332：headless 没有帧循环推动画，揭示直接落定——内容类用例按「动画已结束」
+		// 断言；动画本身的用例自己清掉这个标记（见 motion_test.go）。
+		motionInstant: true,
 	}
 	return newModel(u), u
 }

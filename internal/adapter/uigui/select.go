@@ -104,8 +104,9 @@ type selKeyGeom struct {
 }
 
 // sel 行选状态取用（nil 挂接件返回 nil——material label 的 State 可空，不可选）。
+// D332：铺半隐正文期间（revealQuiet）同样返回 nil——还没长到位的字不该能被选中。
 func (r *rowSel) sel(k int) *widget.Selectable {
-	if r == nil {
+	if r == nil || r.u.revealQuiet {
 		return nil
 	}
 	return r.u.selFor(r.base + k)
@@ -114,7 +115,7 @@ func (r *rowSel) sel(k int) *widget.Selectable {
 // note 量期记录键几何（须在该键 widget Layout 之后调用——Regions 此刻才有效）。
 // k 越界防御：键数以 selCount（r.n）为准。
 func (r *rowSel) note(k int, off image.Point) {
-	if r == nil || k < 0 || k >= r.n {
+	if r == nil || r.u.revealQuiet || k < 0 || k >= r.n {
 		return
 	}
 	for len(r.keys) <= k {
@@ -201,7 +202,7 @@ func (r *rowSel) layout(gtx layout.Context, w func(layout.Context) layout.Dimens
 // 无选态/本键不在跨度内/未铺开 → 零 ops。色 = material 选区同式 ContrastBg×0x60
 // （f32color.MulAlpha 内部包不可引，按公式复刻：A×0x60/0xFF，RGB 不变）。
 func (r *rowSel) paint(gtx layout.Context, k int, inset image.Point) {
-	if r == nil || !r.u.sel.active {
+	if r == nil || r.u.revealQuiet || !r.u.sel.active {
 		return
 	}
 	abs := r.base + k

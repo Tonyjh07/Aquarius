@@ -124,6 +124,8 @@ func (u *UI) toolChipRow(it blockView, rs *rowSel, cardR int) (layout.Widget, co
 	cl := u.chipClick(it.chipIdx)
 	expanded := u.chipIsOpen(it.chipIdx, c)
 	header := chipHeaderText(c, expanded)
+	// D332：展开体按揭示因子铺（「正在问的那条强制展开」同样走动画，规则在 chipIsOpen）。
+	v := u.revealFor(blockKey{blockTool, it.chipIdx}, expanded)
 	return func(gtx layout.Context) layout.Dimensions {
 		vs := beginVStack(gtx)
 		vs.add(func(gtx layout.Context) layout.Dimensions {
@@ -133,67 +135,72 @@ func (u *UI) toolChipRow(it blockView, rs *rowSel, cardR int) (layout.Widget, co
 				return l.Layout(gtx)
 			})
 		})
-		if expanded {
-			add := func(k int, w layout.Widget) {
-				vs.gap(mdBlockGapDp)
-				off := image.Pt(0, vs.y)
-				vs.add(func(gtx layout.Context) layout.Dimensions {
-					return rs.layout(gtx, w, k, off, image.Point{})
-				})
-			}
-			if strings.TrimSpace(c.args) != "" {
-				add(0, func(gtx layout.Context) layout.Dimensions {
-					s := material.Body2(u.th, c.args)
-					s.Font = codeFont()
-					s.TextSize = u.th.TextSize * 13.0 / 16.0
-					s.State = rs.sel(0)
-					return s.Layout(gtx)
-				})
-			}
-			if c.confirmQ != "" {
-				qa := c.confirmQ
-				if c.confirmA != "" {
-					qa += " → " + c.confirmA
+		u.revealBody(vs, v, mdBlockGapDp, func(base image.Point) layout.Widget {
+			return func(gtx layout.Context) layout.Dimensions {
+				body := beginVStack(gtx)
+				add := func(k int, w layout.Widget) {
+					body.gap(mdBlockGapDp)
+					off := base.Add(image.Pt(0, body.y)) // 键几何 = 行内容原点系（D91 ②）
+					body.add(func(gtx layout.Context) layout.Dimensions {
+						return rs.layout(gtx, w, k, off, image.Point{})
+					})
 				}
-				vs.gap(mdBlockGapDp)
-				vs.add(func(gtx layout.Context) layout.Dimensions {
-					l := material.Caption(u.th, qa)
-					l.Color = tok().textDim
-					return l.Layout(gtx)
-				})
-			}
-			switch {
-			case c.done:
-				mark := i18n.T("ui.chat.chip_result_ok")
-				if !c.ok {
-					mark = i18n.T("ui.chat.chip_result_fail")
+				line := func(w layout.Widget) {
+					body.gap(mdBlockGapDp)
+					body.add(w)
 				}
-				vs.gap(mdBlockGapDp)
-				vs.add(func(gtx layout.Context) layout.Dimensions {
-					l := material.Caption(u.th, mark)
-					l.Color = tok().textDim
-					return l.Layout(gtx)
-				})
-				add(1, func(gtx layout.Context) layout.Dimensions {
-					s := material.Body2(u.th, c.result)
-					s.Color = tok().textMuted
-					s.State = rs.sel(1)
-					return s.Layout(gtx)
-				})
-			case c.confirmQ == "": // 运行中且无待确认（展开查看时）
-				vs.gap(mdBlockGapDp)
-				vs.add(func(gtx layout.Context) layout.Dimensions {
-					l := material.Caption(u.th, i18n.T("ui.chat.chip_running"))
-					l.Color = tok().textDim
-					return l.Layout(gtx)
-				})
+				if strings.TrimSpace(c.args) != "" {
+					add(0, func(gtx layout.Context) layout.Dimensions {
+						s := material.Body2(u.th, c.args)
+						s.Font = codeFont()
+						s.TextSize = u.th.TextSize * 13.0 / 16.0
+						s.State = rs.sel(0)
+						return s.Layout(gtx)
+					})
+				}
+				if c.confirmQ != "" {
+					qa := c.confirmQ
+					if c.confirmA != "" {
+						qa += " → " + c.confirmA
+					}
+					line(func(gtx layout.Context) layout.Dimensions {
+						l := material.Caption(u.th, qa)
+						l.Color = tok().textDim
+						return l.Layout(gtx)
+					})
+				}
+				switch {
+				case c.done:
+					mark := i18n.T("ui.chat.chip_result_ok")
+					if !c.ok {
+						mark = i18n.T("ui.chat.chip_result_fail")
+					}
+					line(func(gtx layout.Context) layout.Dimensions {
+						l := material.Caption(u.th, mark)
+						l.Color = tok().textDim
+						return l.Layout(gtx)
+					})
+					add(1, func(gtx layout.Context) layout.Dimensions {
+						s := material.Body2(u.th, c.result)
+						s.Color = tok().textMuted
+						s.State = rs.sel(1)
+						return s.Layout(gtx)
+					})
+				case c.confirmQ == "": // 运行中且无待确认（展开查看时）
+					line(func(gtx layout.Context) layout.Dimensions {
+						l := material.Caption(u.th, i18n.T("ui.chat.chip_running"))
+						l.Color = tok().textDim
+						return l.Layout(gtx)
+					})
+				}
+				// D207：工具产出的图（截屏、内联图）排在结果之后，按小一档的方格铺。
+				if imgs := imgRefOfChip(c.images); len(imgs) > 0 {
+					body.gap(mdBlockGapDp)
+					body.add(u.imgFlow(it.bi, imgs, imgChipCellDp))
+				}
+				return body.dims()
 			}
-			// D207：工具产出的图（截屏、内联图）排在结果之后，按小一档的方格铺。
-			if imgs := imgRefOfChip(c.images); len(imgs) > 0 {
-				vs.gap(mdBlockGapDp)
-				vs.add(u.imgFlow(it.bi, imgs, imgChipCellDp))
-			}
-		}
+		})
 		return vs.dims()
 	}, tok().cardTool, cardR, false, false
 }

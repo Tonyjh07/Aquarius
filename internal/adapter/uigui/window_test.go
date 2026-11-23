@@ -232,7 +232,7 @@ func TestFrameItemsLive(t *testing.T) {
 // §15.5：GUI 只进无窗口 headless 测试）。followTail 初值对齐 newUI；装假平台
 // （S4b：原 presentMain/revealMain/visMain/mainHWND 注入槽的替代，取用见 fakeOf）。
 func newFrameUI() *UI {
-	u := &UI{plat: newFakePlat(), followTail: true}
+	u := &UI{plat: newFakePlat(), followTail: true, motionInstant: true} // D332：见 newTestModel
 	// D115/D135：不给测试起补提交梯次 goroutine（结束后仍会提交，-race）。D135 起梯次是
 	// UI 字段，改该字段不再污染包状态——包级 var 只能靠「全局置 nil」屏蔽，等于把这条跨
 	// goroutine 路径在所有测试里藏起来，-race 也就永远抓不到这条路径读帧循环字段的问题。

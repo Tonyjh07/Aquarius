@@ -187,11 +187,11 @@ func TestTurnFoldSpansMidTextAndConfirm(t *testing.T) {
 		Content: textPartsOf("回答")})
 
 	items := u.frameItems()
-	if len(items) != 3 || items[0].kind != blockAssistant ||
-		items[1].kind != blockTurn || items[2].kind != blockAssistant {
-		t.Fatalf("items = %+v, want [中途正文, 摘要, 正文]", items)
+	if len(items) != 3 || items[0].kind != blockTurn ||
+		items[1].kind != blockAssistant || items[2].kind != blockAssistant {
+		t.Fatalf("items = %+v, want [摘要, 中途正文, 正文]", items)
 	}
-	tv := items[1].turn
+	tv := items[0].turn
 	if tv.tools != 2 || tv.confirms != 1 || len(tv.blocks) != 4 {
 		t.Fatalf("turn = tools %d / confirms %d / blocks %d, want 2 / 1 / 4（两个 chip + 确认条 + 思考）",
 			tv.tools, tv.confirms, len(tv.blocks))

@@ -479,11 +479,25 @@ type UI struct {
 	turnOpen    map[conversation.MessageID]bool
 	turnClicks  []*widget.Clickable
 	turnAnchors map[int]*turnView
+	// turnShow 组是否已摊开（含开合动画中，D332）：子行出条目、摘要行让位。每帧由
+	// frameItems 从揭示时间线重算（slot → 是否摊开），只读于 itemSelCount 一类回调。
+	turnShow map[int]bool
 
-	// 注入块视图态（D166 形态修订）：正文是进模型的原文，默认折成一行「类别 · 来源」，
+	// injectOpen/injectClicks 注入块视图态（D166 形态修订）：正文是进模型的原文，默认折成一行「类别 · 来源」，
 	// 点开才铺触发状态与全文。同规则按块序缓存、不进 model、清屏复位。
 	injectOpen   map[int]bool
 	injectClicks []*widget.Clickable
+
+	// reveals 折叠块的揭示时间线（D332）：六类折叠单元共用一套时长与曲线，键 = 块种类 +
+	// 块序（Turn 组用组 slot）。布局只声明目标与读现值，进度由 stepReveals 在帧前推进；
+	// revealStop = 唤帧循环的退出信号（nil = 未运行）；revealQuiet 在铺半隐正文时置位，
+	// 让行选键不落（选区不落在看不见的字上）。仅事件循环 goroutine 读写。
+	reveals     map[blockKey]*revealAnim
+	revealStop  chan struct{}
+	revealQuiet bool
+	// motionInstant 揭示直接落定、不起动画（测试夹具置位：headless 没有帧循环推进
+	// 时间线；生产恒 false）。
+	motionInstant bool
 
 	// focusPending 唤出后把输入焦点交给编辑器（托盘/快捷键显示窗口后投 focusMsg，
 	// 下帧 layout 执行 key.FocusCmd；仅事件循环 goroutine 读写）。

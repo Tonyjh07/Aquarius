@@ -26,6 +26,7 @@ type turnView struct {
 	confirms int         // 折进来的权限确认条数（摘要补一段数，不收起来也不能凭空少）
 	id       conversation.MessageID
 	slot     int // 组尾 assistant 块序：摘要行点击件的缓存槽，也是 groups 的键
+	start    int // 组首块序（含开头穿透的中途正文段）：摘要行铺在它前面
 }
 
 // scanTurnGroups 每帧重算折叠分组：assistant 定稿块（有节点 ID）向前收集本轮的思考
@@ -53,7 +54,7 @@ func (u *UI) scanTurnGroups() map[int]*turnView {
 		if start == bi {
 			continue
 		}
-		tv := &turnView{id: b.id, slot: bi}
+		tv := &turnView{id: b.id, slot: bi, start: start}
 		hasTool := false
 		var got []int
 		for j := start; j < bi; j++ {
@@ -153,6 +154,19 @@ func turnHeaderText(tv *turnView, open bool) string {
 	}
 	return arrow + " " + body
 }
+
+// hasBlock 该块序是否属于本组（折叠态的摘要行要用它把锚在子块上的分叉条顺延出来）。
+func (tv *turnView) hasBlock(bi int) bool {
+	for _, sub := range tv.blocks {
+		if sub.bi == bi {
+			return true
+		}
+	}
+	return false
+}
+
+// turnShown 组是否已摊开（含动画中）：子行出条目、摘要行让位——键数由子行自己占。
+func (u *UI) turnShown(slot int) bool { return u.turnShow[slot] }
 
 // turnClick 摘要行点击件 get-or-create（按块序缓存，同 cmdClick 规则）。
 func (u *UI) turnClick(i int) *widget.Clickable {

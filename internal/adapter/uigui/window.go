@@ -224,7 +224,8 @@ func (u *UI) frame(gtx layout.Context, submit func()) {
 	gtx.Metric = u.zoomedMetric(gtx.Metric)
 	u.flushCopy(gtx) // D92：菜单分发的复制请求在此（Gio 帧）落剪贴板
 	u.stepExpand(time.Now())
-	u.stepAnim() // D50：停靠动画每帧前推（layout 被 headless 二次调用，进度只能放帧里、且在两遍 layout 之前）
+	u.stepReveals(time.Now()) // D332：折叠块的揭示进度（同 D50：只能在帧里推，两遍 layout 同值）
+	u.stepAnim()              // D50：停靠动画每帧前推（layout 被 headless 二次调用，进度只能放帧里、且在两遍 layout 之前）
 	u.layout(gtx)
 	u.phase("compose")
 	// 平台不自管像素提交时（非 Windows 降级）没有 ULW 可交：跳过离屏全帧合成通道，

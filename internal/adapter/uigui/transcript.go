@@ -5,6 +5,7 @@ import (
 	"hash/fnv"
 	"image"
 	"image/color"
+	"math"
 	"strings"
 	"unicode/utf8"
 
@@ -58,7 +59,7 @@ func (u *UI) transcript(gtx layout.Context, w, h int) {
 		items[i].keyBase = totalKeys // D92：整条复制按键区间取渲染文本
 		rs := &rowSel{u: u, base: totalKeys, n: u.itemSelCount(items[i])}
 		rows[i] = u.measureRow(gtx, items[i], w, rs)
-		total += rows[i].height()
+		total += rowShownH(items[i], rows[i].height())
 		totalKeys += rs.n
 	}
 	total += gap * (len(rows) - 1)
@@ -177,7 +178,18 @@ func (u *UI) paintRow(gtx layout.Context, mr measuredRow, it blockView, w, y int
 		Min: image.Pt(x, y),
 		Max: image.Pt(x+mr.dims.X+2*mr.padX, y+mr.height()),
 	}
-	if mr.sel != nil {
+	// D332：行揭示（Turn 组开合）——行高按因子截短，底板跟着收；文字被底板圆角裁掉，
+	// 与「卡片长出来」同一件事。行选键在半隐期不落（选区不落在看不见的字上）。
+	rowFade := float32(1)
+	if it.anim {
+		h := rowShownH(it, mr.height())
+		if h <= 0 {
+			return 0
+		}
+		bgRect.Max.Y = y + h
+		rowFade = revealAlpha(it.reveal)
+	}
+	if mr.sel != nil && rowFade >= 1 {
 		u.writeKeyRects(mr.sel, image.Pt(bgRect.Min.X+mr.padX, bgRect.Min.Y+mr.padY), fph)
 	}
 	if it.menuable() {
@@ -193,12 +205,20 @@ func (u *UI) paintRow(gtx layout.Context, mr measuredRow, it blockView, w, y int
 	if it.pendID != "" {
 		fade = paint.PushOpacity(gtx.Ops, steerBubbleAlpha)
 	}
+	var rowOp paint.OpacityStack
+	rowOn := it.anim && rowFade < 1
+	if rowOn {
+		rowOp = paint.PushOpacity(gtx.Ops, rowFade)
+	}
 	st := clip.UniformRRect(bgRect, mr.radius).Push(gtx.Ops)
 	paint.Fill(gtx.Ops, mr.bg)
 	inner := op.Offset(image.Pt(bgRect.Min.X+mr.padX, bgRect.Min.Y+mr.padY)).Push(gtx.Ops)
 	mr.txt.Add(gtx.Ops)
 	inner.Pop()
 	st.Pop()
+	if rowOn {
+		rowOp.Pop()
+	}
 	u.record(bgRect, mr.radius, mr.bg, viewport)
 	if it.pendID != "" {
 		u.steerActions(gtx, it.pendID, bgRect, viewport) // D272：引导气泡旁的两枚控件
@@ -268,6 +288,11 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, rs *rowSel) (layout.Widg
 	case blockThinking: // 思考行（D182）：折叠行（元信息，可点开）+ 正文（仅展开时铺）
 		open := it.live || u.thinkIsOpen(it.bi)
 		header := thinkHeaderText(it, open)
+		// D332：定稿思考的正文按揭示因子铺（流式块不参与——每帧都在变）。
+		v := 1.0
+		if !it.live {
+			v = u.revealFor(blockKey{blockThinking, it.bi}, open)
+		}
 		// 折叠行 = 一个点击件（与工具 chip 头部同法：热区 = 那行字的盒子）；展开态
 		// 只让头部可点，正文要能拖选（点击件会抢走按下事件）。
 		head := func(gtx layout.Context) layout.Dimensions {
@@ -285,22 +310,22 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, rs *rowSel) (layout.Widg
 		return func(gtx layout.Context) layout.Dimensions {
 			vs := beginVStack(gtx)
 			vs.add(head)
-			if open {
-				off := image.Pt(0, vs.y)
-				vs.add(func(gtx layout.Context) layout.Dimensions {
+			u.revealBody(vs, v, 0, func(base image.Point) layout.Widget {
+				return func(gtx layout.Context) layout.Dimensions {
 					return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						s := material.Body2(u.th, it.text)
 						s.Color = tok().textDim
 						s.State = rs.sel(0)
 						return s.Layout(gtx)
-					}, 0, off, image.Point{})
-				})
-			}
+					}, 0, base, image.Point{})
+				}
+			})
 			return vs.dims()
 		}, tok().cardThinking, cardR, false, false
 	case blockInject: // 注入块：默认折成一行「类别 · 来源」，点开才铺触发状态与正文
 		el := u.injectClick(it.bi)
 		open := u.injectIsOpen(it.bi)
+		v := u.revealFor(blockKey{blockInject, it.bi}, open)
 		head := injectHeadline(it.source, open)
 		return func(gtx layout.Context) layout.Dimensions {
 			vs := beginVStack(gtx)
@@ -311,23 +336,27 @@ func (u *UI) rowStyle(gtx layout.Context, it blockView, rs *rowSel) (layout.Widg
 					return s.Layout(gtx)
 				})
 			})
-			if open {
-				vs.gap(mdBlockGapDp)
-				vs.add(func(gtx layout.Context) layout.Dimensions {
-					s := material.Caption(u.th, injectState(it.trigger))
-					s.Color = tok().textDim
-					return s.Layout(gtx)
-				})
-				off := image.Pt(0, vs.y)
-				vs.add(func(gtx layout.Context) layout.Dimensions {
-					return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						s := material.Body2(u.th, it.text)
-						s.Color = tok().textInject
-						s.State = rs.sel(0)
+			u.revealBody(vs, v, mdBlockGapDp, func(base image.Point) layout.Widget {
+				return func(gtx layout.Context) layout.Dimensions {
+					body := beginVStack(gtx)
+					body.add(func(gtx layout.Context) layout.Dimensions {
+						s := material.Caption(u.th, injectState(it.trigger))
+						s.Color = tok().textDim
 						return s.Layout(gtx)
-					}, 0, off, image.Point{})
-				})
-			}
+					})
+					body.gap(mdBlockGapDp)
+					off := base.Add(image.Pt(0, body.y))
+					body.add(func(gtx layout.Context) layout.Dimensions {
+						return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							s := material.Body2(u.th, it.text)
+							s.Color = tok().textInject
+							s.State = rs.sel(0)
+							return s.Layout(gtx)
+						}, 0, off, image.Point{})
+					})
+					return body.dims()
+				}
+			})
 			return vs.dims()
 		}, tok().cardInject, cardR, false, false
 	case blockTurn: // Turn 过程摘要行（D326）：左对齐窄条、工具 chip 同款底色，整条是
@@ -434,63 +463,67 @@ func (u *UI) commandRowStyle(gtx layout.Context, it blockView, rs *rowSel, cardR
 	// 不挂点击件——那里要能拖选（与思考块同规则）。
 	cl := u.cmdClick(it.bi)
 	head := func(gtx layout.Context) layout.Dimensions { return cl.Layout(gtx, plain) }
+	v := u.revealFor(blockKey{blockCommand, it.bi}, open) // D332：开合按揭示因子铺
 	return func(gtx layout.Context) layout.Dimensions {
 		vs := beginVStack(gtx)
 		vs.add(head)
-		if !open {
-			return vs.dims()
-		}
-		for k, e := range it.cmds {
-			if k > 0 {
-				vs.gap(mdBlockGapDp)
+		u.revealBody(vs, v, 0, func(base image.Point) layout.Widget {
+			return func(gtx layout.Context) layout.Dimensions {
+				body := beginVStack(gtx)
+				for k, e := range it.cmds {
+					if k > 0 {
+						body.gap(mdBlockGapDp)
+					}
+					// 键序恒 2k/2k+1（命令行 / 输出）：与 selCount 一致，开合不漂移后续行序号（D67 同规则）。
+					if e.cmd != "" {
+						off := base.Add(image.Pt(0, body.y))
+						body.add(func(gtx layout.Context) layout.Dimensions {
+							return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								s := material.Body2(u.th, e.cmd)
+								s.Color = tok().textDim
+								s.State = rs.sel(2 * k)
+								return s.Layout(gtx)
+							}, 2*k, off, image.Point{})
+						})
+					}
+					if e.out != "" {
+						off := base.Add(image.Pt(0, body.y))
+						body.add(func(gtx layout.Context) layout.Dimensions {
+							return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								// 输出用正文色（不给 Color）：输出是给人读的内容，
+								// 只有命令行那行退到暗色——层次靠「谁更淡」表达。
+								s := material.Body2(u.th, e.out)
+								s.State = rs.sel(2*k + 1)
+								return s.Layout(gtx)
+							}, 2*k+1, off, image.Point{})
+						})
+					}
+					if e.note != "" { // 操作回执（D267）：小字、更淡——操作回执是附注，不是内容
+						off := base.Add(image.Pt(0, body.y))
+						body.add(func(gtx layout.Context) layout.Dimensions {
+							return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								s := material.Caption(u.th, e.note)
+								s.Color = tok().textDim
+								s.State = rs.sel(2*k + 1)
+								return s.Layout(gtx)
+							}, 2*k+1, off, image.Point{})
+						})
+					}
+					if e.err != "" { // 错误（D323）：错误色全文——排障时才读，读时要醒目
+						off := base.Add(image.Pt(0, body.y))
+						body.add(func(gtx layout.Context) layout.Dimensions {
+							return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								s := material.Body2(u.th, e.err)
+								s.Color = tok().textError
+								s.State = rs.sel(2*k + 1)
+								return s.Layout(gtx)
+							}, 2*k+1, off, image.Point{})
+						})
+					}
+				}
+				return body.dims()
 			}
-			// 键序恒 2k/2k+1（命令行 / 输出）：与 selCount 一致，开合不漂移后续行序号（D67 同规则）。
-			if e.cmd != "" {
-				off := image.Pt(0, vs.y)
-				vs.add(func(gtx layout.Context) layout.Dimensions {
-					return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						s := material.Body2(u.th, e.cmd)
-						s.Color = tok().textDim
-						s.State = rs.sel(2 * k)
-						return s.Layout(gtx)
-					}, 2*k, off, image.Point{})
-				})
-			}
-			if e.out != "" {
-				off := image.Pt(0, vs.y)
-				vs.add(func(gtx layout.Context) layout.Dimensions {
-					return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						// 输出用正文色（不给 Color）：输出是给人读的内容，
-						// 只有命令行那行退到暗色——层次靠「谁更淡」表达。
-						s := material.Body2(u.th, e.out)
-						s.State = rs.sel(2*k + 1)
-						return s.Layout(gtx)
-					}, 2*k+1, off, image.Point{})
-				})
-			}
-			if e.note != "" { // 操作回执（D267）：小字、更淡——操作回执是附注，不是内容
-				off := image.Pt(0, vs.y)
-				vs.add(func(gtx layout.Context) layout.Dimensions {
-					return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						s := material.Caption(u.th, e.note)
-						s.Color = tok().textDim
-						s.State = rs.sel(2*k + 1)
-						return s.Layout(gtx)
-					}, 2*k+1, off, image.Point{})
-				})
-			}
-			if e.err != "" { // 错误（D323）：错误色全文——排障时才读，读时要醒目
-				off := image.Pt(0, vs.y)
-				vs.add(func(gtx layout.Context) layout.Dimensions {
-					return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						s := material.Body2(u.th, e.err)
-						s.Color = tok().textError
-						s.State = rs.sel(2*k + 1)
-						return s.Layout(gtx)
-					}, 2*k+1, off, image.Point{})
-				})
-			}
-		}
+		})
 		return vs.dims()
 	}, tok().cardCmd, cardR, false, false
 }
@@ -517,30 +550,34 @@ func (u *UI) confirmRowStyle(it blockView, rs *rowSel, cardR int) (layout.Widget
 			return centerStrip(gtx, plain)
 		})
 	}
+	v := u.revealFor(blockKey{blockConfirm, it.bi}, open) // D332：在问的那条自动展开也走动画
 	return func(gtx layout.Context) layout.Dimensions {
 		vs := beginVStack(gtx)
 		vs.add(head)
-		if !open {
-			return vs.dims()
-		}
-		for k, e := range it.confirms {
-			if k > 0 {
-				vs.gap(mdBlockGapDp)
+		u.revealBody(vs, v, 0, func(base image.Point) layout.Widget {
+			return func(gtx layout.Context) layout.Dimensions {
+				body := beginVStack(gtx)
+				for k, e := range it.confirms {
+					if k > 0 {
+						body.gap(mdBlockGapDp)
+					}
+					line := e.q
+					if e.a != "" {
+						line += " → " + e.a
+					}
+					off := base.Add(image.Pt(0, body.y))
+					body.add(func(gtx layout.Context) layout.Dimensions {
+						return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							s := material.Body2(u.th, line)
+							s.Color = tok().textDim
+							s.State = rs.sel(k)
+							return s.Layout(gtx)
+						}, k, off, image.Point{})
+					})
+				}
+				return body.dims()
 			}
-			line := e.q
-			if e.a != "" {
-				line += " → " + e.a
-			}
-			off := image.Pt(0, vs.y)
-			vs.add(func(gtx layout.Context) layout.Dimensions {
-				return rs.layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					s := material.Body2(u.th, line)
-					s.Color = tok().textDim
-					s.State = rs.sel(k)
-					return s.Layout(gtx)
-				}, k, off, image.Point{})
-			})
-		}
+		})
 		return vs.dims()
 	}, tok().cardCmd, cardR, false, false
 }
@@ -824,11 +861,24 @@ func mdTableColWidths(avail int, weights []float64, minW int) []int {
 	return widths
 }
 
+// rowShownH 该行这一帧实际占的高度（D332）：Turn 组子行按揭示因子从 0 长到满，
+// 量高的合计与绘制的推进用同一个函数，两处不会各算一套。
+func rowShownH(it blockView, full int) int {
+	if !it.anim {
+		return full
+	}
+	h := int(math.Round(it.reveal * float64(full)))
+	if h < 0 {
+		return 0
+	}
+	return h
+}
+
 // itemSelCount 条目的行选键数（D326）：展开态的 Turn 摘要行让位——子块以独立条目
 // 铺回并用自己的键，摘要行不再占键（否则子键被数两遍）；折叠态摘要仍按子块键数之和
 // 占位（D265 同规则：不铺正文但键数恒定，开合不漂移后续行序号）。
 func (u *UI) itemSelCount(it blockView) int {
-	if it.kind == blockTurn && it.turn != nil && u.turnIsOpen(it.turn) {
+	if it.kind == blockTurn && it.turn != nil && u.turnShown(it.turn.slot) {
 		return 0
 	}
 	return it.selCount()

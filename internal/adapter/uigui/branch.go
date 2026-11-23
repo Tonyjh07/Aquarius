@@ -47,6 +47,10 @@ type blockView struct {
 	// 已经说出口、还没被下一次请求取走的话。渲染成普通用户气泡，右侧带「↓ 回队列 /
 	// × 丢弃」两枚控件；不登记右键菜单（没有节点可编辑），也不随会话写入磁盘。
 	pendID string
+	// anim/reveal 行揭示（D332）：Turn 组开合动画期，组内子行按 reveal（0..1）截短
+	// 行高并淡出；anim=false 的条目（绝大多数）忽略 reveal。
+	anim   bool
+	reveal float64
 }
 
 // menuable 该条目是否响应气泡右键（D92/D100）：user/assistant 需带节点 ID（编辑/

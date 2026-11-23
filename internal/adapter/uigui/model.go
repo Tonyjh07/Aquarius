@@ -366,6 +366,11 @@ func (m *model) clear() {
 	m.u.turnOpen = nil    // D326：Turn 过程摘要的开合同规则
 	m.u.turnClicks = m.u.turnClicks[:0]
 	m.u.turnAnchors = nil
+	m.u.turnShow = nil
+	// D332：揭示时间线跟块序走，清屏后块序重排——一并复位，别让新会话第一块继承
+	// 上一会话某个序位的半开状态；在跑的表也停掉。
+	m.u.stopRevealTicker()
+	m.u.reveals = nil
 	// pendingCmd **不清**（D265）：清屏正发生在 /switch、/regen 这类命令中途，
 	// 这类命令的返回文本还没到——抹掉就等于让那条结果无处可归。
 }

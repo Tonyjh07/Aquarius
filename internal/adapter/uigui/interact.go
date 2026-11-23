@@ -6,6 +6,7 @@ import (
 	"image"
 	"io"
 	"strings"
+	"time"
 
 	"gioui.org/gesture"
 	"gioui.org/io/clipboard"
@@ -29,39 +30,25 @@ func (u *UI) frameItems() []blockView {
 	strips := u.branchStrips()
 	next := 0 // strips 按块序升序，指针单向前进即对齐
 	items := make([]blockView, 0, len(u.m.blocks)+len(strips)+2)
-	// Turn 过程折叠（D326）：assistant 定稿块前紧邻的思考/chip 组折成一行摘要；
-	// 展开态按原样铺回。分组每帧重算（turnAnchors 供点击消费期回查）。
+	// Turn 过程折叠（D326）：本轮的过程块折成一行摘要，展开态按原样铺回；开合是动画
+	// （D332）。分组每帧重算（turnAnchors 供点击消费期回查）。
 	groups := u.scanTurnGroups()
 	u.turnAnchors = groups
-	folded := make([]bool, len(u.m.blocks))
-	groupOf := make(map[int]*turnView, len(groups)) // 组内块序 → 所属组
-	for _, tv := range groups {
-		if u.turnIsOpen(tv) {
-			continue // 展开态：组内块按原样走普通路径
-		}
-		for _, sub := range tv.blocks {
-			folded[sub.bi] = true
-			groupOf[sub.bi] = tv
-		}
-	}
-	// 展开组的摘要行挂在组首块前铺（摘要常驻：先摘要、后子块）。
-	openStart := map[int]*turnView{}
-	for _, tv := range groups {
-		if u.turnIsOpen(tv) && len(tv.blocks) > 0 {
-			openStart[tv.blocks[0].bi] = tv
-		}
-	}
-	var pendStrips []branchStrip // 折叠组内块锚的分叉条，顺延到摘要行之后输出
+	shown, childV, openStart, folded := u.turnFramePlan(groups)
 	for bi, b := range u.m.blocks {
 		if tv, ok := openStart[bi]; ok {
 			items = append(items, blockView{kind: blockTurn, turn: tv, bi: tv.slot, id: tv.id})
+			if !shown[tv.slot] {
+				// 折叠态的组内块不出条目，但锚在它们上的分叉条不能丢（D89：纯工具轮
+				// 锚在 chip 上）——顺延到摘要行之后。
+				for next < len(strips) && tv.hasBlock(strips[next].blockIdx) {
+					s := strips[next]
+					items = append(items, blockView{kind: blockBranch, branch: &s})
+					next++
+				}
+			}
 		}
 		if folded[bi] {
-			// 组内块不铺条目，但其上锚的分叉条不能丢——攒着，摘要行后统一铺。
-			if next < len(strips) && strips[next].blockIdx == bi {
-				pendStrips = append(pendStrips, strips[next])
-				next++
-			}
 			continue
 		}
 		switch {
@@ -71,18 +58,6 @@ func (u *UI) frameItems() []blockView {
 			var md []mdBlock
 			if strings.TrimSpace(b.text) != "" {
 				md = u.mdBlocks(b.text)
-			}
-			// 摘要行在该 assistant 正文之前铺（过程先于结论）；组内块锚的分叉条
-			// 随摘要顺延（D89 纯工具轮锚在 chip 上，折叠后不能丢）。
-			if tv, ok := groups[bi]; ok && !u.turnIsOpen(tv) { // 折叠态：摘要行贴在正文前
-				// 展开态的摘要在组首块前铺（openStart），不走这里。两态的行内点击件
-				// 用同一个槽（组尾 assistant 块序），否则展开后就点不回去了。
-				items = append(items, blockView{kind: blockTurn, turn: tv, bi: tv.slot, id: tv.id})
-				for _, st := range pendStrips {
-					s := st
-					items = append(items, blockView{kind: blockBranch, branch: &s})
-				}
-				pendStrips = pendStrips[:0]
 			}
 			items = append(items, blockView{
 				kind: blockAssistant, md: md, imgs: b.imgs, bi: bi, id: b.id,
@@ -118,7 +93,64 @@ func (u *UI) frameItems() []blockView {
 	for _, it := range u.pendingSteers() {
 		items = append(items, blockView{kind: blockUser, text: it.Text, live: true, pendID: it.ID})
 	}
+	// 组内子行的整行揭示（D332）：出场/退场都是高度从 0 长到满（或反之）。
+	applyReveals(items, childV)
 	return items
+}
+
+// turnFramePlan 本帧的 Turn 组布局计划：哪些组算「摊开」（子行出条目、摘要行让位）、
+// 每个子块以多大的揭示因子出来、摘要行挂在哪、哪些子块要折着。
+//
+// 揭示因子在这里**声明**一次（目标变了才起时间线，同帧幂等）：组自身一个，每个子行
+// 一个；错峰展开自上而下、收起自下而上，最多 motionStaggerMax 档。
+func (u *UI) turnFramePlan(groups map[int]*turnView) (shown map[int]bool, childV map[int]float64, openStart map[int]*turnView, folded []bool) {
+	shown = make(map[int]bool, len(groups))
+	childV = make(map[int]float64, len(u.m.blocks))
+	for slot, tv := range groups {
+		open := u.turnIsOpen(tv)
+		shown[slot] = u.revealFor(blockKey{blockTurn, slot}, open) > 0
+		for i, sub := range tv.blocks {
+			d := i
+			if !open {
+				d = len(tv.blocks) - 1 - i
+			}
+			if d > motionStaggerMax {
+				d = motionStaggerMax
+			}
+			childV[sub.bi] = u.revealForDelay(blockKey{blockTurn, sub.bi}, open,
+				time.Duration(d)*motionStaggerMs*time.Millisecond)
+		}
+	}
+	u.turnShow = shown
+	folded = make([]bool, len(u.m.blocks))
+	// 摘要行恒挂在组首块前（过程先于结论）：折叠态子块不出条目，摘要就是唯一一行，
+	// 位置与贴在正文前时完全一样——开合不再有整行跳位。
+	openStart = make(map[int]*turnView, len(groups))
+	for slot, tv := range groups {
+		if len(tv.blocks) > 0 {
+			openStart[tv.start] = tv // 摘要行常驻：折叠态它就是唯一一行
+		}
+		if shown[slot] {
+			continue // 摊开（含动画中）：子行按自己的揭示因子出条目
+		}
+		for _, sub := range tv.blocks {
+			folded[sub.bi] = true
+		}
+	}
+	return shown, childV, openStart, folded
+}
+
+// applyReveals 给组内子行挂上整行揭示因子（只挂真正的子行，live 条目不动）。
+func applyReveals(items []blockView, childV map[int]float64) {
+	for i := range items {
+		if items[i].live || items[i].kind == blockTurn {
+			continue
+		}
+		if v, ok := childV[items[i].bi]; ok && v < 1 {
+			items[i].anim = true
+			items[i].reveal = v
+		}
+	}
 }
 
 // statusText 状态行文本（数据源同 uitui Status 回调：Model/Level/Effort 现取）。
