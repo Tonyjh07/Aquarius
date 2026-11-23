@@ -377,10 +377,20 @@ type UI struct {
 
 	// 转写区手工滚动（D44：不用 widget.List——需要每行绝对矩形登记形状）。
 	transcriptScroll gesture.Scroll
-	scrollPx         int  // 内容滚动偏移（物理 px，0 = 顶）
+	scrollPx         int  // 内容滚动偏移（物理 px，0 = 顶；尾随时 = 追及位置的取整）
 	followTail       bool // 尾随贴底（新内容贴输入栏；上滚即停，§15.3）
-	contentH         int  // 内容总高（上一帧测得，物理 px）
-	transH           int  // 转写视口高（transcript 布局期写；updateSel 消费者阶段读——一帧陈旧，D102 判缘用）
+	// D333 尾随的平滑追及：scrollTarget = 本帧量高后声明的目标底（overflow），
+	// scrollAn.pos = 按时间追的实际位置，推进在 stepScroll（帧里、layout 之前）。
+	// scrollLagPx = 落后上限（dp 换 px，updateScroll 写）；scrollLast = 上一帧推进时刻。
+	scrollTarget int
+	scrollAn     scrollAnim
+	scrollLast   time.Time
+	scrollLagPx  int
+	// D334 回底按钮「↓ 最新」：显隐淡变 + 点击件（覆盖层，不参与量高）。
+	pillAn   pillAnim
+	pillBtn  widget.Clickable
+	contentH int // 内容总高（上一帧测得，物理 px）
+	transH   int // 转写视口高（transcript 布局期写；updateSel 消费者阶段读——一帧陈旧，D102 判缘用）
 
 	// D102 拖选贴边自动滚动：selTick = 唤帧心跳（armHeartbeat 同模式，nil = 未运行）；
 	// selScrollAcc = 分数步长累加器（防整除吞步）。仅事件循环 goroutine 读写。
@@ -490,10 +500,11 @@ type UI struct {
 
 	// reveals 折叠块的揭示时间线（D332）：六类折叠单元共用一套时长与曲线，键 = 块种类 +
 	// 块序（Turn 组用组 slot）。布局只声明目标与读现值，进度由 stepReveals 在帧前推进；
-	// revealStop = 唤帧循环的退出信号（nil = 未运行）；revealQuiet 在铺半隐正文时置位，
-	// 让行选键不落（选区不落在看不见的字上）。仅事件循环 goroutine 读写。
+	// motionStop = 唤帧循环的退出信号（nil = 未运行；揭示与尾随滚动共用一个心跳，
+	// D333）。revealQuiet 在铺半隐正文时置位，让行选键不落（选区不落在看不见的字上）。
+	// 仅事件循环 goroutine 读写。
 	reveals     map[blockKey]*revealAnim
-	revealStop  chan struct{}
+	motionStop  chan struct{}
 	revealQuiet bool
 	// motionInstant 揭示直接落定、不起动画（测试夹具置位：headless 没有帧循环推进
 	// 时间线；生产恒 false）。

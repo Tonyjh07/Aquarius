@@ -31,6 +31,9 @@ func (u *UI) transcript(gtx layout.Context, w, h int) {
 		// 空态不渲染任何元素（悬浮球只剩输入栏，区域全透；转写浮层"提交后出现"，§15.1）。
 		u.contentH = 0
 		u.scrollPx = 0
+		u.scrollTarget = 0
+		u.snapScroll()      // D333：空态没有内容可追，时间线归零
+		u.pillTarget(false) // D334：没有溢出就不该有回底按钮
 		u.transH = 0
 		u.keyRects = u.keyRects[:0]       // 键清零 → 指针值（0）与任何选区指纹都不同，选区下帧自愈
 		u.bubbleRects = u.bubbleRects[:0] // D92：气泡矩形随帧复位
@@ -105,6 +108,8 @@ func (u *UI) transcript(gtx layout.Context, w, h int) {
 	u.keyRects = u.keyRects[:totalKeys] // 结构缩小时清尾（writeKeyRects 按 base 定位不越界）
 	u.keyFp = fph.Sum64()
 	u.contentH = total
+	// D334 回底按钮：覆盖层，画在最后（压在所有行之上），不参与量高。
+	u.scrollPill(gtx, w, h, viewport)
 }
 
 // selFor 行选状态 get-or-create（D63）：按行序缓存——跨帧持久（选中态/焦点不丢），

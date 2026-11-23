@@ -47,6 +47,7 @@ var zhGuiChatTexts = map[string]string{
 	"ui.chat.chip_result_fail":   "结果 ✗",
 	"ui.chat.chip_raw_title":     "工具调用 · {name}",
 	"ui.chat.chip_running":       "运行中…",
+	"ui.scroll.latest":           "↓ 最新",
 	"ui.chat.thinking_live":      "思考中…",
 	"ui.turn.summary":            "工作 {sec}，调用了 {n} 个工具",
 	"ui.turn.summary_plain":      "调用了 {n} 个工具",

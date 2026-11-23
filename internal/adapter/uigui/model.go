@@ -353,6 +353,11 @@ func (m *model) clear() {
 	m.usage = conversation.Usage{}
 	m.u.scrollPx, m.u.contentH = 0, 0
 	m.u.followTail = true
+	// D333/D334：清屏是整体置换，不是流式增长——追及时间线与回底按钮一起归零（否则
+	// 新会话第一屏会从上一会话的偏移「滑」下来）。
+	m.u.scrollTarget = 0
+	m.u.snapScroll()
+	m.u.pillAn = pillAnim{}
 	m.u.selRows = m.u.selRows[:0]
 	m.u.sel.clear() // D91 ④：清屏也清转写选区（键清零 → 指纹失配自愈）
 	m.u.keyRects = m.u.keyRects[:0]
@@ -369,7 +374,7 @@ func (m *model) clear() {
 	m.u.turnShow = nil
 	// D332：揭示时间线跟块序走，清屏后块序重排——一并复位，别让新会话第一块继承
 	// 上一会话某个序位的半开状态；在跑的表也停掉。
-	m.u.stopRevealTicker()
+	m.u.stopMotionTicker()
 	m.u.reveals = nil
 	// pendingCmd **不清**（D265）：清屏正发生在 /switch、/regen 这类命令中途，
 	// 这类命令的返回文本还没到——抹掉就等于让那条结果无处可归。

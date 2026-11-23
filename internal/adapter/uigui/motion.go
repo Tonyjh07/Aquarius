@@ -161,12 +161,22 @@ func (u *UI) revealForDelay(k blockKey, open bool, delay time.Duration) float64 
 	a.dur = time.Duration(float64(base)*scale) * time.Millisecond
 	a.start = time.Now().Add(delay)
 	a.run = true
-	u.startRevealTicker()
+	u.startMotionTicker()
 	return a.v
 }
 
-// stepReveals 推进所有揭示时间线到 now（frame() 里、**layout 之前**调用）。
-func (u *UI) stepReveals(now time.Time) {
+// stepMotion 帧前推进所有动效（揭示 D332 + 尾随滚动与回底按钮 D333/D334），并维护
+// 唯一的唤帧心跳（一个 ticker 服务全部动效，跑完一起停）。**layout 之前**调用。
+func (u *UI) stepMotion(now time.Time) {
+	if u.stepReveals(now) || u.stepScroll(now) {
+		u.startMotionTicker()
+		return
+	}
+	u.stopMotionTicker()
+}
+
+// stepReveals 推进所有揭示时间线到 now，返回是否还有在跑的（唤帧由 stepMotion 管）。
+func (u *UI) stepReveals(now time.Time) bool {
 	running := false
 	for _, a := range u.reveals {
 		if !a.run {
@@ -192,18 +202,16 @@ func (u *UI) stepReveals(now time.Time) {
 		a.v = a.from + (a.to-a.from)*e(t)
 		running = true
 	}
-	if !running {
-		u.stopRevealTicker()
-	}
+	return running
 }
 
-// startRevealTicker 起唤帧循环（幂等；headless 无窗口不起——测试里手动 stepReveals）。
-func (u *UI) startRevealTicker() {
-	if u.w == nil || u.revealStop != nil {
+// startMotionTicker 起唤帧循环（幂等；headless 无窗口不起——测试里手动推进）。
+func (u *UI) startMotionTicker() {
+	if u.w == nil || u.motionStop != nil {
 		return
 	}
 	ch := make(chan struct{})
-	u.revealStop = ch
+	u.motionStop = ch
 	go func() {
 		t := time.NewTicker(16 * time.Millisecond)
 		defer t.Stop()
@@ -220,11 +228,11 @@ func (u *UI) startRevealTicker() {
 	}()
 }
 
-// stopRevealTicker 关停唤帧循环（幂等）。
-func (u *UI) stopRevealTicker() {
-	if u.revealStop != nil {
-		close(u.revealStop)
-		u.revealStop = nil
+// stopMotionTicker 关停唤帧循环（幂等）。
+func (u *UI) stopMotionTicker() {
+	if u.motionStop != nil {
+		close(u.motionStop)
+		u.motionStop = nil
 	}
 }
 

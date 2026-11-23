@@ -2,6 +2,7 @@ package uigui
 
 import (
 	"image"
+	"math"
 
 	"gioui.org/gesture"
 	"gioui.org/io/key"
@@ -173,11 +174,17 @@ func (u *UI) layoutCollapsed(gtx layout.Context, size image.Point) {
 // updateScroll 滚动手势 + 当帧边界钳制 + 尾随（§15.3 流式内容贴底）。
 // d>0 = 向下滚（往新内容）；d<0 = 上滚离开底部 → 停止尾随；滚回底部 → 恢复。
 // 边界由本函数钳制（含 fling 溢出）——不交给 ScrollRange（见下方滞后说明）。
+//
+// D333：尾随不再硬赋值 scrollPx = overflow，而是「声明目标 + 读追及位置」——
+// scrollPx 取 stepScroll 推进过的 pos，内容长多快就滚多平滑。手滚与键盘一律当帧生效
+// 并把 pos 对齐（追及只服务尾随），整屏级的跳变由 stepScroll 直接落定。
 func (u *UI) updateScroll(gtx layout.Context, viewH, total int) {
 	overflow := total - viewH
 	if overflow < 0 {
 		overflow = 0
 	}
+	u.scrollLagPx = gtx.Dp(scrollLagMaxDp)
+	u.scrollKeys(gtx, viewH, overflow) // D333：PageUp/PageDown/Home/End（先于手势）
 	// 滚动范围按**轴向**绑定（gesture.Scroll.Update 的 scrollx/scrolly 两参）：垂直手势
 	// 累加 e.Scroll.Y，夹取范围必须给 scrolly——Gio 自家 layout/list.go 即此法
 	//（`Axis==Vertical` 时把 bounds 换到 Y）。绑到 scrollx 会被 Y 侧 {0,0} 夹成 0，
@@ -201,12 +208,41 @@ func (u *UI) updateScroll(gtx layout.Context, viewH, total int) {
 	if u.scrollPx > overflow {
 		u.scrollPx = overflow
 	}
+	if d != 0 {
+		u.snapScroll() // 手滚当帧生效：追及位置跟上，回底按钮的定长缓动一并打断
+	}
 	if d < 0 {
 		u.followTail = false
 	} else if d > 0 && u.scrollPx >= overflow {
 		u.followTail = true
 	}
-	if u.followTail {
-		u.scrollPx = overflow // 尾随：新内容永远贴底
+	u.scrollTarget = overflow
+	if !u.followTail {
+		return
+	}
+	if u.motionInstant { // 测试夹具：没有帧循环推动画，直接贴底
+		u.scrollAn.pos = float64(overflow)
+		u.scrollAn.run, u.scrollAn.jump = false, false
+		u.scrollPx = overflow
+		return
+	}
+	// 首次量高 / 整屏级跳变（恢复长历史、清屏后重建、一大块结果落地）：不是流式增长，
+	// 当帧落定——否则第一帧会把整段历史从上往下「扫」一遍。
+	if lag := float64(overflow) - u.scrollAn.pos; lag > float64(viewH) || u.scrollAn.pos > float64(overflow) {
+		u.scrollAn.pos = float64(overflow)
+		u.scrollAn.run, u.scrollAn.jump = false, false
+	}
+	u.scrollPx = int(math.Round(u.scrollAn.pos))
+	if u.scrollPx < 0 {
+		u.scrollPx = 0
+	}
+	if u.scrollPx > overflow {
+		u.scrollPx = overflow
+	}
+	if u.scrollPx < overflow && !u.scrollAn.jump { // 还没追上：起表（定长缓动在跑就让它跑）
+		u.scrollAn.run = true
+	}
+	if u.scrollAn.run {
+		u.startMotionTicker()
 	}
 }

@@ -178,7 +178,7 @@ func TestRevealClearsOnClear(t *testing.T) {
 		t.Fatal("应已登记时间线")
 	}
 	u.m.clear()
-	if u.reveals != nil || u.revealStop != nil {
-		t.Fatalf("清屏后未复位: reveals=%v stop=%v", u.reveals, u.revealStop)
+	if u.reveals != nil || u.motionStop != nil {
+		t.Fatalf("清屏后未复位: reveals=%v stop=%v", u.reveals, u.motionStop)
 	}
 }

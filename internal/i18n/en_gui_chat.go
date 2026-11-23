@@ -45,6 +45,7 @@ var enGuiChatTexts = map[string]string{
 	"ui.chat.chip_result_fail":   "Result ✗",
 	"ui.chat.chip_raw_title":     "Tool call · {name}",
 	"ui.chat.chip_running":       "Running…",
+	"ui.scroll.latest":           "↓ Latest",
 	"ui.chat.thinking_live":      "Thinking…",
 	"ui.turn.summary":            "Worked {sec}, {n} tool calls",
 	"ui.turn.summary_plain":      "{n} tool calls",

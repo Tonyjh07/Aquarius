@@ -694,9 +694,16 @@ func TestTranscriptTopHeadroom(t *testing.T) {
 			u.contentH, rowsTotal, pad, lowPad)
 	}
 	// ①' 上滚到顶（内容高过视口）：末行底越过视口底 → 底缘内容**在底带内**渐隐，
-	//     而不是被视口下沿齐刷刷切断（D79 的现象面）。
-	if last := u.shapes[len(u.shapes)-1].outline; last.Max.Y <= h {
-		t.Fatalf("末行底 = %d, want > %d（上滚离底时内容应延伸进底带，D79）", last.Max.Y, h)
+	//     而不是被视口下沿齐刷刷切断（D79 的现象面）。取所有形状的最大下沿：
+	//     D334 起右下角回底按钮也登记形状（覆盖层，压在最上面），它不是末行。
+	lastBottom := 0
+	for _, sh := range u.shapes {
+		if sh.outline.Max.Y > lastBottom {
+			lastBottom = sh.outline.Max.Y
+		}
+	}
+	if lastBottom <= h {
+		t.Fatalf("末行底 = %d, want > %d（上滚离底时内容应延伸进底带，D79）", lastBottom, h)
 	}
 
 	// ② 尾随到底：底钉只整体上移一个尾部留白——scrollPx = overflow、末行底 == 视口底
