@@ -9,7 +9,7 @@ import (
 	v1 "github.com/Tonyjh07/Aquarius/pluginapi"
 )
 
-// host.go 把内核服务包成 v1 Host（plugin-design.md §5）。首发六项，每项都只是转发——
+// host.go 把内核服务包成 v1 Host（plugin-design.md §5）。首发八项，每项都只是转发—
 // 这里刻意不放任何策略：确认档、密钥解析、去重语义都在各自的内核实现里，插件面只拿
 // 「能做这件事的句柄」。
 //
@@ -19,11 +19,13 @@ import (
 // HostOptions 宿主侧的实现装配。缺项按「不提供」处理：Log / Secrets / Blobs 为 nil 时
 // 对应方法返回明确错误（不是 panic），这样某个插件在没接好依赖的环境里失败得好读。
 type HostOptions struct {
-	Plugin    string       // 插件名：日志上下文段与 WorkDir 归属都靠它
+	Plugin    string       // 插件名：日志上下文段与两个目录的归属都靠它
 	Log       port.Log     // 五段式日志（一处写出，D276）
 	Secrets   port.Secrets // secret:<name> 解析
 	Blobs     port.AttachmentStore
-	Dir       string                         // 插件私有目录（随 profile，关机清理）
+	DataDir   string                         // 插件私有持久目录（随 profile，跨重启存活）
+	WorkDir   string                         // 插件私有临时目录（随 profile，关机清理）
+	Locale    string                         // 内核当前界面语言 "zh" / "en"（空 = 不给）
 	Confirmer port.Confirmer                 // 内核确认链
 	Notify    func(title, body string) error // 系统通知的发送实现；nil = 静默
 	// Notice 非 nil 时返回的 Host 额外实现 NoticePoster（消息流内联提示）。
@@ -32,7 +34,7 @@ type HostOptions struct {
 	LegacyMemory func(ctx context.Context) (v1.LegacyMemorySnapshot, error)
 }
 
-// Host v1 Host 的实现：六项内核服务的转发壳。
+// Host v1 Host 的实现：八项内核服务的转发壳。
 type Host struct {
 	opts HostOptions
 }
@@ -66,7 +68,15 @@ func (h *Host) Secrets() v1.SecretResolver { return secretResolver{secrets: h.op
 
 func (h *Host) Blobs() v1.BlobStore { return blobStore{blobs: h.opts.Blobs} }
 
-func (h *Host) WorkDir() string { return h.opts.Dir }
+// DataDir 持久目录，WorkDir 临时目录：两个都随 profile，生存期不同（D341）。宿主没给时
+// 返回空串而不是报错——目录是「有就有」的能力，插件自己降级成不留存。
+func (h *Host) DataDir() string { return h.opts.DataDir }
+
+func (h *Host) WorkDir() string { return h.opts.WorkDir }
+
+// Locale 内核界面语言。契约里是值不是访问器：语言整次运行内不变（D275），宿主在造
+// Host 时把当时生效的那种填进来，插件不必每轮问。
+func (h *Host) Locale() string { return h.opts.Locale }
 
 // Confirm 走内核确认链：请求转成 port 形状（Op / Risk 的零值语义两边一致：Has* 位说了算），
 // 应答再转回来。插件自造确认 UI 不算数，所以这里没有旁路。

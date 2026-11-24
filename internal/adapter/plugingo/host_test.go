@@ -255,3 +255,19 @@ func (nilStreamLLM) Generate(context.Context, v1.GenerateRequest) (v1.Stream, er
 	return nil, nil
 }
 func (nilStreamLLM) Models(context.Context) ([]v1.ModelInfo, error) { return nil, nil }
+
+// 两个目录与语言都是纯转发：插件拿到什么就是宿主填了什么，不在这里做任何加工。
+func TestHostPathsAndLocaleArePassThrough(t *testing.T) {
+	h := NewHost(HostOptions{Plugin: "p", DataDir: "/persist/p", WorkDir: "/tmp/p", Locale: "en"})
+	if h.DataDir() != "/persist/p" || h.WorkDir() != "/tmp/p" {
+		t.Fatalf("目录没转发：data=%q work=%q", h.DataDir(), h.WorkDir())
+	}
+	if h.Locale() != "en" {
+		t.Fatalf("语言没转发：%q", h.Locale())
+	}
+	// 没接的时候是空串而不是报错：目录与语言都是「有就有」的能力，插件据此降级。
+	bare := NewHost(HostOptions{Plugin: "p"})
+	if bare.DataDir() != "" || bare.WorkDir() != "" || bare.Locale() != "" {
+		t.Fatalf("未接线时应为空串：data=%q work=%q locale=%q", bare.DataDir(), bare.WorkDir(), bare.Locale())
+	}
+}

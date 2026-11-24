@@ -30,6 +30,8 @@ type Manifest struct {
 	// 一个插件启用，两个同时启用由宿主拒绝（D337）。空 = 不供给任何端口。
 	Provides []string
 	// Locales 插件自带的 UI 文案语种（"zh" / "en"）：插件文案不进内核 i18n 表
-	//（plugin-design.md §6 纪律 2），宿主按此选插件文案。空 = 无 UI 文案（不贡献设置页与面板）。
+	//（plugin-design.md §6 纪律 2）。宿主不替插件选文案，只是经 Host.Locale() 告知
+	// 当前语言，插件自己按本字段挑；没带宿主那种语言就用自己的缺省。
+	// 空 = 无 UI 文案（不贡献设置页与面板）。
 	Locales []string
 }

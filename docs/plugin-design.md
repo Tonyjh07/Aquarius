@@ -1,5 +1,5 @@
 # Tier-1 Go 插件契约（pluginapi，v1）设计规格
-<!-- docs-sync: 2026-11-24 @ e874bb3 -->
+<!-- docs-sync: 2026-11-24 @ 1eb41a4 -->
 
 > 定位：Tier-1 进程内 Go 插件契约包（`pluginapi`，本代为 v1）的实现规格——接口面、UI 扩展面、宿主服务、
 > 生命周期、版本纪律、能力边界。Tier-2（MCP server）的规格在 [contracts.md](contracts.md) §6.2–§6.4，
@@ -167,7 +167,7 @@ type Memory interface {
 }
 ```
 
-1. **存哪**归插件：`WorkDir()` 落盘、`Secrets()` 取远端凭据、或接外部服务，内核不问。
+1. **存哪**归插件：`DataDir()` 落盘、`Secrets()` 取远端凭据、或接外部服务，内核不问。
 2. **怎么组织**归插件：文档、图层、向量、时序图都行；`Recall` 返回的就是本轮注入的
    markdown 原文，宿主原样放进去，不解读、不重排、不加标题。
 3. **怎么管理**归插件：写入工具、`/memory` 类命令、面板全走 `ToolProvider` /
@@ -195,14 +195,16 @@ type Memory interface {
 
 ## 5. Host：消费面
 
-Host 是插件可用的全部内核服务，单一结构分发，不裸暴露内核类型。首发六项：
+Host 是插件可用的全部内核服务，单一结构分发，不裸暴露内核类型。首发八项：
 
 ```go
 type Host interface {
     Logger() Logger            // 五段式日志的插件命名空间（D276 同一写出点）
     Secrets() SecretResolver   // 按名解析 secret:<name>，明文不落插件
     Blobs() BlobStore          // 内容寻址附件读写，与内核共享去重与 GC 语义
+    DataDir() string           // 插件私有持久目录（随 profile，跨重启存活）
     WorkDir() string           // 插件私有临时目录（随 profile，关机清理）
+    Locale() string            // 内核当前界面语言 "zh" / "en"（与 Manifest.Locales 同词表）
     Confirm(ctx, req ConfirmRequest) (ConfirmAnswer, error)  // 走内核确认链
     Notify(level, text string) // 用户通知出口
 }
@@ -213,10 +215,17 @@ type Host interface {
 1. **Logger**：插件自开日志文件就破了「运行日志一处写出」（D276）。
 2. **Secrets**：只给解析、不给存储；插件各存一份密钥是密钥安全规则（硬性规则 8）的反面。
 3. **Blobs**：裸文件路径绕开内容寻址去重与 GC；面板展示附件内容也绕不开 BlobStore。
-4. **WorkDir**：给插件一个有清理语义的落盘位置，不鼓励另开目录。
-5. **Confirm**：插件不得自造确认 UI；权限矩阵、审计、无人值守语义（D285）才能罩住插件。
+4. **DataDir**：要活过重启的东西（库、索引、游标、迁移快照）得有落盘处——记忆插件的第一
+   条需求就在这。内核只给位置：不清理、不读内容、不做备份，布局与迁移归插件。`Blobs`
+   顶不上这个位：它是内容寻址的，没有元数据写面，写不了索引和游标（D341）。
+5. **WorkDir**：临时产物的落盘位置（解包目录、中间文件）。与 DataDir 分两个方法而不是加
+   个参数，是因为「这个目录会不会被清」不该让插件去猜。
+6. **Locale**：`Manifest.Locales` 声称「宿主按此选插件文案」，那就得有通道告诉插件现在是
+   哪种语言，否则那条承诺不成立。语言整次运行内不变（D275），所以给值不给访问器；空串
+   = 宿主没给，插件退回自己的缺省。插件文案本身仍不进内核 i18n 表（§6 纪律 2）。
+7. **Confirm**：插件不得自造确认 UI；权限矩阵、审计、无人值守语义（D285）才能罩住插件。
    带 ctx 而不是无参：取消时确认链随轮次一并收工，插件不自己拼超时。
-6. **Notify**：见 §6 的通知路径。
+8. **Notify**：见 §6 的通知路径。
 
 Host 的方法集是 v1 里最容易过度承诺的地方：每个方法都要过一遍「内核愿意为这个方法背多久的
 兼容债」。首发宁可少给，靠只增不改补。
@@ -435,7 +444,7 @@ Draining → Stopped 是唯一出路。Go 同进程里「挂起」没有可执�
 | `convert_tool.go` | 调用进去、结果/确认应答回来、确认请求出去 |
 | `convert_io.go` | 原始输入、摄取结果、正文分片、输出请求（工具分片不进 v1） |
 | `convert_speech.go` `convert_command.go` | 语音段/合成请求、命令声明 |
-| `host.go` | v1 Host 六项转发；可选扩展按构造时是否给实现决定断言命中 |
+| `host.go` | v1 Host 八项转发；可选扩展按构造时是否给实现决定断言命中 |
 | `providers.go` | 九个供给面的插件实现 → port 接口（`NewLLM` / `Tools` / `NewIngestor` / …） |
 
 两条实现约定：**每个入口都单独调一次 `toV1Session`**（不做「顺手带上」的公共包装，漏了
@@ -448,7 +457,7 @@ Draining → Stopped 是唯一出路。Go 同进程里「挂起」没有可执�
 `design.md`：`Memory` 注入 + **标题即工具**（每个记忆点一个工具，调用即下钻并计数）+
 分层面板 + 首次启用时迁移内置记忆）。选型标准
 不随具体插件变：一条路径同时覆盖四层——供给面实现 + `Init` 里解析 `secret:` 与迁移快照 +
-落盘或附件经消费面（WorkDir / Blobs）+ `/plugin` 与设置窗可见（管理面）+ Shutdown 收尾
+落盘或附件经消费面（DataDir / WorkDir / Blobs）+ `/plugin` 与设置窗可见（管理面）+ Shutdown 收尾
 （生命周期）。记忆插件额外验两条契约义务：接管期间 `memory_*` 与 `/memory` 确实退出、
 内置记忆确实转只读；两个 `provides: memory` 同时启用确实被拒。
 选中的插件同时是契约的验收测试与文档样例；导出文件输出器（`OutputAdapter`）留作
@@ -459,7 +468,8 @@ Draining → Stopped 是唯一出路。Go 同进程里「挂起」没有可执�
 本文规格的动机与否决立为 [decisions.md](decisions.md) 的 D327，要点：
 
 1. v1 类型独立重述，不暴露 `internal/port` 类型。
-2. Host 首发六项（Logger / Secrets / Blobs / WorkDir / Confirm / Notify）。
+2. Host 首发八项（Logger / Secrets / Blobs / DataDir / WorkDir / Locale / Confirm / Notify，
+   其中 DataDir 与 Locale 由 D341 补入）。
 3. UI 扩展面随 v1 开放；D143 收窄为「装载关、贡献开」。
 4. 面板词汇首发六种 Node，交互走拉模式（插件不推送界面），降级行为写死。
 5. 插件文案自带 zh / en，不进内核 i18n 表。

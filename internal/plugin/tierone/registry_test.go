@@ -16,7 +16,9 @@ type fakeHost struct{}
 func (fakeHost) Logger() v1.Logger          { return nil }
 func (fakeHost) Secrets() v1.SecretResolver { return nil }
 func (fakeHost) Blobs() v1.BlobStore        { return nil }
+func (fakeHost) DataDir() string            { return "" }
 func (fakeHost) WorkDir() string            { return "" }
+func (fakeHost) Locale() string             { return "zh" }
 func (fakeHost) Notify(string, string)      {}
 func (fakeHost) Confirm(context.Context, v1.ConfirmRequest) (v1.ConfirmAnswer, error) {
 	return v1.ConfirmAnswer{}, nil

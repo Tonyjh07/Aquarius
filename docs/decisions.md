@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-11-24 @ e874bb3 -->
+<!-- docs-sync: 2026-11-24 @ 1eb41a4 -->
 
 > **权威文档之一**：决策节于 2026-09 独立成篇，与 [contracts.md](contracts.md) 同级同权威
 > （该节 2026-10 从总设计文档删除，不再占节号）。编号**跨文件不变**
@@ -351,6 +351,7 @@
 | [D338](#d338) | 会话身份只经 ctx：宿主在每个插件入口 `WithSession` 注入、插件 `SessionFrom` 读，值类型一律不带会话字段；`MemoryRequest.Session` 随之删除，单一来源（用户拍板选「ctx 访问器」） | 已完成 |
 | [D339](#d339) | Tier-1 装载落地的三条取舍：`Host.Confirm` 补 ctx（契约未冻结前改）；provides 自检移到 Create 之后（不为禁用插件造实例）；注册表 `internal/plugin/tierone` 只依赖 pluginapi，Host 由装配根注入避免 plugin→adapter 反向依赖 | 已完成 |
 | [D340](#d340) | 工具面按轮给：`Tools(ctx)` 每次装配都问、清单可随导航变化；内核加 `port.ToolSet`（装配时向源要、执行时按 ctx 的会话找），名字在会话内唯一、撞内置以内置为准、不受 `tools.disabled` 约束；零工具不再拒载 | 已完成 |
+| [D341](#d341) | Host 补两项：`DataDir()`（持久目录）与 `Locale()`（当前界面语言），首发六项 → 八项；目录按生存期分成 DataDir / WorkDir 两个方法而不是加参数；空串 = 宿主未提供，插件降级；语言给值不给访问器（D275 运行内不变），词表与 `Manifest.Locales` 同一套 | 已完成 |
 
 ## 记录
 
@@ -3387,3 +3388,45 @@
   `ToolSet` 适配器与工具名校验；`tierone` 去掉空工具拒载；配 `set_test.go` /
   `toolset_test.go` / `tool_test.go` / 改写 `TestEmptyToolListAllowed`；plugin-design.md
   §3.1/§4/§7/§12 同步）。样例插件的导航语义与计数规则随其 design.md 重写。
+
+<a id="d341"></a>
+
+### D341 · Host 补持久目录与界面语言：目录按生存期分开，语言得有通道
+
+- **背景**：样例记忆插件要把 `recalls` / `last_recall` / `layer` 这类「下次启动还要读到」的
+  东西落盘，而 v1 Host 只有一个 `WorkDir()`：注释同时写着「随 profile」与「关机清理」——
+  这两句话并排放着是自相矛盾的，插件没法据此决定该不该往里面写库。另一头，`Manifest.Locales`
+  声明「宿主按此选插件文案」，可 Host 没有任何一项告知当前语言，这条承诺在契约里不成立：
+  插件只能猜，或者干脆两边都渲染。
+
+- **决策**：
+  1. **Host 加两项**：`DataDir() string` 与 `Locale() string`，首发六项变八项。加在本体而不
+     走可选接口——这两项几乎每个有状态的插件都要问，属于「内核必须理解的词汇」；可选接口
+     留给少数派（`NoticePoster` / `LegacyMemoryHost`）。契约冻结前加，代价只是改两个 fakeHost
+     与唯一一个实现。
+  2. **目录按生存期拆成两个方法**，不合成一个带参数的方法：`DataDir` 跨重启存活，内核不清理、
+     不读内容、不做备份；`WorkDir` 关机清理。让插件去猜「我这个目录会不会被清」是设计事故。
+  3. **两个都返回字符串，空串 = 宿主未提供**：目录与语言都是「有就有」的能力，缺了插件降级
+     （不留存 / 用自己的缺省语言）比拿错误去处理更好读。
+  4. **`Locale` 给值不给访问器**：界面语言整次运行内不变（D275），宿主造 Host 时把当时生效的
+     那种填进来就够了；`func() string` 只是多一次调用，还多一个「跨轮缓存了旧值」的坑。
+  5. **词表与 `Manifest.Locales` 同一套**（"zh" / "en"）：两边若用不同写法，插件还得自带一张
+     映射表。
+  6. **`Blobs()` 顶不上 `DataDir()`**：内容寻址库没有元数据写面，写不了索引、游标、时间戳；
+     而且清扫的 keep 集归内核，插件交上来的 keep 会误删别人引用的字节（§3.1 映射表）。
+
+- **备选**：
+  1. **只把 `WorkDir` 的注释改成持久**：临时产物就没地方放了，插件会自己往 `os.TempDir()`
+     拼名字，撞车与残留都没人管。
+  2. **让插件从 `WorkDir()` 上跳两级推出 profile**：依赖宿主目录布局，换布局就断，是实现
+     细节泄漏。
+  3. **`DataDir` 走可选接口**：那「能不能存」就成了运行期才知道的事，type assertion 的结果
+     编译期看不出来——能力是常态就不该做成可选。
+  4. **语言从环境变量取**（`LANG` / `LC_ALL`）：Windows 上不可靠，且与 `ui.lang` 不同源
+     （用户显式选 en 时环境变量仍是 zh）。
+
+- **状态**：已完成（`pluginapi/host.go` 的两项方法与注释、`Manifest.Locales` 注释改写；
+  `plugingo` 的 `HostOptions.DataDir` / `WorkDir` / `Locale` 与三个转发方法、
+  `TestHostPathsAndLocaleArePassThrough`；两处 fakeHost；plugin-design.md §4/§5/§12/§13 同步）。
+  宿主侧真实接线在 P3 第 3 步：`DataDir` 取 `<profile>/plugin-data/<name>`、`Locale` 取
+  `i18n.Current()`。

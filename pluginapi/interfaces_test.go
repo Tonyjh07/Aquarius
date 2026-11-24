@@ -90,7 +90,7 @@ func (fakePlugin) OnAction(context.Context, ViewAction) (Node, error) {
 func (fakePlugin) Sections() []SettingsSection                        { return nil }
 func (fakePlugin) ApplySettings(context.Context, SettingsPatch) error { return nil }
 
-// fakeHost 实现 Host 六项、可选的内联提示扩展与迁移素材。
+// fakeHost 实现 Host 八项、可选的内联提示扩展与迁移素材。
 type fakeHost struct{}
 
 var (
@@ -102,7 +102,9 @@ var (
 func (fakeHost) Logger() Logger          { return fakeLogger{} }
 func (fakeHost) Secrets() SecretResolver { return fakeSecrets{} }
 func (fakeHost) Blobs() BlobStore        { return fakeBlobs{} }
+func (fakeHost) DataDir() string         { return "" }
 func (fakeHost) WorkDir() string         { return "" }
+func (fakeHost) Locale() string          { return "zh" }
 func (fakeHost) Confirm(context.Context, ConfirmRequest) (ConfirmAnswer, error) {
 	return ConfirmAnswer{}, nil
 }
@@ -157,7 +159,7 @@ func TestVocabularyConstantsUnique(t *testing.T) {
 	}
 }
 
-// TestLegacyMemoryIsOptional 迁移素材必须是「可选扩展」而不是 Host 的第七项：Host 加方法
+// TestLegacyMemoryIsOptional 迁移素材必须是「可选扩展」而不是 Host 本体的又一项：Host 加方法
 // 会破坏所有实现方，而迁移只有记忆插件需要。这条锁住「对句柄断言得到它、不必实现它」。
 func TestLegacyMemoryIsOptional(t *testing.T) {
 	var h Host = fakeHost{}
