@@ -149,6 +149,8 @@ var enAdapterGateTexts = map[string]string{
 	"plugin.cfg.name_chars":         "plugin name \"{name}\" contains a colon or a space (tool and command names are split on the colon, so this is not allowed)",
 	"plugin.cfg.unknown_risk":       "plugin \"{name}\": unknown risk \"{risk}\" ({safe} | {confirm})",
 
+	// ---- plugin/tierone: the Tier-1 state machine (validation, enable/disable, exclusivity). ----
+
 	// ---- plugin/host.go：插件列表的状态文案、两道确认句、以及启用/停用/授权的报错。 ----
 	"plugin.host.status_untrusted":     "Not trusted, or the confirmation was declined (fail-closed)",
 	"plugin.host.status_ungranted":     "The grant was declined or no confirmer exists (fail-closed)",

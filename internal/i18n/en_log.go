@@ -165,6 +165,7 @@ var enLogTexts = map[string]string{
 	// 插件宿主与插件面
 	"log.plugin.manifest_read_failed": "failed to read {name}/plugin.json: {err}",
 	"log.plugin.manifest_rejected":    "refused to load plugin {name}: {err}",
+	"log.plugin.notify_failed":        "plugin {name} could not post its notification: {err}",
 	"log.plugin.config_wins":          "plugin {name}: the config entry wins; undeclared capabilities and risk are inherited from plugin.json",
 	"log.plugin.trust_no_confirmer":   "plugin {name} is not trusted yet, and nobody can confirm",
 	"log.plugin.trust_confirm_failed": "trust confirmation for plugin {name} failed: {err}",

@@ -169,6 +169,7 @@ var zhLogTexts = map[string]string{
 	// 插件宿主与插件面
 	"log.plugin.manifest_read_failed": "读 {name}/plugin.json 失败：{err}",
 	"log.plugin.manifest_rejected":    "拒载插件 {name}：{err}",
+	"log.plugin.notify_failed":        "插件 {name} 的通知没发出去：{err}",
 	"log.plugin.config_wins":          "插件 {name}：以 config 条目为准，未声明的能力与风险等级继承 plugin.json",
 	"log.plugin.trust_no_confirmer":   "插件 {name} 尚未信任，且无人可确认",
 	"log.plugin.trust_confirm_failed": "插件 {name} 的信任确认失败：{err}",

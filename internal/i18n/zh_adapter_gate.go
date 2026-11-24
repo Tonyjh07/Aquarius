@@ -154,6 +154,9 @@ var zhAdapterGateTexts = map[string]string{
 	"plugin.cfg.name_chars":         "插件名「{name}」含冒号或空白（工具/命令名按冒号切分，不允许）",
 	"plugin.cfg.unknown_risk":       "插件「{name}」: 未知 risk「{risk}」（{safe} | {confirm}）",
 
+	// ---- plugin/tierone：Tier-1 状态机（校验、启停、独占）。契约版本与 provides 词表
+	// 都是英文枚举，留在译文里不翻。 ----
+
 	// ---- plugin/host.go：插件列表的状态文案、两道确认句、以及启用/停用/授权的报错。 ----
 	"plugin.host.status_untrusted":     "未获信任或确认被拒绝（fail-closed）",
 	"plugin.host.status_ungranted":     "授权被拒绝或缺少确认器（fail-closed）",
