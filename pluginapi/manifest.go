@@ -4,8 +4,9 @@
 // 字段的语义与类型；新字段只加在结构体末尾并注释零值语义；新方法只加新的独立接口；
 // 签名冻结，破坏性变更开 v2 并存。插件编译到本包上，永不编译到内核类型上。
 //
-// 状态（v1.0.0 的 P2）：本版只含 Manifest 与稳定值类型层（value.go）；供给面九接口、
-// Host 消费面、生命周期与 UI 扩展面的接口代码随 P3 落盘，规格见 docs/plugin-design.md。
+// 状态（v1.0.0 的 P3）：Manifest、稳定值类型层（value.go）与接口面（plugin / host /
+// llm / tool / command / memory / ingest / modality / secrets / uiext）已落盘；
+// plugingo 转换器与装载器随后，契约在本版收尾时完整冻结。规格见 docs/plugin-design.md。
 package pluginapi
 
 // APIVersion 当前契约的 API 版本：宿主启动时断言 Manifest.API == APIVersion，
