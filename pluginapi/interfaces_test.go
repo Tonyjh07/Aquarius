@@ -99,13 +99,15 @@ var (
 	_ LegacyMemoryHost = fakeHost{}
 )
 
-func (fakeHost) Logger() Logger                                { return fakeLogger{} }
-func (fakeHost) Secrets() SecretResolver                       { return fakeSecrets{} }
-func (fakeHost) Blobs() BlobStore                              { return fakeBlobs{} }
-func (fakeHost) WorkDir() string                               { return "" }
-func (fakeHost) Confirm(ConfirmRequest) (ConfirmAnswer, error) { return ConfirmAnswer{}, nil }
-func (fakeHost) Notify(string, string)                         {}
-func (fakeHost) PostNotice(string, string)                     {}
+func (fakeHost) Logger() Logger          { return fakeLogger{} }
+func (fakeHost) Secrets() SecretResolver { return fakeSecrets{} }
+func (fakeHost) Blobs() BlobStore        { return fakeBlobs{} }
+func (fakeHost) WorkDir() string         { return "" }
+func (fakeHost) Confirm(context.Context, ConfirmRequest) (ConfirmAnswer, error) {
+	return ConfirmAnswer{}, nil
+}
+func (fakeHost) Notify(string, string)     {}
+func (fakeHost) PostNotice(string, string) {}
 func (fakeHost) LegacyMemory(context.Context) (LegacyMemorySnapshot, error) {
 	return LegacyMemorySnapshot{}, nil
 }

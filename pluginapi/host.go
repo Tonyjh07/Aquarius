@@ -22,7 +22,10 @@ type Host interface {
 	WorkDir() string
 	// Confirm 走内核确认链：权限矩阵、审计与无人值守语义都罩在这里。
 	// 需要用户确认的动作必须走这里，插件自造确认 UI 不算数（§9 规则 4）。
-	Confirm(req ConfirmRequest) (ConfirmAnswer, error)
+	//
+	// ctx 与供给面方法同一个：取消时确认链一并收工（插件不必自己拼超时）。传 nil 会被
+	// 宿主当 background——但那是调用方的错，别依赖。
+	Confirm(ctx context.Context, req ConfirmRequest) (ConfirmAnswer, error)
 	// Notify 用户通知出口（系统通知）。消息流内的轻量提示见 NoticePoster。
 	Notify(level, text string)
 }

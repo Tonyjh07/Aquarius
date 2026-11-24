@@ -1,5 +1,5 @@
 # Tier-1 Go 插件契约（pluginapi，v1）设计规格
-<!-- docs-sync: 2026-11-24 @ e570e4c -->
+<!-- docs-sync: 2026-11-24 @ 4a42c0f -->
 
 > 定位：Tier-1 进程内 Go 插件契约包（`pluginapi`，本代为 v1）的实现规格——接口面、UI 扩展面、宿主服务、
 > 生命周期、版本纪律、能力边界。Tier-2（MCP server）的规格在 [contracts.md](contracts.md) §6.2–§6.4，
@@ -171,7 +171,7 @@ type Host interface {
     Secrets() SecretResolver   // 按名解析 secret:<name>，明文不落插件
     Blobs() BlobStore          // 内容寻址附件读写，与内核共享去重与 GC 语义
     WorkDir() string           // 插件私有临时目录（随 profile，关机清理）
-    Confirm(req ConfirmRequest) (ConfirmAnswer, error)  // 走内核确认链
+    Confirm(ctx, req ConfirmRequest) (ConfirmAnswer, error)  // 走内核确认链
     Notify(level, text string) // 用户通知出口
 }
 ```
@@ -183,6 +183,7 @@ type Host interface {
 3. **Blobs**：裸文件路径绕开内容寻址去重与 GC；面板展示附件内容也绕不开 BlobStore。
 4. **WorkDir**：给插件一个有清理语义的落盘位置，不鼓励另开目录。
 5. **Confirm**：插件不得自造确认 UI；权限矩阵、审计、无人值守语义（D285）才能罩住插件。
+   带 ctx 而不是无参：取消时确认链随轮次一并收工，插件不自己拼超时。
 6. **Notify**：见 §6 的通知路径。
 
 Host 的方法集是 v1 里最容易过度承诺的地方：每个方法都要过一遍「内核愿意为这个方法背多久的
@@ -280,9 +281,13 @@ Registered ──> Validated ──> Stopped ──Init──> Active ──禁�
 ```
 
 1. **Registered**：编译期注册（main 里 import + `Register`）。只是候选，不占运行时资源。
-2. **Validated**：宿主启动时逐项查 Manifest——provides 自检（声明 LLM 必须实现
-   `LanguageModel`）、api 版本断言（v1 宿主只认 `api: 1`）、名字冲突（与内置工具、MCP
-   端点撞名即拒）。校验失败停在 Stopped 并记因，不影响其他插件（软启动规则照抄 Tier-2）。
+2. **Validated**：宿主启动时逐项查 Manifest——api 版本断言（v1 宿主只认 `api: 1`）、
+   名字冲突（与内置工具、MCP 端点撞名即拒）、provides 词表。校验失败停在 Stopped 并记因，
+   不影响其他插件（软启动规则照抄 Tier-2）。
+   **provides 自检（声明 LLM 必须实现 `LanguageModel`）推迟到 Create 之后、Start 之前**：
+   接口实现与否只有在拿到实例后才验得了，而为一个禁用状态的插件造实例、跑一遍再丢掉，
+   等于让「禁用」也付出初始化副作用。落点变了、结论没变——声明与实现不符的插件照样
+   进不了 Active，只是报因发生在启用那一刻（`plugin/tierone` 的 `checkProvides`）。
 3. **Active**：`Init` 成功后可被调用；工具进注册表、模型进降级链、命令进 `/help`。
 4. **Draining**：禁用的第一阶段。进入瞬间做三件原子事：
    - 工具注册表摘除该插件全部端点；
@@ -379,6 +384,22 @@ Draining → Stopped 是唯一出路。Go 同进程里「挂起」没有可执�
    性能）。每个转换函数配一个黄金往返测试。
 3. port 侧重构时的核对清单（进 development.md）：改了某个 port 类型字段 → 按映射点
    列表逐点过 → 有语义变化就补决策记录。
+
+落盘形状（P3 第 2 步）：
+
+| 文件 | 内容 |
+|---|---|
+| `convert.go` | 风险/操作档的词表投影、会话身份换键、附件引用 |
+| `convert_llm.go` | 请求出去（含「服务端工具与本地 tools 互斥」的守门）、增量/用量/模型清单回来 |
+| `convert_tool.go` | 调用进去、结果/确认应答回来、确认请求出去 |
+| `convert_io.go` | 原始输入、摄取结果、正文分片、输出请求（工具分片不进 v1） |
+| `convert_speech.go` `convert_command.go` | 语音段/合成请求、命令声明 |
+| `host.go` | v1 Host 六项转发；可选扩展按构造时是否给实现决定断言命中 |
+| `providers.go` | 九个供给面的插件实现 → port 接口（`NewLLM` / `Tools` / `NewIngestor` / …） |
+
+两条实现约定：**每个入口都单独调一次 `toV1Session`**（不做「顺手带上」的公共包装，漏了
+就是漏了）；**插件交回的错误不分类**——v1 没有错误词表，内核按不可重试处理，要表达瞬时
+错误得先在 v1 加哨兵。
 
 ## 12. 验收（P3，首个插件）
 
