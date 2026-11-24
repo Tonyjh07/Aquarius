@@ -103,7 +103,7 @@ func (faceLLM) Models(context.Context) ([]v1.ModelInfo, error) { return nil, nil
 
 type faceTool struct{ fakeFace }
 
-func (f faceTool) Tools() []v1.ToolSpec { return f.p.tools }
+func (f faceTool) Tools(context.Context) []v1.ToolSpec { return f.p.tools }
 func (faceTool) Execute(context.Context, v1.ToolCall) (v1.ToolResult, error) {
 	return v1.ToolResult{OK: true}, nil
 }
@@ -246,14 +246,19 @@ func TestProvidesMismatchRejected(t *testing.T) {
 	}
 }
 
-func TestEmptyToolListRejected(t *testing.T) {
+// TestEmptyToolListAllowed 声明 tool 但这一轮零工具是合法状态（D340）：工具面按轮给，
+// 空库、游标停在根都会这样。拿启用时的一次采样当拒载理由，会把首次启用的记忆插件误杀。
+func TestEmptyToolListAllowed(t *testing.T) {
 	p := &fakePlugin{name: "empty", provides: []string{PortTool}}
 	r := newRegistry(t, p)
-	if err := r.SetEnabled(context.Background(), "empty", true); err == nil {
-		t.Fatal("声明 tool 但零工具应拒载")
+	if err := r.SetEnabled(context.Background(), "empty", true); err != nil {
+		t.Fatalf("零工具不该拒载：%v", err)
 	}
-	if p.shutdowns != 1 {
-		t.Fatalf("拒载要收尾，shutdowns=%d", p.shutdowns)
+	if rec, _ := r.Record("empty"); rec.State != StateActive {
+		t.Fatalf("state=%v", rec.State)
+	}
+	if p.shutdowns != 0 {
+		t.Fatalf("启用的插件不该被收尾，shutdowns=%d", p.shutdowns)
 	}
 }
 

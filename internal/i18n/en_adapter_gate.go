@@ -156,7 +156,8 @@ var enAdapterGateTexts = map[string]string{
 	"plugin.t1.provides_mismatch": "plugin \"{name}\" declares {port}, but its instance does not implement the matching interface",
 	"plugin.t1.memory_busy":       "plugin \"{name}\" wants to own memory, but \"{other}\" already does; memory has one owner at a time",
 	"plugin.t1.not_found":         "no Tier-1 plugin named \"{name}\"",
-	"plugin.t1.empty_tools":       "plugin \"{name}\" declares provide tool but declares no tools",
+	"plugin.t1.bad_tool_name":     "plugin \"{name}\" declares tool \"{tool}\", which is not a valid tool name (letters, digits, underscore, hyphen; at most 64)",
+	"plugin.t1.dup_tool_name":     "plugin \"{name}\" declares two tools named \"{tool}\" in the same turn",
 	"plugin.t1.shutdown":          "plugin \"{name}\" failed to shut down cleanly: {err}",
 
 	// ---- plugin/tierone: the Tier-1 state machine (validation, enable/disable, exclusivity). ----

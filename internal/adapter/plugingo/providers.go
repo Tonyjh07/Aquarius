@@ -2,7 +2,6 @@ package plugingo
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
@@ -87,24 +86,8 @@ type T1Tool struct {
 	desc v1.Describer // nil = 插件没实现确认摘要
 }
 
-// Tools 把插件的工具清单包成内核工具。插件声明了 provides: tool 就必须至少声明一项，
-// 空清单由状态机的校验拒载，不在这里兜底。
-func Tools(p v1.ToolProvider) []port.Tool {
-	desc, _ := p.(v1.Describer)
-	specs := p.Tools()
-	out := make([]port.Tool, 0, len(specs))
-	for _, s := range specs {
-		spec := toPortToolSpec(s)
-		if desc != nil {
-			name := spec.Name
-			spec.Describe = func(args json.RawMessage) string {
-				return desc.Describe(v1.ToolCall{Name: name, Args: args})
-			}
-		}
-		out = append(out, T1Tool{p: p, spec: spec, desc: desc})
-	}
-	return out
-}
+// Tools 已并入工具源（toolset.go，D340）：清单按轮给、名字按会话解析，不能再在这里
+// 一次性物化成固定条目。
 
 // Spec 工具声明（含装配期补上的确认摘要）。
 func (t T1Tool) Spec() tool.Spec { return t.spec }

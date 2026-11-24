@@ -162,7 +162,8 @@ var zhAdapterGateTexts = map[string]string{
 	"plugin.t1.provides_mismatch": "插件「{name}」声明提供 {port}，但实例没实现对应接口",
 	"plugin.t1.memory_busy":       "插件「{name}」要接管记忆，但「{other}」已经在管；记忆同一时刻只能有一个主人",
 	"plugin.t1.not_found":         "没有名为「{name}」的 Tier-1 插件",
-	"plugin.t1.empty_tools":       "插件「{name}」声明提供 tool，但一项工具都没声明",
+	"plugin.t1.bad_tool_name":     "插件「{name}」的工具名「{tool}」不合文法（只允许字母、数字、下划线、连字符，最长 64）",
+	"plugin.t1.dup_tool_name":     "插件「{name}」同一轮声明了两个同名工具「{tool}」",
 	"plugin.t1.shutdown":          "插件「{name}」停用时收尾失败：{err}",
 
 	// ---- plugin/tierone：Tier-1 状态机（校验、启停、独占）。契约版本与 provides 词表

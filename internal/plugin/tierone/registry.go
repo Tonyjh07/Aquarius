@@ -168,9 +168,8 @@ func (r *Registry) enable(ctx context.Context, e *entry) error {
 	if err := inst.Start(); err != nil {
 		return r.refuse(e, shutdownQuietly(inst, err))
 	}
-	if err := checkTools(inst, e.manifest); err != nil {
-		return r.refuse(e, shutdownQuietly(inst, err))
-	}
+	// 不再校验「声明 tool 却一件都没给」：工具面按轮给（D340），空库或游标停在根时
+	// 零工具是正常状态，拿一次采样当拒载理由会误杀首次启用的记忆插件。
 	e.inst = inst
 	e.guard = &Guard{}
 	e.state = StateActive

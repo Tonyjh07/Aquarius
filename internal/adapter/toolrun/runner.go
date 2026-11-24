@@ -67,6 +67,9 @@ type Runner struct {
 	tools  []port.Tool
 	byName map[string]port.Tool
 	order  []string
+	// sets 会话感知的工具源（D340，插件工具面）：不进 byName，因为它们的名字按会话
+	// 解析、逐轮可变；Specs 时合并、Execute 时按 ctx 查找。先加的优先。
+	sets []port.ToolSet
 	// disabled 只在 mu 下整体替换、绝不原地改（SetDisabled 建新表换指针，Specs/Execute
 	// 锁外读一份快照）：读的一侧不加锁就安全，靠的就是这条不变量。要改就得复制整张表，
 	// `r.disabled[name] = true` 会直接变成数据竞争。
@@ -156,7 +159,38 @@ func (r *Runner) Add(t port.Tool) {
 	r.tools = toolsOf(r.order, r.byName)
 }
 
-// Remove 注销工具（插件停用时按名移除；不存在则无操作）。
+// AddSet 挂一个工具源（插件启用时）。源必须是指针类型：注销靠接口值相等，值类型
+// 里带 map/slice 会让比较直接 panic。
+func (r *Runner) AddSet(s port.ToolSet) {
+	if s == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.sets = append(r.sets, s)
+}
+
+// RemoveSet 摘掉一个工具源（插件停用时）。不在表里则无操作。
+func (r *Runner) RemoveSet(s port.ToolSet) {
+	if s == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i, got := range r.sets {
+		if got == s {
+			r.sets = append(r.sets[:i], r.sets[i+1:]...)
+			return
+		}
+	}
+}
+
+// SetSources 当前工具源快照（锁外按它逐个问，避免在插件调用期间持锁）。
+func (r *Runner) SetSources() []port.ToolSet {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]port.ToolSet(nil), r.sets...)
+}
 func (r *Runner) Remove(name string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -184,7 +218,7 @@ func toolsOf(order []string, m map[string]port.Tool) []port.Tool {
 
 // Specs 返回模型可见的工具声明（按注册序）。呈现模式（D319）：native 全量（禁用集之外的，
 // S6/D143）；ptc 只出 run_code 一个声明——其余工具声明不发，但 Execute 照常可达（脚本绑定）。
-func (r *Runner) Specs(context.Context) ([]tool.Spec, error) {
+func (r *Runner) Specs(ctx context.Context) ([]tool.Spec, error) {
 	if r.ptc {
 		r.mu.Lock()
 		t, ok := r.byName[port.RunCodeTool]
@@ -192,9 +226,37 @@ func (r *Runner) Specs(context.Context) ([]tool.Spec, error) {
 		if !ok {
 			return nil, nil
 		}
+		// PTC 模式下模型面只出 run_code：工具源是「按轮导航」的形态，脚本里也用不上，
+		// 而且它们会让 stub 生成多算一遍全量清单。
 		return []tool.Spec{t.Spec()}, nil
 	}
-	return r.AllSpecs(context.Background())
+	base, err := r.AllSpecs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sets := r.SetSources()
+	if len(sets) == 0 {
+		return base, nil
+	}
+	seen := make(map[string]bool, len(base))
+	for _, s := range base {
+		seen[s.Name] = true
+	}
+	for _, set := range sets {
+		// 源的声明按 ctx 的会话算：同一个插件在不同会话能给出不同的工具面（D340）。
+		specs, err := set.Specs(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("tool set %q: %w", set.Name(), err)
+		}
+		for _, s := range specs {
+			if seen[s.Name] {
+				continue // 内置优先：同名时插件的那一条被丢弃（契约 §4 工具面）
+			}
+			seen[s.Name] = true
+			base = append(base, s)
+		}
+	}
+	return base, nil
 }
 
 // AllSpecs 返回全量工具声明（禁用集之外，**不含 run_code**）——呈现模式的 stub 生成
@@ -226,12 +288,30 @@ func (r *Runner) AllSpecs(context.Context) ([]tool.Spec, error) {
 func (r *Runner) Execute(ctx context.Context, call tool.Call) (tool.Result, error) {
 	r.mu.Lock()
 	t, ok := r.byName[call.Name]
+	static := ok
 	disabled := r.disabled
 	r.mu.Unlock()
-	if !ok || (disabled[call.Name] && call.Name != port.RunCodeTool) {
+	if !ok {
+		// 工具源按 ctx 里的会话解析（D340）：名字只在可见集合内唯一，所以不进全局表。
+		// 先加的优先，与 Specs 里的「同名保留第一条」同向。
+		for _, set := range r.SetSources() {
+			found, serr := set.Lookup(ctx, call.Name)
+			if serr != nil {
+				// 源自己出错：回填给模型（它已经点开了这个名字），不中断 Turn。
+				return tool.Result{CallID: call.ID, OK: false,
+					Err: fmt.Sprintf("tool %q: %v", call.Name, serr)}, nil
+			}
+			if found != nil {
+				t, ok = found, true
+				break
+			}
+		}
+	}
+	// 禁用集只管静态工具（S6/D143 设置窗的逐项开关）：工具源的名字按会话逐轮变化，
+	// 逐名禁用没有意义，开关是插件自己的启停。
+	if !ok || (static && disabled[call.Name] && call.Name != port.RunCodeTool) {
 		// 禁用工具按 unknown 拒绝（S6/D143：与未注册不可区分——模型拿到的工具面一致）；
 		// run_code 豁免（D319）：脚本调用面不受 disabled 约束，呈现模式的开关是 tools.mode。
-		// 禁用工具按 unknown 拒绝（S6/D143：与未注册不可区分——模型拿到的工具面一致）。
 		return tool.Result{CallID: call.ID, OK: false, Err: fmt.Sprintf("unknown tool %q", call.Name)}, nil
 	}
 

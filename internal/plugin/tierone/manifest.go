@@ -109,19 +109,3 @@ func implements(inst v1.Instance, port string) bool {
 
 // provides 是否声明了某个供给面。
 func provides(m v1.Manifest, port string) bool { return slices.Contains(m.Provides, port) }
-
-// checkTools 声明 tool 就不能是空清单：空清单等于「占着工具面的名字却什么也不给」，
-// 模型侧看到的是一个空分组。
-func checkTools(inst v1.Instance, m v1.Manifest) error {
-	if !provides(m, PortTool) {
-		return nil
-	}
-	p, ok := inst.(v1.ToolProvider)
-	if !ok {
-		return nil // 已在 checkProvides 报过
-	}
-	if len(p.Tools()) == 0 {
-		return errors.New(i18n.Tf("plugin.t1.empty_tools", "name", m.Name))
-	}
-	return nil
-}

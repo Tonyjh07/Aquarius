@@ -14,6 +14,22 @@ type Tool interface {
 	Execute(ctx context.Context, call tool.Call) (tool.Result, error)
 }
 
+// ToolSet 会话感知的工具源（D340）：清单可以随会话与插件状态逐轮变化，所以不在注册表
+// 里物化成固定条目——装配时向源要声明，执行时向源找工具。
+//
+// 与 Tool 的区别是「名字的时效」：Tool 注册一次、名字长期有效；ToolSet 的名字只在
+// 该会话的当前可见集合内有效，下一轮可能消失（模型拿到的工具面本来就按轮重建）。
+type ToolSet interface {
+	// Name 源的名字（插件名）：只用于报因与日志归组，不占用工具名空间。
+	Name() string
+	// Specs 本轮可见的工具声明（按 ctx 里的会话解析）。空切片是正常状态（空库、
+	// 游标停在根）；返回错误会让本轮装配失败——插件不要用它表达「暂时不可用」。
+	Specs(ctx context.Context) ([]tool.Spec, error)
+	// Lookup 按名找本源的工具；不属于本源返回 (nil, nil)。名字须与同一轮 Specs 的
+	// 返回一致，否则模型点开的东西和它看到的名字对不上。
+	Lookup(ctx context.Context, name string) (Tool, error)
+}
+
 // MaxCallTimeoutSec 单次调用 timeout_sec 保留参数的硬顶（D38）：
 // 模型可逐次覆盖 limits.tool_timeout_sec（允许高于 config），但不超过此上限。
 const MaxCallTimeoutSec = 3600

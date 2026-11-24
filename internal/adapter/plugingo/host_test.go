@@ -115,11 +115,13 @@ func TestHostBlobsAndSecretsErrors(t *testing.T) {
 
 // fakeTools 一个工具供给面插件：记录收到的 ctx 与调用。
 type fakeTools struct {
-	sawSession string
-	lastCall   v1.ToolCall
+	sawSession      string
+	sawToolsSession string
+	lastCall        v1.ToolCall
 }
 
-func (f *fakeTools) Tools() []v1.ToolSpec {
+func (f *fakeTools) Tools(ctx context.Context) []v1.ToolSpec {
+	f.sawToolsSession, _ = v1.SessionFrom(ctx)
 	return []v1.ToolSpec{{Name: "remember", Description: "记一条", Schema: []byte(`{"type":"object"}`), Risk: v1.RiskSafe}}
 }
 
@@ -133,13 +135,22 @@ func (f *fakeTools) Describe(call v1.ToolCall) string {
 	return "记下：" + string(call.Args)
 }
 
-func TestToolsAdapterWiresDescriberAndSession(t *testing.T) {
+func TestToolSetAdapterWiresDescriberAndSession(t *testing.T) {
 	p := &fakeTools{}
-	ts := Tools(p)
-	if len(ts) != 1 {
-		t.Fatalf("工具数=%d", len(ts))
+	set := NewToolSet("demo", p)
+	if set.Name() != "demo" {
+		t.Fatalf("源名=%q", set.Name())
 	}
-	spec := ts[0].Spec()
+	ctx := port.WithSessionID(context.Background(), conversation.ID("s-2"))
+
+	specs, err := set.Specs(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(specs) != 1 {
+		t.Fatalf("工具数=%d", len(specs))
+	}
+	spec := specs[0]
 	if spec.Name != "remember" || spec.Risk != tool.Safe {
 		t.Fatalf("声明没转对：%+v", spec)
 	}
@@ -153,9 +164,15 @@ func TestToolsAdapterWiresDescriberAndSession(t *testing.T) {
 	if got := spec.Describe([]byte(`{"k":"v"}`)); !strings.Contains(got, `{"k":"v"}`) {
 		t.Fatalf("确认摘要没走插件：%q", got)
 	}
+	if p.sawToolsSession != "s-2" {
+		t.Fatalf("声明入口没带会话：%q", p.sawToolsSession)
+	}
 
-	ctx := port.WithSessionID(context.Background(), conversation.ID("s-2"))
-	res, err := ts[0].Execute(ctx, tool.Call{ID: "c1", Name: "remember", Args: []byte(`{"k":"v"}`)})
+	ts, err := set.Lookup(ctx, "remember")
+	if err != nil || ts == nil {
+		t.Fatalf("按名找不到自己的工具：%v", err)
+	}
+	res, err := ts.Execute(ctx, tool.Call{ID: "c1", Name: "remember", Args: []byte(`{"k":"v"}`)})
 	if err != nil {
 		t.Fatal(err)
 	}

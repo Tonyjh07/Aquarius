@@ -47,7 +47,7 @@ func (fakePlugin) Probe(context.Context, string, string) (ProbeResult, error) {
 	return ProbeResult{Verdict: ProbeInconclusive}, nil
 }
 
-func (fakePlugin) Tools() []ToolSpec { return nil }
+func (fakePlugin) Tools(context.Context) []ToolSpec { return nil }
 func (fakePlugin) Execute(context.Context, ToolCall) (ToolResult, error) {
 	return ToolResult{OK: true}, nil
 }
