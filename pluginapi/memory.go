@@ -27,14 +27,13 @@ type Memory interface {
 	Recall(ctx context.Context, req MemoryRequest) (MemoryContext, error)
 }
 
-// MemoryRequest 一次注入请求。会话身份由宿主给出，插件不需要靠文档名反推「现在是谁」。
+// MemoryRequest 一次注入请求。
+//
+// 会话身份不在这里：它由宿主经 ctx 注入，插件用 SessionFrom(ctx) 读（见 session.go）——
+// 与工具、命令、面板同一个来源，避免两处会话字段。
 //
 // 兼容承诺：改字段会破坏记忆类插件与每轮装配的转换。
 type MemoryRequest struct {
-	// Session 当前会话 ID；空串 = 没有会话上下文（如会话列表预览、冷启动探针）。
-	// 与 LegacySessionMemory.Session 同源。
-	Session string
-
 	// BudgetTokens 本轮记忆段的建议 token 上限（软预算），由模型窗口与其余段占用算出。
 	// 0 = 宿主不给建议。超出由宿主硬截断并记日志——插件应按这个数自己裁剪，别指望截断
 	// 截得好看。
@@ -71,7 +70,7 @@ type LegacyMemorySnapshot struct {
 	Sessions []LegacySessionMemory
 }
 
-// LegacySessionMemory 一个会话的内置记忆。Session 是会话 ID，与 MemoryRequest.Session 同源。
+// LegacySessionMemory 一个会话的内置记忆。Session 是会话 ID，与 SessionFrom(ctx) 同源。
 //
 // 兼容承诺：改字段会破坏做迁移的插件。
 type LegacySessionMemory struct {

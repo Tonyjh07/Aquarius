@@ -1,5 +1,5 @@
 # Tier-1 Go 插件契约（pluginapi，v1）设计规格
-<!-- docs-sync: 2026-11-24 @ a38ef97 -->
+<!-- docs-sync: 2026-11-24 @ e570e4c -->
 
 > 定位：Tier-1 进程内 Go 插件契约包（`pluginapi`，本代为 v1）的实现规格——接口面、UI 扩展面、宿主服务、
 > 生命周期、版本纪律、能力边界。Tier-2（MCP server）的规格在 [contracts.md](contracts.md) §6.2–§6.4，
@@ -84,6 +84,7 @@ v1 最重要的资产是一层语义等价、字段冻结的稳定词汇。现�
 | `tool.Call` / `tool.Result` | `v1.ToolCall` / `v1.ToolResult` | 调用 ID 随转换重编；`Images` 经 BlobStore 引用、`Fallback` 语义照抄 |
 | `port.ConfirmRequest` / `ConfirmAnswer` | `v1.ConfirmRequest` / `v1.ConfirmAnswer` | 无任务标识字段（contracts §5.2 并发语义）；`Risk` / `Level` 档位词表冻结，两边常量值必须一致；`perm.Op` 是 int 枚举（iota 顺序不是契约），v1 侧投影为字符串（`"read"` / `"write"` / 空） |
 | `port.MemoryDoc` / `MemoryIndexEntry` / `MemoryHit` / `MemoryStore` | **不进 v1** | 文档方法集是 memoryfs 的形状，不是记忆的契约。插件面只留注入挂载点 `Memory.Recall`，值类型只有 `MemoryRequest` / `MemoryContext` / `LegacyMemorySnapshot`；存储、组织、检索、管理全归插件（见 §4 记忆所有权）。接管期间 `memory_*` 四工具与 `/memory` 退出，内置记忆转只读、只作迁移素材 |
+| `port.WithSessionID` / `SessionIDFrom` | `v1.WithSession` / `v1.SessionFrom` | 同一个 ctx 值，换一层包名。会话身份不进任何 v1 值类型（§5「会话身份」）；空串 = 不注入；宿主每个插件入口都要 `WithSession` 一次，漏注入不报错、只让插件退回全局 |
 | `port.SpeechSegment` | `v1.SpeechSegment` | PCM 原样字节，时间戳口径不变 |
 | `port.RawInput` / `Attachment` / `IngestReport` / `OutputRequest` | `v1.RawInput` / `v1.Attachment` / `v1.IngestReport` / `v1.OutputRequest` | `conversation.BlobRef` 结构体（Hash/MIME/Name/Size）在 v1 原样重述，不是字符串别名；`Part` 按**正文投影**重述（Kind/Text/Ref/Transcript/Signature/服务端块原文）——`Tool` 分片不进 v1（对外播报与摄取只用正文，工具往返是内核协作面）；附件体积上限常量（`MaxAttachments` / `MaxImageBytes`）两边同步 |
 | `port.Secrets`（`Get`） | `v1.SecretResolver`（Host 消费面） | 方向相反的两件分清：插件**供给**密钥走 `SecretProvider` 接口（P3），内核**解析给**插件走 `SecretResolver` |
@@ -152,6 +153,7 @@ type Memory interface {
 8. **不承诺的**：轮末 / 会话结束的巩固钩子不进 v1——那要求内核往插件手里递会话内容，
    是新的数据出境面与生命周期锚点，得先设计再给。热路径写入走插件自己的工具；离线巩固
    只能挂在 `Init`（扫库）上。
+9. **会话身份**经 ctx 给（`SessionFrom`），不进任何值类型——理由见 §5「会话身份」。
 
 ### 明确不进 v1 的（写死，防含糊）
 
@@ -191,6 +193,20 @@ Host 的方法集是 v1 里最容易过度承诺的地方：每个方法都要�
 未命中时退回 `Notify` 的语义）与 `LegacyMemoryHost`（内置记忆快照，只有记忆插件用得上，
 见 §4）。这条同时是将来加 Host 能力的唯一方式：扩接口就破坏实现方，加独立接口只破坏
 「想用这一项的那一个插件」。
+
+### 会话身份：经 ctx，不进值类型
+
+需要会话身份的面至少有四个：工具执行、命令执行、面板渲染与动作、记忆注入。每个面各带一个
+`Session` 字段就是四个来源，迟早在某个入口漏填或填错（2026-11-24 拍板，D338）。
+
+- 身份只走 ctx：宿主在**每个**插件入口用 `WithSession(ctx, id)` 注入，插件在入口用
+  `SessionFrom(ctx)` 读取。空串等于不注入；`ok=false` 表示这次调用没有会话上下文
+  （会话列表预览、启动探针、非会话触发的命令）。
+- 值类型保持干净：`ToolCall` / `ViewAction` / `MemoryRequest` 都不带会话字段。
+- 这不是安全边界（Tier-1 无进程隔离），是数据形状纪律；键类型不导出，两边不会撞键。
+- 宿主侧的义务是硬的：漏注入不会报错，只会让插件悄悄退回全局。所以 plugingo 的每个入口
+  适配函数都要经过 `WithSession`，并在其测试里逐个断言——「漏一个入口」是这一条唯一
+  真实的失败方式。
 
 ## 6. UI 扩展面（uiext.go）
 
