@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-24 @ a38ef97 -->
+<!-- docs-sync: 2026-11-24 @ 74ef00a -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -34,8 +34,10 @@
   接口 + 可选扩展 + Host + 生命周期 + UI 声明面）已随 P3 第 1 步落盘，`interfaces_test.go`
   用一次性实现锁住形状；契约在 P3 收尾时完整冻结。
 - **P3 · plugingo 装载器 + 首个 Tier-1 插件**（M~L，关键路径）：按 plugin-design.md §7/§11/§12
-  实现。第 1 步（接口面）已落；剩宿主校验与状态机、`adapter/plugingo` 转换层（照 §3.1
-  逐条核对）、main 注册表。**样例插件定为间隔重复记忆插件**（独立仓库，设计稿见该仓库
+  实现。第 1 步（接口面）与第 2 步（`adapter/plugingo` 转换层 + Host 包装 + 供给面适配器、
+  `plugin/tierone` 状态机与清单校验 + 独占记忆 + Draining）已落；剩 main 注册表与 `/plugin`
+  操作面、内核侧记忆装配（接管期间 `memory_*` 四工具与 `/memory` 退出、内置记忆只读）、
+  工具/命令/模型接进各自注册表。**样例插件定为间隔重复记忆插件**（独立仓库，设计稿见该仓库
   design.md；`Memory`（含首次启用的内置记忆迁移）+ `ToolProvider` + 面板形态），验收标准
   （覆盖供给面、Host 消费面、管理面、生命周期四层）不变，另加两条记忆契约义务（接管期间
   `memory_*` 与 `/memory` 退出、内置记忆只读；两个 `provides: memory` 同时启用被拒）。

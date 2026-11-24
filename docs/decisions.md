@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-11-24 @ e570e4c -->
+<!-- docs-sync: 2026-11-24 @ 74ef00a -->
 
 > **权威文档之一**：决策节于 2026-09 独立成篇，与 [contracts.md](contracts.md) 同级同权威
 > （该节 2026-10 从总设计文档删除，不再占节号）。编号**跨文件不变**
@@ -349,6 +349,7 @@
 | [D336](#d336) | 回底钮底色取品牌色与气泡底的中间色（share 0.5，浅版淡蓝/深版深青蓝），文字浅版深墨、深版白；登记形状的 clip 改整窗，不再被底部渐隐带淡化 | 已完成 |
 | [D337](#d337) | 记忆由插件完全拥有：插件面只留一个注入方法 `Memory.Recall`，存哪/怎么组织/怎么管理全归插件；内核退出 `memory_*` 四工具与 `/memory`、内置记忆转只读；`provides: memory` 独占；迁移走 `LegacyMemoryHost` 一次性快照（用户拍板） | 已完成 |
 | [D338](#d338) | 会话身份只经 ctx：宿主在每个插件入口 `WithSession` 注入、插件 `SessionFrom` 读，值类型一律不带会话字段；`MemoryRequest.Session` 随之删除，单一来源（用户拍板选「ctx 访问器」） | 已完成 |
+| [D339](#d339) | Tier-1 装载落地的三条取舍：`Host.Confirm` 补 ctx（契约未冻结前改）；provides 自检移到 Create 之后（不为禁用插件造实例）；注册表 `internal/plugin/tierone` 只依赖 pluginapi，Host 由装配根注入避免 plugin→adapter 反向依赖 | 已完成 |
 
 ## 记录
 
@@ -3300,3 +3301,38 @@
 
 - **状态**：已完成（`pluginapi/session.go` 与 `session_test.go`（含「派生 ctx 不丢会话」）；
   plugin-design.md §3.1/§4/§5 同步）。宿主侧注入点随 P3 第 3 步落地。
+
+<a id="d339"></a>
+
+### D339 · Tier-1 装载层落地的三条取舍
+
+- **背景**：P3 第 2 步要落「防腐转换 + Host 包装 + 状态机」，落地时撞上三处必须现在定的
+  形状——一处是契约缺口，两处是分层与校验时机。
+
+- **决策**：
+  1. **`Host.Confirm` 带 ctx**（`Confirm(ctx, req)`）。原签名没有 ctx，插件拿着它在
+     goroutine 里等用户点确认；内核确认链要 ctx 才能随轮次取消一并收工。契约还没冻结，
+     现在改比将来开 v2 便宜，代价是全部实现方与调用点各改一处。
+  2. **provides 自检从「启动校验」移到「Create 之后、Start 之前」**。接口实现与否只有拿到
+     实例才验得了；为一个 `enabled=false` 的插件造实例、跑一遍再丢掉，等于让「禁用」也
+     付初始化副作用。结论不变：声明与实现不符的插件进不了 Active，只是报因发生在启用时。
+  3. **状态机与注册表落 `internal/plugin/tierone`，Host 由装配根注入**（`Options.NewHost`）。
+     包内只 import pluginapi / standard library / i18n，不 import 任何 adapter——否则
+     「宿主编排」要依赖「防腐适配器」，方向反了；也顺带让状态机的测试不必拉起整套内核。
+     在途计数用导出类型 `Guard`：适配器入口 `Enter`/`Leave`，Draining 时 `close` 拒绝新
+     调用并等老的跑完（超时照常 Shutdown，卡住的调用不该让停用停在半路）。
+  4. **插件交回的错误不分类**：v1 没有错误词表，转换层原样上抛，内核一律按「不可重试」
+     处理（保守方向）。要表达瞬时错误得先在 v1 加哨兵——那是新能力，不是转换问题。
+
+- **备选**：
+  1. **保留无 ctx 的 `Confirm`**：沿用现状，插件侧等确认的调用无法随轮次取消，确认框会
+     比轮次活得更久。
+  2. **启动期用一次性实例做 provides 自检**：能保住「拒绝发生在启动」，代价是禁用插件也
+     要初始化一遍；插件在 `Create` 里开文件、连远端时尤其错。
+  3. **让 `internal/plugin` 直接 import `adapter/plugingo` 造 Host**：少一个注入点，但把
+     「编排 → 适配器」的反向依赖写进代码，后续想换 Host 实现要动编排层。
+
+- **状态**：已完成。`pluginapi/host.go`（Confirm 签名）、`adapter/plugingo/*`（转换 + Host +
+  供给面适配器，配 `convert_test.go` / `host_test.go`）、`plugin/tierone/*`（状态机、清单
+  校验、独占记忆、Draining，配 `registry_test.go`）；plugin-design.md §5/§7/§11 同步。
+  装进 main 与 `/plugin` 操作面随 P3 第 3 步（还差内核侧记忆装配与工具注册表接线）。
