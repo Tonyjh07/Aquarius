@@ -79,6 +79,14 @@ func defaultJobs(root, tmpDir string) []job {
 	if runtime.GOOS == "windows" {
 		bin += ".exe"
 	}
+	jobs := lintJobs(bin)
+	jobs = append(jobs, mergeJobs()...)
+	jobs = append(jobs, fullJobs()...)
+	return jobs
+}
+
+// lintJobs fast 档：格式、文档标记、静态检查，加一条构建产物（default 起）。
+func lintJobs(bin string) []job {
 	return []job{
 		// ---- fast：pre-push 跑的就是这四条 ----
 		{
@@ -108,7 +116,13 @@ func defaultJobs(root, tmpDir string) []job {
 			steps:   [][]string{{"go", "build", "-o", bin, "./cmd/aquarius"}},
 			note:    "主程序能构建出单二进制",
 		},
+	}
+}
 
+// mergeJobs default 档（合入前）：两种界面语言的全量测试、独立模块测试，加整树自检、
+// 性质测试与干净环境复查。
+func mergeJobs() []job {
+	return []job{
 		// ---- default：合入前 ----
 		{
 			name: "test:zh", min: profDefault, group: "test",
@@ -158,7 +172,12 @@ func defaultJobs(root, tmpDir string) []job {
 			},
 			note: "清空本机环境变量后重跑组装与探针：挡「测试偷偷依赖本机配好的密钥」",
 		},
+	}
+}
 
+// fullJobs 发版前那一档：竞态、非 Windows 目标、依赖漏洞体检。
+func fullJobs() []job {
+	return []job{
 		// ---- full：发版前 ----
 		{
 			name: "race", min: profFull, requires: []capability{capCGO},
