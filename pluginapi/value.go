@@ -194,37 +194,8 @@ type ConfirmAnswer struct {
 	Persist bool
 }
 
-// ---------- 记忆 ----------
-
-// MemoryDoc 一篇记忆文档：Name 即文档 ID（增删查都按 Name 寻址）。
-// 兼容承诺：改字段破坏记忆类插件与记忆装配的转换。
-type MemoryDoc struct {
-	Name    string
-	Content string
-	ModTime time.Time
-}
-
-// MemoryIndexEntry 记忆索引条目（进上下文索引的最小事实）。
-// 兼容承诺：改字段破坏记忆类插件与每轮装配的转换。
-type MemoryIndexEntry struct {
-	Name    string
-	Summary string
-}
-
-// MemoryHit 一次检索命中：命中行号与片段。
-// 兼容承诺：改字段破坏记忆类插件与检索链路的转换。
-type MemoryHit struct {
-	Name    string
-	Line    int
-	Snippet string
-}
-
-// ErrMemoryNotFound 记忆文档不存在的哨兵错误；宿主侧按可 errors.Is 的对位错误转换。
-var ErrMemoryNotFound = sentinel("memory: not found")
-
-type sentinel string
-
-func (s sentinel) Error() string { return string(s) }
+// 记忆的值类型不在这里：记忆没有「文档」这一层词汇（plugin-design.md §4），
+// 只有 MemoryRequest / MemoryContext / LegacyMemorySnapshot 三件，见 memory.go。
 
 // ---------- 语音 ----------
 

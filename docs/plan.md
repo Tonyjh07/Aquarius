@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-24 @ f7477c1 -->
+<!-- docs-sync: 2026-11-24 @ a38ef97 -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -36,8 +36,9 @@
 - **P3 · plugingo 装载器 + 首个 Tier-1 插件**（M~L，关键路径）：按 plugin-design.md §7/§11/§12
   实现。第 1 步（接口面）已落；剩宿主校验与状态机、`adapter/plugingo` 转换层（照 §3.1
   逐条核对）、main 注册表。**样例插件定为间隔重复记忆插件**（独立仓库，设计稿见该仓库
-  design.md；`MemoryStore` + `ToolProvider` + 面板形态），验收标准（覆盖供给面、Host
-  消费面、管理面、生命周期四层）不变。
+  design.md；`Memory`（含首次启用的内置记忆迁移）+ `ToolProvider` + 面板形态），验收标准
+  （覆盖供给面、Host 消费面、管理面、生命周期四层）不变，另加两条记忆契约义务（接管期间
+  `memory_*` 与 `/memory` 退出、内置记忆只读；两个 `provides: memory` 同时启用被拒）。
 - **P4 · 杂项收口**（S，随做随删）：regexp2 `MatchTimeout` 与计数路径 ctx 检查（安全）；
   `think` 参数非空校验；压缩摘要流的 UI 标注；`/usage` 文案修正；三协议兼容回归
   （DeepSeek 当 anthropic 协议的第二家真后端跑集成用例）。

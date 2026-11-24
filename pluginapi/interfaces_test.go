@@ -2,8 +2,6 @@ package pluginapi
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -26,7 +24,7 @@ var (
 	_ ToolProvider            = fakePlugin{}
 	_ Describer               = fakePlugin{}
 	_ CommandProvider         = fakePlugin{}
-	_ MemoryStore             = fakePlugin{}
+	_ Memory                  = fakePlugin{}
 	_ Ingestor                = fakePlugin{}
 	_ OutputAdapter           = fakePlugin{}
 	_ Transcriber             = fakePlugin{}
@@ -60,13 +58,9 @@ func (fakePlugin) Run(context.Context, string, []string) (string, error) {
 	return "", nil
 }
 
-func (fakePlugin) Index(context.Context) ([]MemoryIndexEntry, error) { return nil, nil }
-func (fakePlugin) Read(context.Context, string) (MemoryDoc, error) {
-	return MemoryDoc{}, ErrMemoryNotFound
+func (fakePlugin) Recall(context.Context, MemoryRequest) (MemoryContext, error) {
+	return MemoryContext{}, nil
 }
-func (fakePlugin) Write(context.Context, MemoryDoc) error              { return nil }
-func (fakePlugin) Remove(context.Context, string) error                { return nil }
-func (fakePlugin) Search(context.Context, string) ([]MemoryHit, error) { return nil, nil }
 
 func (fakePlugin) Accepts(RawInput) bool { return false }
 func (fakePlugin) Ingest(context.Context, RawInput) (IngestReport, error) {
@@ -96,12 +90,13 @@ func (fakePlugin) OnAction(context.Context, ViewAction) (Node, error) {
 func (fakePlugin) Sections() []SettingsSection                        { return nil }
 func (fakePlugin) ApplySettings(context.Context, SettingsPatch) error { return nil }
 
-// fakeHost 实现 Host 六项与可选的内联提示扩展。
+// fakeHost 实现 Host 六项、可选的内联提示扩展与迁移素材。
 type fakeHost struct{}
 
 var (
-	_ Host         = fakeHost{}
-	_ NoticePoster = fakeHost{}
+	_ Host             = fakeHost{}
+	_ NoticePoster     = fakeHost{}
+	_ LegacyMemoryHost = fakeHost{}
 )
 
 func (fakeHost) Logger() Logger                                { return fakeLogger{} }
@@ -111,6 +106,9 @@ func (fakeHost) WorkDir() string                               { return "" }
 func (fakeHost) Confirm(ConfirmRequest) (ConfirmAnswer, error) { return ConfirmAnswer{}, nil }
 func (fakeHost) Notify(string, string)                         {}
 func (fakeHost) PostNotice(string, string)                     {}
+func (fakeHost) LegacyMemory(context.Context) (LegacyMemorySnapshot, error) {
+	return LegacyMemorySnapshot{}, nil
+}
 
 type fakeLogger struct{}
 
@@ -157,14 +155,29 @@ func TestVocabularyConstantsUnique(t *testing.T) {
 	}
 }
 
-// TestMemoryNotFoundIsIsable 记忆文档不存在要能被 errors.Is 命中：插件实现与宿主
-// 实现分处两个模块，跨模块判定只靠这条哨兵，包装一层就断了等于没约定。
-func TestMemoryNotFoundIsIsable(t *testing.T) {
-	if !errors.Is(ErrMemoryNotFound, ErrMemoryNotFound) {
-		t.Fatal("哨兵自身不是 errors.Is 命中")
+// TestLegacyMemoryIsOptional 迁移素材必须是「可选扩展」而不是 Host 的第七项：Host 加方法
+// 会破坏所有实现方，而迁移只有记忆插件需要。这条锁住「对句柄断言得到它、不必实现它」。
+func TestLegacyMemoryIsOptional(t *testing.T) {
+	var h Host = fakeHost{}
+	legacy, ok := h.(LegacyMemoryHost)
+	if !ok {
+		t.Fatal("Host 句柄上断言不到 LegacyMemoryHost")
 	}
-	wrapped := fmt.Errorf("read memories.md: %w", ErrMemoryNotFound)
-	if !errors.Is(wrapped, ErrMemoryNotFound) {
-		t.Fatal("包装后的错误丢失哨兵")
+	if _, err := legacy.LegacyMemory(context.Background()); err != nil {
+		t.Fatalf("空快照不是错误：%v", err)
+	}
+	// 零值快照 = 没有可迁移的内容：全局空、会话空，调用方按正常路径继续。
+	var snap LegacyMemorySnapshot
+	if snap.Global != "" || len(snap.Sessions) != 0 {
+		t.Fatalf("零值快照不是空快照：%+v", snap)
+	}
+}
+
+// TestMemoryContextZeroValue 空注入是正常状态：没有记忆的插件返回零值，宿主不报错、
+// 不注入。零值语义是契约的一部分（记忆段可以为空，工具输出不能）。
+func TestMemoryContextZeroValue(t *testing.T) {
+	var got MemoryContext
+	if got.Text != "" {
+		t.Fatalf("MemoryContext 零值应表示不注入，得到 %q", got.Text)
 	}
 }

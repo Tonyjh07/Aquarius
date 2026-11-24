@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-22 @ cba6acc -->
+<!-- docs-sync: 2026-11-24 @ a38ef97 -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -312,7 +312,9 @@
 - **全局记忆**：`~/.aquarius/memories.md` 单文件；**会话记忆**：`~/.aquarius/conversations/<id>.memory.md`
   （随会话文件夹就近存放，D23）。用户可直接用编辑器改，`/memory` 即用系统编辑器打开（D24），下次读取即生效。
 - `memory_*` 工具只操作**全局 + 当前会话**两份，按文档名寻址（`memories.md` / `<id>.memory.md`）。
-- 无 embedding、无自动遗忘、无冲突消解；检索 = 关键词匹配。后端是插件面（`port.MemoryStore`）。
+- 无 embedding、无自动遗忘、无冲突消解；检索 = 关键词匹配。**这是内置实现的形状**：插件要
+  接管记忆走 `pluginapi.Memory` 的完全替代（plugin-design.md §4），接管期间 `memory_*` 四工具
+  与 `/memory` 退出、内置记忆转只读并只作一次性迁移素材（`LegacyMemoryHost`）。
 
 ## 5. 端口设计（`internal/port`）
 
@@ -388,7 +390,9 @@ port 以接口与 DTO 为主，允许无状态纯函数助手（如 `ResolveJobI
 ### 5.4 `memory.go` —— 记忆端口
 
 端口方法面 = 索引（供 system prompt 注入）、读、写、删、关键词检索五件；后端的差异止于此，
-上层不认「记忆存在哪」（`memory_*` 工具只见全局 + 当前会话两份，§4.4）。
+上层不认「记忆存在哪」（`memory_*` 工具只见全局 + 当前会话两份，§4.4）。**这五件不端给插件**：
+插件面 `pluginapi.Memory` 只有一个 `Recall` 注入方法，存哪、怎么组织、怎么管理全归插件
+（plugin-design.md §4）。
 
 ### 5.5 `blob.go` —— 附件端口
 
@@ -1601,7 +1605,8 @@ func (a *Agent) Run(ctx context.Context, c *conversation.Conversation) error {
 其余承载：Image Part 内联字节、Audio 取 Transcript、Doc 取截断文本、
           assistant 节点按工具分片边界切段——每段 1 条 assistant(tool_calls) 消息 + N 条
           tool 应答消息（D95，Result=nil 的调用不声明也不应答）、
-          记忆索引与当前会话记忆文件内容、工具清单（含 mcp:*）；
+          记忆段（内置：索引 + 当前会话记忆文件内容；插件接管：`Memory.Recall` 返回的原文）、
+          工具清单（含 mcp:*）；
           思考分片（PartThinking）按 `model.echo_thinking` 二态处理（D42）——
           回传（键缺失 = 开）= 置入该段 assistant 消息的 `PromptMessage.Reasoning`，由适配器
           映射为 `reasoning_content` 字段；关（显式 false）= 装配时丢弃不发。

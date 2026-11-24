@@ -26,7 +26,8 @@ type Manifest struct {
 	Capabilities []string
 	// Provides 供给面自述（"llm" / "tool" / "memory" / "ingest" / "output" /
 	// "transcribe" / "synthesize" / "secrets" / "command"）：宿主据此做 provides
-	// 自检（声明 llm 必须实现 LanguageModel）。空 = 不供给任何端口。
+	// 自检（声明 llm 必须实现 LanguageModel）。"memory" 是独占的：同一时刻至多
+	// 一个插件启用，两个同时启用由宿主拒绝（D337）。空 = 不供给任何端口。
 	Provides []string
 	// Locales 插件自带的 UI 文案语种（"zh" / "en"）：插件文案不进内核 i18n 表
 	//（plugin-design.md §6 纪律 2），宿主按此选插件文案。空 = 无 UI 文案（不贡献设置页与面板）。

@@ -1,5 +1,5 @@
 # Tier-1 Go 插件契约（pluginapi，v1）设计规格
-<!-- docs-sync: 2026-11-24 @ cfba7bc -->
+<!-- docs-sync: 2026-11-24 @ a38ef97 -->
 
 > 定位：Tier-1 进程内 Go 插件契约包（`pluginapi`，本代为 v1）的实现规格——接口面、UI 扩展面、宿主服务、
 > 生命周期、版本纪律、能力边界。Tier-2（MCP server）的规格在 [contracts.md](contracts.md) §6.2–§6.4，
@@ -83,7 +83,7 @@ v1 最重要的资产是一层语义等价、字段冻结的稳定词汇。现�
 | `tool.Spec` | `v1.ToolSpec` | `Schema`（json.RawMessage）按透传字节处理；内核侧 `Describe` 函数字段不进 v1，其对位是可选 `Describer` 接口（D320） |
 | `tool.Call` / `tool.Result` | `v1.ToolCall` / `v1.ToolResult` | 调用 ID 随转换重编；`Images` 经 BlobStore 引用、`Fallback` 语义照抄 |
 | `port.ConfirmRequest` / `ConfirmAnswer` | `v1.ConfirmRequest` / `v1.ConfirmAnswer` | 无任务标识字段（contracts §5.2 并发语义）；`Risk` / `Level` 档位词表冻结，两边常量值必须一致；`perm.Op` 是 int 枚举（iota 顺序不是契约），v1 侧投影为字符串（`"read"` / `"write"` / 空） |
-| `port.MemoryDoc` / `MemoryIndexEntry` / `MemoryHit` | `v1.MemoryDoc` / `v1.MemoryIndexEntry` / `v1.MemoryHit` | `Name` 即文档 ID；`ErrMemoryNotFound` 哨兵的 v1 对位错误必须可 `errors.Is` |
+| `port.MemoryDoc` / `MemoryIndexEntry` / `MemoryHit` / `MemoryStore` | **不进 v1** | 文档方法集是 memoryfs 的形状，不是记忆的契约。插件面只留注入挂载点 `Memory.Recall`，值类型只有 `MemoryRequest` / `MemoryContext` / `LegacyMemorySnapshot`；存储、组织、检索、管理全归插件（见 §4 记忆所有权）。接管期间 `memory_*` 四工具与 `/memory` 退出，内置记忆转只读、只作迁移素材 |
 | `port.SpeechSegment` | `v1.SpeechSegment` | PCM 原样字节，时间戳口径不变 |
 | `port.RawInput` / `Attachment` / `IngestReport` / `OutputRequest` | `v1.RawInput` / `v1.Attachment` / `v1.IngestReport` / `v1.OutputRequest` | `conversation.BlobRef` 结构体（Hash/MIME/Name/Size）在 v1 原样重述，不是字符串别名；`Part` 按**正文投影**重述（Kind/Text/Ref/Transcript/Signature/服务端块原文）——`Tool` 分片不进 v1（对外播报与摄取只用正文，工具往返是内核协作面）；附件体积上限常量（`MaxAttachments` / `MaxImageBytes`）两边同步 |
 | `port.Secrets`（`Get`） | `v1.SecretResolver`（Host 消费面） | 方向相反的两件分清：插件**供给**密钥走 `SecretProvider` 接口（P3），内核**解析给**插件走 `SecretResolver` |
@@ -99,7 +99,7 @@ v1 最重要的资产是一层语义等价、字段冻结的稳定词汇。现�
 新增 v1 类型时先在表里补一行再写代码；port 类型新增字段时按本表逐点过（核对清单在
 [development.md](development.md)）。
 
-## 4. 供给面：九个必选接口 + 三个可选扩展
+## 4. 供给面：九个必选接口 + 四个可选扩展（其中一个在 Host 侧）
 
 ### 必选面
 
@@ -108,7 +108,7 @@ v1 最重要的资产是一层语义等价、字段冻结的稳定词汇。现�
 | `LanguageModel` | `port.LLM` | 流式生成 + 模型清单。`Stream` / `Delta` 独立重述，七项语义（Text / ToolCall / Usage / Reasoning / ReasoningSignature / Title / ServerBlock）与 D42 / D175 / D309 / D310 对齐 |
 | `ToolProvider` | `port.Tool` | 工具声明 + `Execute(ctx, Call) Result`。确认、超时、裁剪仍由内核 ToolRunner 包装，插件只拿到裁决后的调用 |
 | `CommandProvider` | `app.CommandHandler` | 命令注册（含参数相）；`/help`、分派、补全归内核 |
-| `MemoryStore` | `port.MemoryStore` | 文档记忆后端；向量检索插件的入口 |
+| `Memory` | `port.MemoryStore`（**不对应，见下**） | 记忆所有权。插件只实现一个注入方法 `Recall`，存哪、怎么组织、怎么管理全归插件——内置的文档方法集不进契约 |
 | `Ingestor` | `port.Ingestor` | 输入摄取；OCR、音频直输等降级链扩展点 |
 | `OutputAdapter` | `port.OutputAdapter` | 输出镜像；首个实现是导出文件输出器 |
 | `Transcriber` / `Synthesizer` | `port.Modality` | 语音两端口，含分段器形态 |
@@ -119,6 +119,39 @@ v1 最重要的资产是一层语义等价、字段冻结的稳定词汇。现�
 - `TokenCounter`：精确计数，覆盖估算链（D26）。
 - `Prober`：能力探测三态（D174）。
 - `Describer`：PTC 二段式 describe 的对位（D320）。
+- `LegacyMemoryHost`：内置记忆的一次性只读快照，只有记忆插件拿得到（见下）。
+
+### `Memory`：插件完全拥有记忆
+
+内置记忆在端口侧是五个方法（索引 / 读 / 写 / 删 / 关键词检索），那是 **memoryfs 的形状**，
+不是「记忆」的契约。把它原样端给插件会逼出两条烂路：分层 + 向量 + 图的实现要假装成文档
+（丢掉相似度、分层、预算裁剪），或者在工具里另开一套（于是 `MemoryStore` 那两篇文档与
+插件自己的库成为两套并存的记忆，模型看到两个自己）。因此 v1 只保留**一个挂载点**：
+
+```go
+type Memory interface {
+    Recall(ctx context.Context, req MemoryRequest) (MemoryContext, error)
+}
+```
+
+1. **存哪**归插件：`WorkDir()` 落盘、`Secrets()` 取远端凭据、或接外部服务，内核不问。
+2. **怎么组织**归插件：文档、图层、向量、时序图都行；`Recall` 返回的就是本轮注入的
+   markdown 原文，宿主原样放进去，不解读、不重排、不加标题。
+3. **怎么管理**归插件：写入工具、`/memory` 类命令、面板全走 `ToolProvider` /
+   `CommandProvider` / `ViewProvider`，不再有内核提供的 `memory_write`。
+4. **独占**：`provides: memory` 至多一个插件启用；两个同时启用由宿主拒绝并报错，
+   不给「先声明的赢」这种隐式裁决。
+5. **内核退出项**：接管期间 `memory_list` / `memory_read` / `memory_search` /
+   `memory_write` 四件工具与 `/memory` 命令退出，MCP resources 不再投影记忆；内置记忆
+   转只读，不再被模型或用户改写。
+6. **预算**：宿主给 `BudgetTokens` 软预算并按它硬截断（截断记日志），正常情况由插件
+   自己裁——截断点由宿主挑，截不出一条完整的记忆。
+7. **迁移**：`LegacyMemoryHost` 给一次性快照（全局 + 每个会话各一份）。搬不搬、搬之前
+   要不要 `Confirm` 由插件决定，内核不自动搬。这是用户接受的那笔成本：迁移一次，之后
+   内置记忆只读。
+8. **不承诺的**：轮末 / 会话结束的巩固钩子不进 v1——那要求内核往插件手里递会话内容，
+   是新的数据出境面与生命周期锚点，得先设计再给。热路径写入走插件自己的工具；离线巩固
+   只能挂在 `Init`（扫库）上。
 
 ### 明确不进 v1 的（写死，防含糊）
 
@@ -154,9 +187,10 @@ Host 的方法集是 v1 里最容易过度承诺的地方：每个方法都要�
 兼容债」。首发宁可少给，靠只增不改补。
 
 **可选扩展按 type assertion 探测，不扩 Host 本体**：插件对 `Host` 句柄做
-`h.(pluginapi.NoticePoster)` 断言，命中才用——首发只有「内联提示」一项（把轻量提示放进消息流，
-未命中时退回 `Notify` 的语义）。这条同时是将来加 Host 能力的唯一方式：扩接口就破坏实现方，
-加独立接口只破坏「想用这一项的那一个插件」。
+`h.(pluginapi.NoticePoster)` 断言，命中才用——首发两项：「内联提示」（把轻量提示放进消息流，
+未命中时退回 `Notify` 的语义）与 `LegacyMemoryHost`（内置记忆快照，只有记忆插件用得上，
+见 §4）。这条同时是将来加 Host 能力的唯一方式：扩接口就破坏实现方，加独立接口只破坏
+「想用这一项的那一个插件」。
 
 ## 6. UI 扩展面（uiext.go）
 
@@ -306,12 +340,13 @@ Draining → Stopped 是唯一出路。Go 同进程里「挂起」没有可执�
 
 ## 10. 能力边界清单
 
-**能做**：接新厂商模型、精确计数、能力探测；任何工具形状的新工具与新命令；换记忆后端；
-新输入摄取与新输出镜像；接新 ASR / TTS 引擎（外置服务形状的唤醒词、声纹、说话人分离）；
-接 keychain；贡献设置页、面板、通知。
+**能做**：接新厂商模型、精确计数、能力探测；任何工具形状的新工具与新命令；接管记忆
+（换存储、换组织、换检索，见 §4）；新输入摄取与新输出镜像；接新 ASR / TTS 引擎（外置服务
+形状的唤醒词、声纹、说话人分离）；接 keychain；贡献设置页、面板、通知。
 
-**契约明确排除**：动会话树（拿不到写面，看不到对话内容）；注入模型上下文（没有 system
-prompt / 消息流注入接口）；替换或宿主 UI（不暴露 Gio、不改主题、不塞消息流）。
+**契约明确排除**：动会话树（拿不到写面，看不到对话内容）；注入模型上下文（唯一注入点是
+记忆段的 `Memory.Recall`，没有 system prompt / 消息流注入接口）；替换或宿主 UI（不暴露 Gio、
+不改主题、不塞消息流）。
 
 **技术上可行、契约不承诺（自行负责）**：自开网络与文件读写（不走审计、不走 Host 日志、
 密钥自理）；后台 goroutine 长任务（生命周期只有 Init / Shutdown 两个锚点，无 Job 台账
@@ -332,9 +367,11 @@ prompt / 消息流注入接口）；替换或宿主 UI（不暴露 Gio、不改�
 ## 12. 验收（P3，首个插件）
 
 首个 Tier-1 插件定为**间隔重复记忆插件**（独立仓库 `aq-memory-plugin`，设计稿见其
-`design.md`：`MemoryStore` 后端 + 三个检索工具 + 分层面板）。选型标准不随具体插件变：
-一条路径同时覆盖四层——供给面实现 + `Init` 里解析 `secret:` + 落盘或附件经消费面
-（WorkDir / Blobs）+ `/plugin` 与设置窗可见（管理面）+ Shutdown 收尾（生命周期）。
+`design.md`：`Memory` 后端 + 自有检索工具 + 分层面板 + 首次启用时迁移内置记忆）。选型标准
+不随具体插件变：一条路径同时覆盖四层——供给面实现 + `Init` 里解析 `secret:` 与迁移快照 +
+落盘或附件经消费面（WorkDir / Blobs）+ `/plugin` 与设置窗可见（管理面）+ Shutdown 收尾
+（生命周期）。记忆插件额外验两条契约义务：接管期间 `memory_*` 与 `/memory` 确实退出、
+内置记忆确实转只读；两个 `provides: memory` 同时启用确实被拒。
 选中的插件同时是契约的验收测试与文档样例；导出文件输出器（`OutputAdapter`）留作
 后续样例候选。
 
@@ -350,3 +387,5 @@ prompt / 消息流注入接口）；替换或宿主 UI（不暴露 Gio、不改�
 6. 生命周期工厂化；运行时启停走状态机，无暂停档。
 7. capabilities 降为展示语义；确认链强制走 Host。
 8. 运行期动态装载、消息流渲染 API、样式主题 API：不做（各有否决理由）。
+9. 记忆由插件完全拥有：契约只留 `Memory.Recall` 注入挂载点，`provides: memory` 独占，
+   迁移走 `LegacyMemoryHost` 一次性快照（D337）。
