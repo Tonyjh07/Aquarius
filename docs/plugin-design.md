@@ -1,5 +1,5 @@
 # Tier-1 Go 插件契约（pluginapi，v1）设计规格
-<!-- docs-sync: 2026-11-22 @ 9729957 -->
+<!-- docs-sync: 2026-11-24 @ 669fe39 -->
 
 > 定位：Tier-1 进程内 Go 插件契约包（`pluginapi`，本代为 v1）的实现规格——接口面、UI 扩展面、宿主服务、
 > 生命周期、版本纪律、能力边界。Tier-2（MCP server）的规格在 [contracts.md](contracts.md) §6.2–§6.4，
@@ -25,17 +25,20 @@ Tier-2（MCP server）已是交付成品，见 contracts §6.2–§6.4；本文�
 ```
 pluginapi/              （独立 go.mod；目录名不带版本——Go 规则 /v1 后缀非法）
   manifest.go            清单与 API 版本
-  plugin.go              生命周期（工厂 + 实例）与注册表
+  plugin.go              生命周期（工厂 + 实例）
   host.go                Host：插件可用的内核服务
   value.go               稳定值类型层（防腐的公共词汇）
   llm.go                 供给面接口（按端口一个文件）
   tool.go
+  command.go
   memory.go
   ingest.go
   modality.go
   secrets.go
   uiext.go               UI 扩展面（设置页、面板、通知）
 ```
+
+注册表不在本包：清单由宿主侧的 main 显式列出（见 §7「注册表归宿主」）。
 
 方向规则只有一条：接口里的每个类型都是 v1 自己定义的。v1 不 import `internal/port`，
 `internal/port` 也不 import v1。
@@ -47,9 +50,9 @@ module path；「v1」由包文档与 `APIVersion` 常量承载，将来破坏�
 独立模块并存。根 go.mod 以 `require` + `replace`（指向 `./pluginapi`）引入——同仓
 多模块，不设 go.work；外部插件仓库按 tag 依赖同一路径。内核侧的依赖规则由 arch 测试守着（`layerPluginAPI`
 只许自引用，adapter 与 plugin 两层允许 import）；v1 侧的独立性（不 import
-`internal/…`、不引三方）由包内 `independence_test.go` 自查。本版（P2）只落 go.mod、
-manifest 与 value.go 三件；接口面（plugin / host / llm / tool / memory / ingest /
-modality / secrets / uiext）随 P3 落盘。
+`internal/…`、不引三方）由包内 `independence_test.go` 自查。落盘节奏：P2 落 go.mod、
+manifest 与 value.go 三件；P3 第 1 步落接口面（plugin / host / llm / tool / command /
+memory / ingest / modality / secrets / uiext），转换器与装载器随后。
 
 ## 3. 稳定值类型层（value.go）
 
@@ -85,6 +88,13 @@ v1 最重要的资产是一层语义等价、字段冻结的稳定词汇。现�
 | `port.RawInput` / `Attachment` / `IngestReport` / `OutputRequest` | `v1.RawInput` / `v1.Attachment` / `v1.IngestReport` / `v1.OutputRequest` | `conversation.BlobRef` 结构体（Hash/MIME/Name/Size）在 v1 原样重述，不是字符串别名；`Part` 按**正文投影**重述（Kind/Text/Ref/Transcript/Signature/服务端块原文）——`Tool` 分片不进 v1（对外播报与摄取只用正文，工具往返是内核协作面）；附件体积上限常量（`MaxAttachments` / `MaxImageBytes`）两边同步 |
 | `port.Secrets`（`Get`） | `v1.SecretResolver`（Host 消费面） | 方向相反的两件分清：插件**供给**密钥走 `SecretProvider` 接口（P3），内核**解析给**插件走 `SecretResolver` |
 | `port.TokenCounter` / `Prober` | `v1.TokenCounter` / `v1.Prober`（P3） | 可选接口，type assertion 探测；转换是纯值搬运，无易错点 |
+| `port.GenerateRequest` / `PromptMessage` / `PromptPart` / `Sampling` / `TokenBudget` | `v1.GenerateRequest` / `v1.PromptMessage` / `v1.PromptPart` / `v1.Sampling` / `v1.TokenBudget` | 装配后的请求形状。`PromptPart.Data` 是已解析的图片字节（不是路径）；`PromptMessage.ServerBlocks` 与 `Delta` 的 `ServerBlock.Raw` 同一条透传义务；`Sampling` 的浮点参数用指针（nil = 不发送，0 是有意义取值）；`ServerTools` 非空时 `Tools` 必须为空——协议里两者互斥 |
+| `port.CommandInfo` / `CommandParam` / `ParamKind` | `v1.CommandSpec` / `v1.CommandParam` / `v1.ParamKind` | 名字给主名 + 别名（首名为主名）；`ParamKind` 三档词表冻结（text / choice / flag）；`Values` 是 choice 的可选值，flag 带枚举值时也放这里 |
+| `port.SpeechRequest` | `v1.SpeechRequest` | 字段一一对应（Text / Voice / Design / Style / Tags）；音色与风格是配置项，不进模型上下文、不进会话树 |
+| `port.SpeechSegmenter` | `v1.SpeechSegmenter` | 逐帧喂入、按说话切段；`Flush` 收尾。返回的段即 `v1.SpeechSegment`，PCM 原样字节 |
+| `port.ProbeResult` / `ProbeVerdict` | `v1.ProbeResult` / `v1.ProbeVerdict` | 三态判定（无结论 / 支持 / 不支持）；`Reason` 是给用户看的一句话，可能夹带服务端原文片段——那是数据不是文案 |
+| `port.Log` | `v1.Logger` | 五段式日志的插件命名空间：级别 / 上下文 / 事件 / 行动 / kv 逐个保留；插件不自开日志文件（D276 一处写出） |
+| `port.AttachmentStore` | `v1.BlobStore` | 内容寻址四方法（Put / Get / Stat / GC）；插件拿不到裸路径，去重与 GC 语义与内核一致 |
 
 新增 v1 类型时先在表里补一行再写代码；port 类型新增字段时按本表逐点过（核对清单在
 [development.md](development.md)）。
@@ -143,6 +153,11 @@ type Host interface {
 Host 的方法集是 v1 里最容易过度承诺的地方：每个方法都要过一遍「内核愿意为这个方法背多久的
 兼容债」。首发宁可少给，靠只增不改补。
 
+**可选扩展按 type assertion 探测，不扩 Host 本体**：插件对 `Host` 句柄做
+`h.(pluginapi.NoticePoster)` 断言，命中才用——首发只有「内联提示」一项（把轻量提示放进消息流，
+未命中时退回 `Notify` 的语义）。这条同时是将来加 Host 能力的唯一方式：扩接口就破坏实现方，
+加独立接口只破坏「想用这一项的那一个插件」。
+
 ## 6. UI 扩展面（uiext.go）
 
 ### 总原则：插件交声明，不交像素
@@ -172,9 +187,11 @@ type Node struct {
 }
 ```
 
-交互往返：插件 `Host.ShowView(spec)` → 用户点按钮或提交表单 → 内核回调
-`OnViewAction(viewID, actionID, payload)` → 插件更新树 → 内核重渲染。**状态权威始终在
-插件侧**，内核只持当前帧；回放、切会话、重启不产生 UI 状态同步问题。
+交互往返走**拉模式**，插件没有推送入口：内核打开视图时调 `ViewProvider.Render(ctx, viewID)`
+取当前帧；用户点按钮或提交表单时调 `ViewProvider.OnAction(ctx, ViewAction)`，插件按自己的状态
+算出新树并返回，内核拿到就重渲染。**状态权威始终在插件侧，内核只持当前帧**。选的不是推模式
+（`Host.ShowView(spec)`）——推模式要求宿主接受任意时刻的界面变更，等于为每个插件背一条跨线程
+UI 契约，而回放、切会话、重启都会留下要同步的 UI 状态。
 
 **3. 通知与内联提示**。`Host.Notify` 兜底；`NoticePoster` 作为可选接口提供消息流内的
 轻量内联提示，TUI 降级为状态行。暂缓清单「MCP 富内容回传」的图片落地将来走这条路。
@@ -242,6 +259,12 @@ type Instance interface {
 
 重新启用永远是干净的新实例，插件不用满足「Init 可重入」；代价是插件作者要理解全局
 状态随实例丢弃，这正是启停的用户预期。
+
+### 注册表归宿主
+
+编译期注册由 main 显式列出工厂（一个 `[]pluginapi.Factory` 交给宿主装配），v1 包里不放
+全局 `Register`：全局注册表会把 init 顺序与并发写进要冻结的契约面，而名字冲突校验、状态机
+与启停本来就都在宿主（本节），v1 里再存一份等于两处权威。
 
 ### 操作面
 
@@ -322,7 +345,7 @@ prompt / 消息流注入接口）；替换或宿主 UI（不暴露 Gio、不改�
 1. v1 类型独立重述，不暴露 `internal/port` 类型。
 2. Host 首发六项（Logger / Secrets / Blobs / WorkDir / Confirm / Notify）。
 3. UI 扩展面随 v1 开放；D143 收窄为「装载关、贡献开」。
-4. 面板词汇首发六种 Node，降级行为写死。
+4. 面板词汇首发六种 Node，交互走拉模式（插件不推送界面），降级行为写死。
 5. 插件文案自带 zh / en，不进内核 i18n 表。
 6. 生命周期工厂化；运行时启停走状态机，无暂停档。
 7. capabilities 降为展示语义；确认链强制走 Host。
