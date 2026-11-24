@@ -1,5 +1,5 @@
 # Tier-1 Go 插件契约（pluginapi，v1）设计规格
-<!-- docs-sync: 2026-11-24 @ 4a42c0f -->
+<!-- docs-sync: 2026-11-24 @ e874bb3 -->
 
 > 定位：Tier-1 进程内 Go 插件契约包（`pluginapi`，本代为 v1）的实现规格——接口面、UI 扩展面、宿主服务、
 > 生命周期、版本纪律、能力边界。Tier-2（MCP server）的规格在 [contracts.md](contracts.md) §6.2–§6.4，
@@ -80,7 +80,8 @@ v1 最重要的资产是一层语义等价、字段冻结的稳定词汇。现�
 | `port.ModelInfo` / `ModelCaps` | `v1.ModelInfo` / `v1.ModelCaps` | caps 逐位对齐（会什么，D173）；单价字段单位随内核口径（每百万 token） |
 | `llm.Delta` | `v1.Delta` | 七项语义对齐（Text / ToolCall / Usage / Reasoning / ReasoningSignature / Title / ServerBlock）；`ReasoningSignature` 是透传字节，原样保真逐轮回传 |
 | `llm.ServerBlock` | `v1.ServerBlock` | `Raw` 原样保真、逐轮回传——这是「透传不解读」义务的样板字段 |
-| `tool.Spec` | `v1.ToolSpec` | `Schema`（json.RawMessage）按透传字节处理；内核侧 `Describe` 函数字段不进 v1，其对位是可选 `Describer` 接口（D320） |
+| `tool.Spec` | `v1.ToolSpec` | `Schema`（json.RawMessage）按透传字节处理；内核侧 `Describe` 函数字段不进 v1，其对位是可选 `Describer` 接口（D320）。名字文法 `[A-Za-z0-9_-]{1,64}`：`plugingo` 在每轮装配时逐条校验，不合文法或同轮重名整份拒掉（模型端点会 400，早报好读） |
+| `port.ToolSet` | `v1.ToolProvider`（`Tools(ctx)`） | 清单不物化进注册表：装配时向源要、执行时向源找。名字在**会话可见集合内**唯一（不同会话可同名），撞内置时以内置为准；工具源的端点不受 `tools.disabled` 约束——逐名禁用对逐轮变化的名字没有意义，开关是插件启停（D340） |
 | `tool.Call` / `tool.Result` | `v1.ToolCall` / `v1.ToolResult` | 调用 ID 随转换重编；`Images` 经 BlobStore 引用、`Fallback` 语义照抄 |
 | `port.ConfirmRequest` / `ConfirmAnswer` | `v1.ConfirmRequest` / `v1.ConfirmAnswer` | 无任务标识字段（contracts §5.2 并发语义）；`Risk` / `Level` 档位词表冻结，两边常量值必须一致；`perm.Op` 是 int 枚举（iota 顺序不是契约），v1 侧投影为字符串（`"read"` / `"write"` / 空） |
 | `port.MemoryDoc` / `MemoryIndexEntry` / `MemoryHit` / `MemoryStore` | **不进 v1** | 文档方法集是 memoryfs 的形状，不是记忆的契约。插件面只留注入挂载点 `Memory.Recall`，值类型只有 `MemoryRequest` / `MemoryContext` / `LegacyMemorySnapshot`；存储、组织、检索、管理全归插件（见 §4 记忆所有权）。接管期间 `memory_*` 四工具与 `/memory` 退出，内置记忆转只读、只作迁移素材 |
@@ -107,7 +108,7 @@ v1 最重要的资产是一层语义等价、字段冻结的稳定词汇。现�
 | v1 接口 | 对应 port | 说明 |
 |---|---|---|
 | `LanguageModel` | `port.LLM` | 流式生成 + 模型清单。`Stream` / `Delta` 独立重述，七项语义（Text / ToolCall / Usage / Reasoning / ReasoningSignature / Title / ServerBlock）与 D42 / D175 / D309 / D310 对齐 |
-| `ToolProvider` | `port.Tool` | 工具声明 + `Execute(ctx, Call) Result`。确认、超时、裁剪仍由内核 ToolRunner 包装，插件只拿到裁决后的调用 |
+| `ToolProvider` | `port.Tool` + `port.ToolSet` | 工具声明（`Tools(ctx)`，**每轮问一次**）+ `Execute(ctx, Call) Result`。确认、超时、裁剪仍由内核 ToolRunner 包装，插件只拿到裁决后的调用。清单可变、名字按会话解析（见下「工具面」） |
 | `CommandProvider` | `app.CommandHandler` | 命令注册（含参数相）；`/help`、分派、补全归内核 |
 | `Memory` | `port.MemoryStore`（**不对应，见下**） | 记忆所有权。插件只实现一个注入方法 `Recall`，存哪、怎么组织、怎么管理全归插件——内置的文档方法集不进契约 |
 | `Ingestor` | `port.Ingestor` | 输入摄取；OCR、音频直输等降级链扩展点 |
@@ -121,6 +122,37 @@ v1 最重要的资产是一层语义等价、字段冻结的稳定词汇。现�
 - `Prober`：能力探测三态（D174）。
 - `Describer`：PTC 二段式 describe 的对位（D320）。
 - `LegacyMemoryHost`：内置记忆的一次性只读快照，只有记忆插件拿得到（见下）。
+
+### 工具面：按轮给、按会话解析（D340）
+
+工具声明不是「注册一次、长期有效」的条目。宿主在**每次装配请求时**调用 `Tools(ctx)`——包括
+同一 Turn 内工具循环的每一轮——所以清单可以随插件状态变。这条能力是「标题即工具」形态的
+地基：记忆点、目录节点各自是一个工具，调用它就是下钻一层，返回全文或子记忆。
+
+内核侧的落法是 `port.ToolSet`（不是把清单塞进 `Runner.byName`）：
+
+| 时机 | 动作 |
+|---|---|
+| 插件启用 | `Runner.AddSet(源)`：只挂一个源，不展开清单 |
+| 每次装配请求 | `Specs(ctx)` = 静态工具 + 各源按 ctx 的会话要来的声明；同名胜出顺序：内置优先 |
+| 每次执行 | 静态表未命中时按 ctx 向源查（`Lookup`），后查到的名字按「未知工具」回填 |
+| 插件停用 | `Runner.RemoveSet(源)` |
+
+为什么不能进全局表：**同一个名字在不同会话可以指向不同的东西**（会话 A 打开「部署」，会话 B
+打开「英语」，两边的第一个工具都叫 `mem_1`）。全局 `byName` 装不下按会话解析的名字，而
+`Execute` 本来就带 ctx，让查找走 ctx 是唯一不需要在名字里编码会话的做法。
+
+三条约束写进契约：
+
+1. 名字文法 `[A-Za-z0-9_-]{1,64}`，同会话内唯一；中文标题要转成 ASCII 名，标题全文进
+   `Description`（模型选工具读的是 name + description）。
+2. **同一轮内必须稳定**：模型这一轮看到的清单与本次执行的查找要一致。
+3. 上一轮声明过、这一轮消失的名字不再是合法调用，宿主按未知工具回填。
+
+**零工具不再拒载**：声明 `provides: tool` 但这一轮一件都没有是正常状态（空库、游标停在根、
+刚装完还没迁移）。拿启用时的一次采样当拒载理由，会把首次启用的记忆插件误杀。
+
+PTC 模式下模型面只出 `run_code`，工具源不参与说明——脚本里用不上按轮导航的清单。
 
 ### `Memory`：插件完全拥有记忆
 
@@ -288,7 +320,8 @@ Registered ──> Validated ──> Stopped ──Init──> Active ──禁�
    接口实现与否只有在拿到实例后才验得了，而为一个禁用状态的插件造实例、跑一遍再丢掉，
    等于让「禁用」也付出初始化副作用。落点变了、结论没变——声明与实现不符的插件照样
    进不了 Active，只是报因发生在启用那一刻（`plugin/tierone` 的 `checkProvides`）。
-3. **Active**：`Init` 成功后可被调用；工具进注册表、模型进降级链、命令进 `/help`。
+3. **Active**：`Init` 成功后可被调用；工具源挂进注册表（`AddSet`，清单仍按轮给）、模型进
+   降级链、命令进 `/help`。
 4. **Draining**：禁用的第一阶段。进入瞬间做三件原子事：
    - 工具注册表摘除该插件全部端点；
    - 降级链快照按轮生效——进行中的一轮用旧链跑完（半轮换模型 = 同轮两家回答拼在一起，
@@ -327,6 +360,14 @@ type Instance interface {
    `plugins.<name>.enabled`（启停状态存 config，D31 语义复用），改动立即生效、不重启。
 2. Tier-2 的启停沿用现有进程级 enable/disable；用户操作一致，内部机制各自。
 3. 唯一需要重启的：换二进制本身（新增或删除编译进去的插件）。
+
+### 装配顺序（记忆接管专用，D340）
+
+接管记忆的插件若沿用内置工具名（`memory_read` / `memory_search` / …），装配顺序必须是
+**先撤内置四工具 → 再挂插件工具源 → 再启用插件**。撞名校验在启用时跑，反过来做会以
+「名字已被内置工具占用」拒载，报因看起来像插件写错了名字。
+腾出名字是有意为之：模型侧的提示词、习惯与既有对话里对 `memory_search` 的引用都不用改，
+迁移成本几乎为零。
 
 ### 契约义务（插件作者侧）
 
@@ -404,7 +445,8 @@ Draining → Stopped 是唯一出路。Go 同进程里「挂起」没有可执�
 ## 12. 验收（P3，首个插件）
 
 首个 Tier-1 插件定为**间隔重复记忆插件**（独立仓库 `aq-memory-plugin`，设计稿见其
-`design.md`：`Memory` 后端 + 自有检索工具 + 分层面板 + 首次启用时迁移内置记忆）。选型标准
+`design.md`：`Memory` 注入 + **标题即工具**（每个记忆点一个工具，调用即下钻并计数）+
+分层面板 + 首次启用时迁移内置记忆）。选型标准
 不随具体插件变：一条路径同时覆盖四层——供给面实现 + `Init` 里解析 `secret:` 与迁移快照 +
 落盘或附件经消费面（WorkDir / Blobs）+ `/plugin` 与设置窗可见（管理面）+ Shutdown 收尾
 （生命周期）。记忆插件额外验两条契约义务：接管期间 `memory_*` 与 `/memory` 确实退出、
