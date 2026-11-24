@@ -65,9 +65,12 @@ type job struct {
 	cleanEnv bool     // 只保留白名单环境，用来模拟别人的机器
 	optional bool     // 失败降级为 skip：出网这类环境问题不该判红
 	timeout  time.Duration
-	steps    [][]string
-	verify   verifier
-	note     string // 一句话说明这条挡什么
+	// dir 工作目录（相对仓库根）：空 = 根模块。同仓多模块时用来进另一个 go.mod
+	// 所在目录跑——根模块的 ./... 扫不到独立模块。
+	dir    string
+	steps  [][]string
+	verify verifier
+	note   string // 一句话说明这条挡什么
 }
 
 // defaultJobs 是门禁全表。顺序即执行顺序（同组的会被并行）。
@@ -119,6 +122,18 @@ func defaultJobs(root, tmpDir string) []job {
 			timeout: 15 * time.Minute,
 			steps:   [][]string{{"go", "test", "./..."}},
 			note:    "全量测试（英文界面语言，挡住只按中文写死的期望值）",
+		},
+		{
+			// 根模块的 ./... 扫不到同仓独立模块：pluginapi 自带 go.mod，契约测试
+			//（零依赖、接口形状）必须进它自己的目录跑，否则新加的门禁等于没加。
+			name: "test:pluginapi", min: profDefault, group: "test",
+			dir:     "pluginapi",
+			timeout: 5 * time.Minute,
+			steps: [][]string{
+				{"go", "vet", "./..."},
+				{"go", "test", "./..."},
+			},
+			note: "独立模块 pluginapi 的契约测试与静态检查",
 		},
 		{
 			name: "aqvalidate", min: profDefault,

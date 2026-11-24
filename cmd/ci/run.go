@@ -119,6 +119,9 @@ func runOne(ctx context.Context, j job, root string, caps map[capability]capStat
 	for _, step := range j.steps {
 		cmd := exec.CommandContext(ctx, step[0], step[1:]...)
 		cmd.Dir = root
+		if j.dir != "" {
+			cmd.Dir = filepath.Join(root, j.dir)
+		}
 		cmd.Env = childEnv(j)
 
 		var buf bytes.Buffer

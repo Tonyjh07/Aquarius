@@ -1,6 +1,7 @@
 package main
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -14,9 +15,9 @@ func TestSelectJobsByProfile(t *testing.T) {
 	}{
 		{profFast, []string{"fmt", "docsync", "vet"}},
 		{profDefault, []string{"fmt", "docsync", "vet", "build", "test:zh", "test:en",
-			"aqvalidate", "property", "envclean"}},
+			"test:pluginapi", "aqvalidate", "property", "envclean"}},
 		{profFull, []string{"fmt", "docsync", "vet", "build", "test:zh", "test:en",
-			"aqvalidate", "property", "envclean", "race", "linuxgate", "vuln"}},
+			"test:pluginapi", "aqvalidate", "property", "envclean", "race", "linuxgate", "vuln"}},
 	}
 	for _, c := range cases {
 		var got []string
@@ -73,7 +74,7 @@ func TestWavesGroupsAdjacent(t *testing.T) {
 		}
 		got = append(got, strings.Join(names, "+"))
 	}
-	want := []string{"fmt+docsync+vet+build", "test:zh+test:en", "aqvalidate", "property", "envclean"}
+	want := []string{"fmt+docsync+vet+build", "test:zh+test:en+test:pluginapi", "aqvalidate", "property", "envclean"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("波次切分不对：\n得到 %v\n要  %v", got, want)
 	}
@@ -97,5 +98,32 @@ func TestParseProfileRejectsUnknown(t *testing.T) {
 	}
 	if p, ok := parseProfile("full"); !ok || p != profFull {
 		t.Error("full 应解析为 profFull")
+	}
+}
+
+// TestIndependentModulesHaveJobs 同仓每个独立 go.mod 都必须有 job 进它目录跑：
+// 根模块的 ./... 不跨模块边界，新开一个子模块而不加 job，它的测试就一条都不跑——
+// 门禁会一直绿，直到有人发现那些测试从没执行过。
+func TestIndependentModulesHaveJobs(t *testing.T) {
+	repo := filepath.Join("..", "..")
+	mods, err := filepath.Glob(filepath.Join(repo, "*", "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	covered := map[string]bool{}
+	for _, j := range defaultJobs(".", ".") {
+		if j.dir != "" {
+			covered[filepath.ToSlash(j.dir)] = true
+		}
+	}
+	for _, m := range mods {
+		rel, err := filepath.Rel(repo, filepath.Dir(m))
+		if err != nil {
+			t.Fatal(err)
+		}
+		rel = filepath.ToSlash(rel)
+		if !covered[rel] {
+			t.Errorf("%s 是独立模块但没有对应 job：它的测试不会被任何一档跑到", rel)
+		}
 	}
 }
