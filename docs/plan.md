@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-23 @ ecddbfb -->
+<!-- docs-sync: 2026-11-24 @ f7477c1 -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -30,12 +30,14 @@
   取默认（D328，`Decl.ToolRisk()` + `TestToolRiskBySource`）。
 - **P2 · pluginapi/v1 契约**（M）· 骨架已完成：独立 go.mod 模块（`pluginapi/`，零依赖、
   只许标准库，`independence_test.go` 守独立性）、manifest 与稳定值类型层（value.go，
-  每个导出类型带兼容承诺句）、防腐映射点列表（plugin-design.md §3.1）。九接口 / Host /
-  生命周期 / UI Node 的接口代码按 2026-11-22 拍板随 P3 边实现边写，契约在 P3 收尾时完整冻结。
+  每个导出类型带兼容承诺句）、防腐映射点列表（plugin-design.md §3.1）。接口面（九个供给
+  接口 + 可选扩展 + Host + 生命周期 + UI 声明面）已随 P3 第 1 步落盘，`interfaces_test.go`
+  用一次性实现锁住形状；契约在 P3 收尾时完整冻结。
 - **P3 · plugingo 装载器 + 首个 Tier-1 插件**（M~L，关键路径）：按 plugin-design.md §7/§11/§12
-  实现——宿主校验与状态机、`adapter/plugingo` 转换层、main 注册表。**样例插件定为间隔
-  重复记忆插件**（独立仓库，设计稿见该仓库 design.md；`MemoryStore` + `ToolProvider` +
-  面板形态），验收标准（覆盖供给面、Host 消费面、管理面、生命周期四层）不变。
+  实现。第 1 步（接口面）已落；剩宿主校验与状态机、`adapter/plugingo` 转换层（照 §3.1
+  逐条核对）、main 注册表。**样例插件定为间隔重复记忆插件**（独立仓库，设计稿见该仓库
+  design.md；`MemoryStore` + `ToolProvider` + 面板形态），验收标准（覆盖供给面、Host
+  消费面、管理面、生命周期四层）不变。
 - **P4 · 杂项收口**（S，随做随删）：regexp2 `MatchTimeout` 与计数路径 ctx 检查（安全）；
   `think` 参数非空校验；压缩摘要流的 UI 标注；`/usage` 文案修正；三协议兼容回归
   （DeepSeek 当 anthropic 协议的第二家真后端跑集成用例）。
