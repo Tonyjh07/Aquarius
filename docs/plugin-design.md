@@ -1,5 +1,5 @@
 # Tier-1 Go 插件契约（pluginapi，v1）设计规格
-<!-- docs-sync: 2026-11-24 @ 669fe39 -->
+<!-- docs-sync: 2026-11-24 @ cfba7bc -->
 
 > 定位：Tier-1 进程内 Go 插件契约包（`pluginapi`，本代为 v1）的实现规格——接口面、UI 扩展面、宿主服务、
 > 生命周期、版本纪律、能力边界。Tier-2（MCP server）的规格在 [contracts.md](contracts.md) §6.2–§6.4，
@@ -93,8 +93,8 @@ v1 最重要的资产是一层语义等价、字段冻结的稳定词汇。现�
 | `port.SpeechRequest` | `v1.SpeechRequest` | 字段一一对应（Text / Voice / Design / Style / Tags）；音色与风格是配置项，不进模型上下文、不进会话树 |
 | `port.SpeechSegmenter` | `v1.SpeechSegmenter` | 逐帧喂入、按说话切段；`Flush` 收尾。返回的段即 `v1.SpeechSegment`，PCM 原样字节 |
 | `port.ProbeResult` / `ProbeVerdict` | `v1.ProbeResult` / `v1.ProbeVerdict` | 三态判定（无结论 / 支持 / 不支持）；`Reason` 是给用户看的一句话，可能夹带服务端原文片段——那是数据不是文案 |
-| `port.Log` | `v1.Logger` | 五段式日志的插件命名空间：级别 / 上下文 / 事件 / 行动 / kv 逐个保留；插件不自开日志文件（D276 一处写出） |
-| `port.AttachmentStore` | `v1.BlobStore` | 内容寻址四方法（Put / Get / Stat / GC）；插件拿不到裸路径，去重与 GC 语义与内核一致 |
+| `port.Log` | `v1.Logger` | 五段式日志的插件命名空间：级别由插件给，上下文段由宿主填成 `plugin:<name>`，事件 / 行动两句由插件自写（插件文案不进内核文案表），kv 是「名, 值」且名固定英文；插件不自开日志文件（D276 一处写出） |
+| `port.AttachmentStore` | `v1.BlobStore` | 内容寻址三方法（Put / Get / Stat）。**GC 不进 v1**：keep 集来自会话树，插件交上来的 keep 会把别人引用的字节删掉 |
 
 新增 v1 类型时先在表里补一行再写代码；port 类型新增字段时按本表逐点过（核对清单在
 [development.md](development.md)）。
