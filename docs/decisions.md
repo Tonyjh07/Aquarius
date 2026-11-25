@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-11-24 @ 1eb41a4 -->
+<!-- docs-sync: 2026-11-25 @ 3dd180e -->
 
 > **权威文档之一**：决策节于 2026-09 独立成篇，与 [contracts.md](contracts.md) 同级同权威
 > （该节 2026-10 从总设计文档删除，不再占节号）。编号**跨文件不变**
@@ -3428,5 +3428,7 @@
 - **状态**：已完成（`pluginapi/host.go` 的两项方法与注释、`Manifest.Locales` 注释改写；
   `plugingo` 的 `HostOptions.DataDir` / `WorkDir` / `Locale` 与三个转发方法、
   `TestHostPathsAndLocaleArePassThrough`；两处 fakeHost；plugin-design.md §4/§5/§12/§13 同步）。
-  宿主侧真实接线在 P3 第 3 步：`DataDir` 取 `<profile>/plugin-data/<name>`、`Locale` 取
-  `i18n.Current()`。
+  宿主侧接线已落（`cmd/aquarius/pluginhost.go`）：`DataDir` 取 `<profile>/plugin-data/<name>`，
+  `WorkDir` 取 `<profile>/plugin-tmp/<name>` 并在每个实例新建前清空（崩溃退出没有关机钩子，
+  启动时清才不依赖退出路径），`Locale` 取启动时生效的界面语言（wiring 里那份只读副本，与
+  取词口同源）。目录建不出来时给空串让插件降级，不因此拒载。

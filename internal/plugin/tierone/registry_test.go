@@ -385,3 +385,21 @@ func TestCloseStopsEverything(t *testing.T) {
 		}
 	}
 }
+
+// TestPluginNameMustBeUsableAsDir 插件名拼进私有目录（`plugin-data/<name>`），所以除了
+// 工具/命令名的限制，还不能带路径分隔符：否则一个名字就能把数据写到 profile 之外。
+func TestPluginNameMustBeUsableAsDir(t *testing.T) {
+	for _, name := range []string{"../escape", "a/b", `a\b`, "..", "."} {
+		r := newRegistry(t, &fakePlugin{name: name})
+		rec, ok := r.Record(name)
+		if !ok {
+			t.Fatalf("%q 没进注册表", name)
+		}
+		if rec.Err == nil {
+			t.Fatalf("名字 %q 应被拒载（不能当目录名）", name)
+		}
+		if rec.State != StateStopped {
+			t.Fatalf("名字 %q 被拒后应停在 Stopped，实际 %v", name, rec.State)
+		}
+	}
+}

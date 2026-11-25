@@ -1,5 +1,5 @@
 # Tier-1 Go 插件契约（pluginapi，v1）设计规格
-<!-- docs-sync: 2026-11-24 @ 1eb41a4 -->
+<!-- docs-sync: 2026-11-25 @ 3dd180e -->
 
 > 定位：Tier-1 进程内 Go 插件契约包（`pluginapi`，本代为 v1）的实现规格——接口面、UI 扩展面、宿主服务、
 > 生命周期、版本纪律、能力边界。Tier-2（MCP server）的规格在 [contracts.md](contracts.md) §6.2–§6.4，
@@ -227,6 +227,14 @@ type Host interface {
    带 ctx 而不是无参：取消时确认链随轮次一并收工，插件不自己拼超时。
 8. **Notify**：见 §6 的通知路径。
 
+**两个目录落在哪**（装配根的唯一口径）：`DataDir` = `<profile>/plugin-data/<name>`，
+`WorkDir` = `<profile>/plugin-tmp/<name>`。临时目录在**每次新建实例前**清空——关机时清靠
+退出钩子，而崩溃退出没有钩子，启动时清是唯一不依赖退出路径的做法。不放在 Tier-2 的
+`plugins/<name>/` 下：那个目录装的是用户丢进来的声明，删声明是「不用这个 server 了」，
+数据是插件自己的库，混在一处会让人以为删声明就该连数据一起删。目录由内核独占，插件不受限。
+两个目录都建不出来时给空串（插件按契约降级成不留存），不因此拒载。名字要拼进路径，所以
+清单校验除了工具/命令名的限制，还拒绝带路径分隔符与 `.` / `..` 的名字。
+
 Host 的方法集是 v1 里最容易过度承诺的地方：每个方法都要过一遍「内核愿意为这个方法背多久的
 兼容债」。首发宁可少给，靠只增不改补。
 
@@ -323,7 +331,8 @@ Registered ──> Validated ──> Stopped ──Init──> Active ──禁�
 
 1. **Registered**：编译期注册（main 里 import + `Register`）。只是候选，不占运行时资源。
 2. **Validated**：宿主启动时逐项查 Manifest——api 版本断言（v1 宿主只认 `api: 1`）、
-   名字冲突（与内置工具、MCP 端点撞名即拒）、provides 词表。校验失败停在 Stopped 并记因，
+   名字冲突（与内置工具、MCP 端点撞名即拒）、名字能否当目录名（私有目录按名字拼）、
+   provides 词表。校验失败停在 Stopped 并记因，
    不影响其他插件（软启动规则照抄 Tier-2）。
    **provides 自检（声明 LLM 必须实现 `LanguageModel`）推迟到 Create 之后、Start 之前**：
    接口实现与否只有在拿到实例后才验得了，而为一个禁用状态的插件造实例、跑一遍再丢掉，

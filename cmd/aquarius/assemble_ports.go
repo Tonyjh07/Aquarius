@@ -792,6 +792,10 @@ func (w *wiring) assembleTools(ctx context.Context, confirmer port.Confirmer, as
 		// 占位符原样印在终端上。
 		w.note(logging.LevelWarn, logging.Boot, "log.boot.ptc_experimental", "log.act.mode", "mode", toolsMode)
 	}
+	// Tier-1 插件：私有目录与 Host 的接线在这里，注册表只做清单校验（禁用不产生副作用）。
+	// 工具源的挂载与记忆接管要按 D340 的顺序来（先撤内置 memory_* 再挂源再启用），
+	// 落在会话装配之后那一处。
+	w.assembleTierOne(confirmer, builtinTools)
 	return nil
 }
 

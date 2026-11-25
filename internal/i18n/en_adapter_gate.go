@@ -152,6 +152,7 @@ var enAdapterGateTexts = map[string]string{
 	// ---- plugin/tierone: the Tier-1 state machine (validation, enable/disable, exclusivity). ----
 	"plugin.t1.api_mismatch":      "plugin \"{name}\" is built against contract v{api}; this host only accepts v{want}",
 	"plugin.t1.name_taken":        "the name \"{name}\" is already taken by a built-in tool, an MCP endpoint or another plugin",
+	"plugin.t1.name_not_path":     "the plugin name \"{name}\" cannot be used as a directory name (no path separators, not \".\" or \"..\")",
 	"plugin.t1.unknown_provides":  "plugin \"{name}\" declares an unknown supply face \"{port}\"",
 	"plugin.t1.provides_mismatch": "plugin \"{name}\" declares {port}, but its instance does not implement the matching interface",
 	"plugin.t1.memory_busy":       "plugin \"{name}\" wants to own memory, but \"{other}\" already does; memory has one owner at a time",

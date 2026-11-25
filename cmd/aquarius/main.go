@@ -34,7 +34,9 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/inhistory"
 	"github.com/Tonyjh07/Aquarius/internal/logging"
 	"github.com/Tonyjh07/Aquarius/internal/plugin"
+	"github.com/Tonyjh07/Aquarius/internal/plugin/tierone"
 	"github.com/Tonyjh07/Aquarius/internal/port"
+	v1 "github.com/Tonyjh07/Aquarius/pluginapi"
 )
 
 // version 构建版本号：发布构建用 `-ldflags "-X main.version=v0.1.0"` 注入，开发构建
@@ -295,6 +297,11 @@ type wiring struct {
 	exchange *exchange.Exchange
 	runner   *toolrun.Runner
 	audit    *decorate.Audit
+	// pluginFactories 编译进二进制的 Tier-1 插件入口：main 显式列出，注册表归宿主
+	// （设计 §7「注册表归宿主」）。样例插件在独立仓库，接入时只往这个切片加一行。
+	pluginFactories []v1.Factory
+	// plugins1 Tier-1 注册表（装配期建，关停时 Close）；启停状态另存 config plugins 段。
+	plugins1 *tierone.Registry
 	// inputHist 输入历史的磁盘存储（GUI 与 TUI 共用一份文件）：newUI 时惰性打开。
 	inputHist *inhistory.Store
 	client    port.LLM
@@ -417,6 +424,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	defer w.jobWatch.Close()
 	// D190：观察器同样在 UI 之前停掉（观察器的报告会唤醒前端）。
 	defer w.watcher.Close()
+	// Tier-1 插件在 UI 之前收尾：Shutdown 里可能还要发通知或改工具面，界面得还在。
+	defer w.closeTierOne()
 	// §5.18/D262：转交先停收尾观察者（不再注入），退出时再主动终止进程组——ACP 会话
 	// 不能恢复（本版不做 session/load），留着只有一个后果：一路失去监督的子代理继续
 	// 按自己的判断改文件。

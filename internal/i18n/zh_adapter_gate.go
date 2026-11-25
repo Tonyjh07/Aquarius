@@ -158,6 +158,7 @@ var zhAdapterGateTexts = map[string]string{
 	// 都是英文枚举，留在译文里不翻。 ----
 	"plugin.t1.api_mismatch":      "插件「{name}」按契约 v{api} 编译，本宿主只认 v{want}",
 	"plugin.t1.name_taken":        "插件名「{name}」已被内置工具、MCP 端点或其他插件占用",
+	"plugin.t1.name_not_path":     "插件名「{name}」不能当目录名（不许路径分隔符，也不能是 . 或 ..）",
 	"plugin.t1.unknown_provides":  "插件「{name}」声明了未知供给面「{port}」",
 	"plugin.t1.provides_mismatch": "插件「{name}」声明提供 {port}，但实例没实现对应接口",
 	"plugin.t1.memory_busy":       "插件「{name}」要接管记忆，但「{other}」已经在管；记忆同一时刻只能有一个主人",

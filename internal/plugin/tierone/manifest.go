@@ -50,14 +50,18 @@ func validateManifest(m v1.Manifest, taken func(string) bool) error {
 	return nil
 }
 
-// validatePluginName 插件名同时进工具名（`<name>_<tool>`）与命令名，与 Tier-2 的
-// server 名同一套限制：不许冒号与空白，保证按冒号切分无歧义。
+// validatePluginName 插件名同时进工具名（`<name>_<tool>`）、命令名与私有目录名：
+// 与 Tier-2 的 server 名同一套限制（不许冒号与空白，按冒号切分无歧义），另加一条
+// 目录维度——这个名字要拼进 `<profile>/plugin-data/<name>`，带分隔符就能写到外面去。
 func validatePluginName(name string) error {
 	if name == "" {
 		return errors.New(i18n.T("plugin.cfg.name_empty"))
 	}
 	if strings.ContainsAny(name, ": \t") {
 		return errors.New(i18n.Tf("plugin.cfg.name_chars", "name", name))
+	}
+	if name == "." || name == ".." || strings.ContainsAny(name, `/\`) {
+		return errors.New(i18n.Tf("plugin.t1.name_not_path", "name", name))
 	}
 	return nil
 }
