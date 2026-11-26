@@ -315,58 +315,28 @@ func (f *fakeJobs) Wait(_ context.Context, id port.JobID) (port.Job, error) {
 }
 
 // ---------------------------------------------------------------------------
-// 记忆端口替身（M2）
+// 记忆挂载点替身（M2 / D337）
 // ---------------------------------------------------------------------------
 
-// fakeMemory map 实现的 port.MemoryStore（记忆注入/工具回放用）。
-type fakeMemory struct{ docs map[string]string }
-
-var _ port.MemoryStore = (*fakeMemory)(nil)
-
-func newFakeMemory() *fakeMemory { return &fakeMemory{docs: map[string]string{}} }
-
-func (m *fakeMemory) Index(context.Context) ([]port.MemoryIndexEntry, error) {
-	var out []port.MemoryIndexEntry
-	for name, content := range m.docs {
-		if strings.TrimSpace(content) == "" {
-			continue
-		}
-		out = append(out, port.MemoryIndexEntry{Name: name, Summary: strings.Split(content, "\n")[0]})
-	}
-	return out, nil
+// fakeSource port.MemorySource 的替身：直接给一段文本，不顺带实现内置排版
+// （白名单与两段拼接属于 memoryfs 的内置实现，测在那边）。
+type fakeSource struct {
+	text   string
+	detail string
+	err    error
+	// 记录最近一次调用收到的参数，供断言预算与会话身份。
+	gotID     conversation.ID
+	gotBudget int
 }
 
-func (m *fakeMemory) Read(_ context.Context, name string) (port.MemoryDoc, error) {
-	c, ok := m.docs[name]
-	if !ok {
-		return port.MemoryDoc{}, port.ErrMemoryNotFound
-	}
-	return port.MemoryDoc{Name: name, Content: c}, nil
-}
+var _ port.MemorySource = (*fakeSource)(nil)
 
-func (m *fakeMemory) Write(_ context.Context, doc port.MemoryDoc) error {
-	m.docs[doc.Name] = doc.Content
-	return nil
-}
-
-func (m *fakeMemory) Remove(_ context.Context, name string) error {
-	if _, ok := m.docs[name]; !ok {
-		return port.ErrMemoryNotFound
+func (f *fakeSource) Recall(_ context.Context, id conversation.ID, budget int) (port.MemoryBlock, error) {
+	f.gotID, f.gotBudget = id, budget
+	if f.err != nil {
+		return port.MemoryBlock{}, f.err
 	}
-	delete(m.docs, name)
-	return nil
-}
-
-func (m *fakeMemory) Search(_ context.Context, q string) ([]port.MemoryHit, error) {
-	var out []port.MemoryHit
-	for name, content := range m.docs {
-		for i, line := range strings.Split(content, "\n") {
-			if strings.Contains(strings.ToLower(line), strings.ToLower(q)) {
-				out = append(out, port.MemoryHit{Name: name, Line: i + 1, Snippet: line})
-			}
-		}
-	}
-	return out, nil
+	return port.MemoryBlock{Text: f.text, Detail: f.detail}, nil
 }
 
 // ---------------------------------------------------------------------------

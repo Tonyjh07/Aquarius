@@ -81,7 +81,7 @@ func (a *Agent) attachSystemNotes(ctx context.Context, c *conversation.Conversat
 	if len(msgs) == 0 || msgs[0].Role != port.PromptSystem {
 		return msgs, marks
 	}
-	if block, parts := a.memoryBlock(ctx, c.ID); block != "" {
+	if block, parts := a.memoryBlock(ctx, msgs, c.ID); block != "" {
 		marks = append(marks, sectionMark{Msg: 0, Part: len(msgs[0].Content), Kind: labelMemory, Detail: parts})
 		msgs[0].Content = append(msgs[0].Content, port.PromptPart{Kind: port.PromptText, Text: block})
 	}

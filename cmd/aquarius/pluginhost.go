@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/plugingo"
 	"github.com/Tonyjh07/Aquarius/internal/app"
@@ -53,9 +55,10 @@ func (w *wiring) assembleTierOne(confirmer port.Confirmer, builtin []port.Tool) 
 //
 // 目录建不出来时给空串而不是让 Create 失败——插件契约里空串就是「宿主没给持久目录，
 // 自己降级成不留存」。为一个创建不出来的目录把整个插件拒载，代价比降级大。
-func (w *wiring) pluginHostFor(confirmer port.Confirmer) func(string) v1.Host {
+func (w *wiring) pluginHostFor(confirmer port.Confirmer) func(v1.Manifest) v1.Host {
 	locale := string(w.lang)
-	return func(name string) v1.Host {
+	return func(m v1.Manifest) v1.Host {
+		name := m.Name
 		data := pluginDataDir(w.profileDir, name)
 		if err := os.MkdirAll(data, 0o755); err != nil {
 			w.note(logging.LevelWarn, logging.Plugin, "log.plugin.t1_dir_failed",
@@ -68,7 +71,7 @@ func (w *wiring) pluginHostFor(confirmer port.Confirmer) func(string) v1.Host {
 				"log.act.degraded_no_persist", "name", name, "dir", work, "err", err)
 			work = ""
 		}
-		return plugingo.NewHost(plugingo.HostOptions{
+		opts := plugingo.HostOptions{
 			Plugin:    name,
 			Log:       w.logFrom,
 			Secrets:   w.secrets,
@@ -77,8 +80,47 @@ func (w *wiring) pluginHostFor(confirmer port.Confirmer) func(string) v1.Host {
 			WorkDir:   work,
 			Locale:    locale,
 			Confirmer: confirmer,
-		})
+		}
+		// 迁移素材只给记忆插件（D337 决策 5）：它是内置记忆的交接面，别的插件没有理由读它。
+		// 判据用清单快照而不是反查注册表：此刻注册表正锁在 enable 里（见 Options.NewHost）。
+		if hasPort(m.Provides, tierone.PortMemory) {
+			opts.LegacyMemory = w.legacyMemorySnapshot
+		}
+		return plugingo.NewHost(opts)
 	}
+}
+
+// legacyMemorySnapshot 内置记忆的一次性只读快照：全局一篇 + 每个有内容的会话各一篇。
+// 只读不搬——搬不搬、搬之前要不要确认，由插件自己决定（D337 决策 5）。
+//
+// 单篇读失败就跳过：迁移是一次性动作，为一篇坏文件让整次迁移失败，用户得不到任何东西。
+func (w *wiring) legacyMemorySnapshot(ctx context.Context) (v1.LegacyMemorySnapshot, error) {
+	var snap v1.LegacyMemorySnapshot
+	if w.mem == nil {
+		return snap, nil
+	}
+	if doc, err := w.mem.Read(ctx, port.GlobalMemoryDoc); err == nil {
+		snap.Global = doc.Content
+	} else if !errors.Is(err, port.ErrMemoryNotFound) {
+		return snap, err
+	}
+	entries, err := w.mem.Index(ctx)
+	if err != nil {
+		return snap, err
+	}
+	for _, e := range entries {
+		sid, ok := strings.CutSuffix(e.Name, port.SessionMemorySuffix)
+		if !ok {
+			continue // 只认会话记忆文档（全局已在上面读过）
+		}
+		doc, err := w.mem.Read(ctx, e.Name)
+		if err != nil || strings.TrimSpace(doc.Content) == "" {
+			continue
+		}
+		snap.Sessions = append(snap.Sessions, v1.LegacySessionMemory{Session: sid, Content: doc.Content})
+	}
+	sort.Slice(snap.Sessions, func(i, j int) bool { return snap.Sessions[i].Session < snap.Sessions[j].Session })
+	return snap, nil
 }
 
 // takenNames 名字占用判定（§7 第 2 条）：内置工具与 config 里的 MCP server 名都算。
@@ -209,15 +251,34 @@ func (w *wiring) setTierOne(ctx context.Context, name string, on, persist bool) 
 	if w.plugins1 == nil {
 		return errors.New(i18n.T("plugin.t1.unwired"))
 	}
+	// 声明了 provides: memory 的插件在启用期间要让内置记忆面退出。判断看清单而不是实例：
+	// 启用的第一步就要腾名字（D340），那时实例还没造出来。
+	memPlugin := w.memRoute != nil && w.providesMemory(name)
 	if on {
+		if memPlugin {
+			w.memRoute.Arm(name) // 先撤内置四工具与 /memory，插件的 memory_* 才不会撞名
+			w.syncMemorySurfaces()
+		}
 		if err := w.plugins1.SetEnabled(ctx, name, true); err != nil {
+			if memPlugin { // 没起来就还原：内置记忆面不能因为一次失败的启用而消失
+				w.memRoute.Release(name)
+				w.syncMemorySurfaces()
+			}
 			return err
 		}
 		w.attachToolSet(name)
+		if memPlugin {
+			w.takeMemory(name)
+			w.syncMemorySurfaces()
+		}
 	} else {
 		w.detachToolSet(name)
 		if err := w.plugins1.SetEnabled(ctx, name, false); err != nil {
 			return err
+		}
+		if memPlugin { // 停用之后再交还：先让插件的 Recall 彻底退出，再恢复内置面
+			w.memRoute.Release(name)
+			w.syncMemorySurfaces()
 		}
 	}
 	if !persist {
@@ -227,6 +288,83 @@ func (w *wiring) setTierOne(ctx context.Context, name string, on, persist bool) 
 		return fmt.Errorf("%s: %w", i18n.T("plugin.t1.persist_failed"), err)
 	}
 	return nil
+}
+
+// hasPort 清单里是否声明了某个供给面。
+func hasPort(provides []string, want string) bool {
+	for _, p := range provides {
+		if p == want {
+			return true
+		}
+	}
+	return false
+}
+
+// providesMemory 清单里是否声明了记忆供给面。
+func (w *wiring) providesMemory(name string) bool {
+	if w.plugins1 == nil {
+		return false
+	}
+	rec, ok := w.plugins1.Record(name)
+	if !ok {
+		return false
+	}
+	return hasPort(rec.Provides, tierone.PortMemory)
+}
+
+// takeMemory 插件起来之后接管注入面。实例必须实现 Memory——`provides` 自检已经在启用时
+// 拦过这一类，这里拿不到就是没得接，保持内置面不变。
+func (w *wiring) takeMemory(name string) {
+	inst, _, ok := w.plugins1.Active(name)
+	if !ok {
+		return
+	}
+	m, ok := inst.(v1.Memory)
+	if !ok {
+		return
+	}
+	w.memRoute.Take(name, plugingo.NewMemory(m))
+	w.note(logging.LevelInfo, logging.Plugin, "log.plugin.t1_memory_takeover",
+		"log.act.ready", "name", name)
+}
+
+// applyDisabled 把「用户禁用集 ∪ 记忆接管集」推给 Runner。接管集不进 disabledHolder：
+// 那一份会写回 config 的 tools.disabled，用户没关过的工具不该出现在他的配置里。
+func (w *wiring) applyDisabled() {
+	if w.runner == nil || w.disabledTools == nil {
+		return
+	}
+	set := w.disabledTools.snapshot()
+	if w.memRoute != nil && w.memRoute.Blocking() {
+		for _, n := range memoryToolNames {
+			set[n] = true
+		}
+	}
+	w.runner.SetDisabled(set)
+}
+
+// syncMemorySurfaces 内置记忆面的可见性跟随接管状态（D337 决策 3）：接管期间四工具从
+// 模型面消失、/memory 从命令清单与分派里消失。记忆交还后原样回来，不需要重启。
+func (w *wiring) syncMemorySurfaces() {
+	w.applyDisabled()
+	if w.sess != nil {
+		var hidden []string
+		if w.memRoute != nil && w.memRoute.Blocking() {
+			hidden = []string{"memory"}
+		}
+		w.sess.SetHiddenCommands(hidden)
+	}
+	w.toolsRev.Add(1)
+}
+
+// isMemoryTool 是否是内置记忆工具（接管期间要退出、且名字要让给插件的那四个）。
+func isMemoryTool(name string) bool {
+	for _, n := range memoryToolNames {
+		if n == name {
+			return true
+		}
+	}
+	return false
 }
 
 // attachToolSet 把插件的工具面接成工具源（D340）：清单按轮问、按会话解析，所以挂的是源

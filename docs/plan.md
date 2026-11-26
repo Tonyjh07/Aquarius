@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-26 @ 19eebb8 -->
+<!-- docs-sync: 2026-11-26 @ 977ccbd -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -37,11 +37,13 @@
   实现。第 1 步（接口面）与第 2 步（`adapter/plugingo` 转换层 + Host 包装 + 供给面适配器、
   `plugin/tierone` 状态机与清单校验 + 独占记忆 + Draining）已落，第 3 步的大半也已落：
   注册表构造与 Host 接线（私有目录、当前语言、名字占用判定）、`/plugin` 并入 Tier-1
-  （list/enable/disable、启动恢复、写回 `plugins.<name>.enabled`）、启用时挂插件工具源。
-  剩内核侧记忆装配（接管期间 `memory_*` 四工具与 `/memory` 退出、内置记忆只读），并把
-  D340 的顺序（先撤内置 `memory_*` → 再挂源 → 再启用）接进这条启停路径。接线有一条顺序约束（D340）：**先撤内置 `memory_*` 四工具
-  → 再挂插件工具源（`Runner.AddSet`）→ 再启用插件**，否则撞名校验会把沿用内置名的插件
-  拒载。**样例插件定为间隔重复记忆插件**（独立仓库，设计稿见该仓库
+  （list/enable/disable、启动恢复、写回 `plugins.<name>.enabled`）、启用时挂插件工具源、
+  内核侧记忆装配（D342：`port.MemorySource` 单挂载点 + 装配根路由器；接管期间 `memory_*`
+  四工具与 `/memory` 退出、MCP resources 不再投影、失败还原、`Host` 迁移快照）。
+  启停顺序按 D342 的修正版走：**撤内置记忆面 → 启用插件 → 挂插件工具源 → 接管注入**，
+  停用反向。
+
+  **样例插件定为间隔重复记忆插件**（独立仓库，设计稿见该仓库
   design.md；`Memory`（含首次启用的内置记忆迁移）+ `ToolProvider` + 面板形态），验收标准
   （覆盖供给面、Host 消费面、管理面、生命周期四层）不变，另加两条记忆契约义务（接管期间
   `memory_*` 与 `/memory` 退出、内置记忆只读；两个 `provides: memory` 同时启用被拒）。

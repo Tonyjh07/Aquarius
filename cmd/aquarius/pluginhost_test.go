@@ -11,13 +11,14 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/plugin"
 	"github.com/Tonyjh07/Aquarius/internal/port"
+	v1 "github.com/Tonyjh07/Aquarius/pluginapi"
 )
 
 // TestPluginHostGivesDataDirAndLocale 宿主真的把目录与语言交出去（D341）：契约里写的
 // 「跨重启存活」「当前界面语言」只有在装配根填了值之后才成立。
 func TestPluginHostGivesDataDirAndLocale(t *testing.T) {
 	w := &wiring{profileDir: t.TempDir(), lang: i18n.LangEn}
-	h := w.pluginHostFor(nil)("memplug")
+	h := w.pluginHostFor(nil)(v1.Manifest{Name: "memplug"})
 
 	data := h.DataDir()
 	if data == "" {
@@ -41,7 +42,8 @@ func TestPluginHostGivesDataDirAndLocale(t *testing.T) {
 func TestPluginWorkDirClearedPerInstance(t *testing.T) {
 	w := &wiring{profileDir: t.TempDir(), lang: i18n.LangZh}
 	newHost := w.pluginHostFor(nil)
-	first := newHost("p")
+	man := v1.Manifest{Name: "p"}
+	first := newHost(man)
 
 	stale := filepath.Join(first.WorkDir(), "half-written.idx")
 	if err := os.WriteFile(stale, []byte("x"), 0o600); err != nil {
@@ -52,7 +54,7 @@ func TestPluginWorkDirClearedPerInstance(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	second := newHost("p")
+	second := newHost(man)
 	if second.WorkDir() != first.WorkDir() {
 		t.Fatalf("同一实例的临时目录应稳定：%q vs %q", first.WorkDir(), second.WorkDir())
 	}

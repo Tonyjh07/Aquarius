@@ -174,6 +174,8 @@ var enLogTexts = map[string]string{
 	"log.plugin.t1_refused":           "refused to enable plugin {name}: {err}",
 	"log.plugin.t1_dir_failed":        "cannot create directory {dir} for plugin {name}: {err}",
 	"log.plugin.t1_shutdown_failed":   "plugin {name} reported an error while shutting down: {err}",
+	"log.plugin.t1_memory_takeover":   "plugin {name} took over memory: the built-in memory tools and /memory have stepped aside",
+	"log.plugin.t1_memory_failed":     "memory recall from plugin {name} failed; injecting nothing this turn: {err}",
 	"log.plugin.config_wins":          "plugin {name}: the config entry wins; undeclared capabilities and risk are inherited from plugin.json",
 	"log.plugin.trust_no_confirmer":   "plugin {name} is not trusted yet, and nobody can confirm",
 	"log.plugin.trust_confirm_failed": "trust confirmation for plugin {name} failed: {err}",

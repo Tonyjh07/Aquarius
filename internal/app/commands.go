@@ -446,7 +446,14 @@ func paramsCopy(in []port.CommandParam) []port.CommandParam {
 // 动态命令与静态同名时**不出列**：分派是静态优先（execCommand 先查 commandIndex），
 // 出两条同名项会让补全浮层列出两个看起来一样的东西，选哪个却只走静态那条。
 func (s *Session) commandsSplit() (static, dyn []port.CommandInfo) {
-	static = commandInfos(commandTable)
+	all := commandInfos(commandTable)
+	static = make([]port.CommandInfo, 0, len(all))
+	for _, ci := range all {
+		if ci.Names[0] != "" && s.isHiddenCommand(ci.Names[0]) {
+			continue // 隐藏 = 不存在（D337：接管期间 /memory 退出）
+		}
+		static = append(static, ci)
+	}
 	s.dynMu.Lock()
 	defer s.dynMu.Unlock()
 	dyn = make([]port.CommandInfo, 0, len(s.dynamic))

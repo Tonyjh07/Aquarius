@@ -365,3 +365,31 @@ func TestHelpFromCatalog(t *testing.T) {
 		}
 	}
 }
+
+// TestHiddenCommandsLookNonexistent 隐藏 = 不存在（D337：记忆被插件接管时 /memory 退出）：
+// 清单里不出现，分派按未知命令报错，交还后原样回来。
+func TestHiddenCommandsLookNonexistent(t *testing.T) {
+	s := &Session{}
+	s.SetHiddenCommands([]string{"memory"})
+
+	for _, ci := range s.Commands() {
+		if ci.Names[0] == "memory" {
+			t.Fatal("隐藏的命令不该出现在清单里")
+		}
+	}
+	if _, err := s.execCommand(context.Background(), port.Command{Name: "memory"}); err == nil ||
+		!strings.Contains(err.Error(), "memory") {
+		t.Fatalf("隐藏后应按未知命令报错，实际 %v", err)
+	}
+
+	s.SetHiddenCommands(nil)
+	found := false
+	for _, ci := range s.Commands() {
+		if ci.Names[0] == "memory" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("交还后 /memory 应回来")
+	}
+}

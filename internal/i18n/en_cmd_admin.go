@@ -6,6 +6,7 @@ var enCmdAdminTexts = map[string]string{
 	// Tools page and plugin log (settings "Tools", /plugin logs)
 	"cmd.tools.label.context_compact": "Automatic context compaction",
 	"cmd.tools.err.unknown_builtin":   "Unknown builtin tool {name}",
+	"cmd.tools.err.memory_taken":      "\"{name}\" stepped aside when a plugin took over memory: use the tools the plugin provides instead",
 	"cmd.tools.err.persist_disabled":  "Applied live, but writing config tools.disabled failed",
 	"cmd.policy.err.need_tool":        "Local tools have no \"all requests\" entry; name the tool",
 	"cmd.policy.err_persist":          "The policy took effect, but writing config permissions.overrides failed",

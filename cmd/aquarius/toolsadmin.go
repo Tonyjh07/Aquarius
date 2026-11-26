@@ -142,6 +142,11 @@ func (a *toolsAdmin) Snapshot() uigui.ToolsSnapshot {
 		disabled = a.w.disabledTools.snapshot()
 	}
 	for _, name := range builtinToolNames() {
+		// 记忆被插件接管时，内置记忆工具已从模型面撤下、名字也让给了插件（D337）：
+		// 列在这里只会让人点开一个按不动的开关。
+		if a.w.memRoute != nil && a.w.memRoute.Blocking() && isMemoryTool(name) {
+			continue
+		}
 		s.Builtins = append(s.Builtins, uigui.BuiltinToolState{
 			Name: name, Label: builtinToolLabel(name), Enabled: !disabled[name],
 			Policy: perTool[name], Exec: perm.IsExec(name),
@@ -167,8 +172,11 @@ func (a *toolsAdmin) SetBuiltinEnabled(name string, enabled bool) error {
 	if !containsStr(builtinToolNames(), name) {
 		return fmt.Errorf("%s", i18n.Tf("cmd.tools.err.unknown_builtin", "name", strconv.Quote(name)))
 	}
+	if a.w.memRoute != nil && a.w.memRoute.Blocking() && isMemoryTool(name) {
+		return fmt.Errorf("%s", i18n.Tf("cmd.tools.err.memory_taken", "name", name))
+	}
 	a.w.disabledTools.setEnabled(name, enabled)
-	a.w.runner.SetDisabled(a.w.disabledTools.snapshot())
+	a.w.applyDisabled()
 	a.w.toolsRev.Add(1)
 	perr := a.w.persist.persistToolsDisabled(sortedDisabled(a.w.disabledTools.snapshot()))
 	if perr != nil {

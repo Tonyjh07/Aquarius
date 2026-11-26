@@ -41,6 +41,23 @@ const (
 // SessionMemoryDoc 返回会话 ID 对应的记忆文档名。
 func SessionMemoryDoc(id conversation.ID) string { return string(id) + SessionMemorySuffix }
 
+// MemoryBlock 一次注入的记忆块（D337）：Text 原样进上下文的首条 system，宿主不解读、
+// 不重排；标题由宿主加。Detail 是段标记的细目（`/context` 视图与排错用），
+// 例如内置实现的 `index+session` 或接管插件的 `plugin:<name>`。
+type MemoryBlock struct {
+	Text   string
+	Detail string
+}
+
+// MemorySource 记忆的唯一挂载点（D337）：每轮装配时问一次「这次要注入什么」。
+//
+// 回答者由装配根决定：内置文档记忆，或接管记忆的插件。宿主只认这个方法，
+// 因而不需要知道记忆存在哪、怎么组织——那是回答者自己的事。
+// budgetTokens 是本轮的软预算（0 = 不给建议）；实现方应自己裁剪，超出由宿主硬截断。
+type MemorySource interface {
+	Recall(ctx context.Context, id conversation.ID, budgetTokens int) (MemoryBlock, error)
+}
+
 // MemoryStore 记忆文档端口：markdown 即记忆、检索 = 关键词（D11）；后端可插拔。
 // name 寻址：全局 = GlobalMemoryDoc；会话 = SessionMemoryDoc(id)（D23）。
 type MemoryStore interface {

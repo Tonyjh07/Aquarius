@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-24 @ a38ef97 -->
+<!-- docs-sync: 2026-11-26 @ 977ccbd -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -393,6 +393,10 @@ port 以接口与 DTO 为主，允许无状态纯函数助手（如 `ResolveJobI
 上层不认「记忆存在哪」（`memory_*` 工具只见全局 + 当前会话两份，§4.4）。**这五件不端给插件**：
 插件面 `pluginapi.Memory` 只有一个 `Recall` 注入方法，存哪、怎么组织、怎么管理全归插件
 （plugin-design.md §4）。
+
+注入面单独一个端口 `MemorySource`：`Recall(ctx, 会话 ID, 软预算)` 返回一块 markdown 与段细目，
+Agent 只认它。内置回答者是 `memoryfs.Source`（上面五件拼成的内置形状），记忆插件接管后由装配根
+的路由器换人（D342）——换人不动 Agent，也不重启进程。
 
 ### 5.5 `blob.go` —— 附件端口
 

@@ -346,6 +346,30 @@ type Session struct {
 	dynMu       sync.Mutex
 	dynamic     map[string]CommandHandler
 	dynamicMeta map[string]port.CommandInfo // 清单元数据（D103：名称→Names/Desc，键与 dynamic 对齐）
+
+	// hideMu 保护 hidden：会话内暂时退出的内置命令（D337：记忆被插件接管时 /memory 退出，
+	// 交还后回来）。与动态命令分开是因为它改的是静态表——表本身不可变，过滤在查询处做。
+	hideMu sync.Mutex
+	hidden map[string]bool
+}
+
+// SetHiddenCommands 替换隐藏的内置命令集（装配根随记忆接管/交还刷新；整体换）。
+// 隐藏 = 与不存在等同：分派按未知命令、清单与补全浮层都不出列。
+func (s *Session) SetHiddenCommands(names []string) {
+	set := make(map[string]bool, len(names))
+	for _, n := range names {
+		set[n] = true
+	}
+	s.hideMu.Lock()
+	defer s.hideMu.Unlock()
+	s.hidden = set
+}
+
+// isHiddenCommand 该内置命令当前是否隐藏。
+func (s *Session) isHiddenCommand(name string) bool {
+	s.hideMu.Lock()
+	defer s.hideMu.Unlock()
+	return s.hidden[name]
 }
 
 // SetDynamicCommands 替换动态命令表（装配根随插件启停刷新；锁内整体换）。
@@ -736,7 +760,7 @@ func (s *Session) levelNow() perm.Level {
 
 // execCommand 命令分发（§7.3）：静态注册表 → 动态命令 → 未知。
 func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, error) {
-	if e, ok := commandIndex[cmd.Name]; ok {
+	if e, ok := commandIndex[cmd.Name]; ok && !s.isHiddenCommand(cmd.Name) {
 		return e.Run(s, ctx, cmd)
 	}
 	// 动态命令（§6.1 扩展点 #4）：静态命令未命中时查询

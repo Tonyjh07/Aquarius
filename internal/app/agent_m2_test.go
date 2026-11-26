@@ -52,16 +52,14 @@ func TestRunInjectsSessionContext(t *testing.T) {
 	}
 }
 
-// TestRunMemoryInjection 记忆索引（全局+当前会话白名单）与会话记忆全文注入首条 system。
+// TestRunMemoryInjection 记忆挂载点返回的块原样注入首条 system：宿主只加段标题，
+// 块内排版不动（D337）。白名单那类排版规则属于内置实现，测在 memoryfs。
 func TestRunMemoryInjection(t *testing.T) {
-	mem := newFakeMemory()
-	mem.docs[port.GlobalMemoryDoc] = "## 用户偏好\n喜欢简洁回答"
-	mem.docs[port.SessionMemoryDoc("conv")] = "本会话要点：先给结论"
-	mem.docs[port.SessionMemoryDoc("other")] = "别的会话，不该出现"
+	src := &fakeSource{text: "- memories.md: 用户偏好\n本会话要点：先给结论", detail: "index+session"}
 
 	llm := &scriptLLM{t: t, streams: []*scriptStream{textStream("ok")}}
 	rec := &recorder{}
-	a := newAgent(t, llm, rec, Deps{Memory: mem}, Config{})
+	a := newAgent(t, llm, rec, Deps{Memory: src}, Config{})
 	c := newConv(t)
 
 	if err := a.Run(context.Background(), c); err != nil {
@@ -76,14 +74,17 @@ func TestRunMemoryInjection(t *testing.T) {
 		text.WriteString(p.Text)
 	}
 	got := text.String()
-	for _, want := range []string{"Memory index", port.GlobalMemoryDoc, "用户偏好",
-		port.SessionMemoryDoc("conv"), "本会话要点"} {
+	for _, want := range []string{"# Memory", "用户偏好", "本会话要点"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("system 缺 %q:\n%s", want, got)
 		}
 	}
-	if strings.Contains(got, "别的会话") {
-		t.Fatalf("泄漏其他会话记忆:\n%s", got)
+	if src.gotID != c.ID {
+		t.Fatalf("挂载点收到的会话 = %q, want %q", src.gotID, c.ID)
+	}
+	// 预算按窗口的四分之一封顶（默认窗口 256k → 64000），插件据此自己裁剪。
+	if want := DefaultMaxContextTokens / 4; src.gotBudget != want {
+		t.Fatalf("预算 = %d, want %d", src.gotBudget, want)
 	}
 	// 树内 persona/节点未被改写（注入只发生在装配副本）。
 	if err := c.Validate(); err != nil {
@@ -91,11 +92,48 @@ func TestRunMemoryInjection(t *testing.T) {
 	}
 }
 
+// TestRunMemoryBudgetTruncates 软预算按窗口算出并硬截断：超预算时只留前缀，
+// 段细目标出 truncated（D337 决策 6）。
+func TestRunMemoryBudgetTruncates(t *testing.T) {
+	src := &fakeSource{text: strings.Repeat("x", 40000), detail: "plugin:memplug"} // ≈10000 tokens
+
+	llm := &scriptLLM{t: t, streams: []*scriptStream{textStream("ok")}}
+	rec := &recorder{}
+	a := newAgent(t, llm, rec, Deps{Memory: src}, Config{MaxContextTokens: 2000})
+	c := newConv(t)
+
+	if err := a.Run(context.Background(), c); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if src.gotBudget <= 0 || src.gotBudget > 2000/4 {
+		t.Fatalf("预算 = %d，应在 (0, 500]", src.gotBudget)
+	}
+	rep, ok := a.LastContextReport(context.Background())
+	if !ok {
+		t.Fatal("没有实发快照")
+	}
+	var memSec *ContextSection
+	for i := range rep.Sections {
+		if rep.Sections[i].Kind == labelMemory {
+			memSec = &rep.Sections[i]
+		}
+	}
+	if memSec == nil {
+		t.Fatal("快照里没有记忆段")
+	}
+	if !strings.Contains(memSec.Detail, "truncated") {
+		t.Fatalf("截断没记在段细目上：%q", memSec.Detail)
+	}
+	if n := estimateTokens(strings.TrimPrefix(memSec.Text, memoryHeading)); n > src.gotBudget {
+		t.Fatalf("截断后仍 %d tokens > 预算 %d", n, src.gotBudget)
+	}
+}
+
 // TestRunMemoryFailureSilent 记忆读取失败静默跳过，不阻断对话。
 func TestRunMemoryFailureSilent(t *testing.T) {
 	llm := &scriptLLM{t: t, streams: []*scriptStream{textStream("ok")}}
 	rec := &recorder{}
-	a := newAgent(t, llm, rec, Deps{Memory: &brokenMemory{}}, Config{})
+	a := newAgent(t, llm, rec, Deps{Memory: &brokenSource{}}, Config{})
 	c := newConv(t)
 	if err := a.Run(context.Background(), c); err != nil {
 		t.Fatalf("记忆失败不应阻断: %v", err)
@@ -105,18 +143,10 @@ func TestRunMemoryFailureSilent(t *testing.T) {
 	}
 }
 
-type brokenMemory struct{}
+type brokenSource struct{}
 
-func (brokenMemory) Index(context.Context) ([]port.MemoryIndexEntry, error) {
-	return nil, errors.New("disk broken")
-}
-func (brokenMemory) Read(context.Context, string) (port.MemoryDoc, error) {
-	return port.MemoryDoc{}, errors.New("disk broken")
-}
-func (brokenMemory) Write(context.Context, port.MemoryDoc) error { return errors.New("disk broken") }
-func (brokenMemory) Remove(context.Context, string) error        { return errors.New("disk broken") }
-func (brokenMemory) Search(context.Context, string) ([]port.MemoryHit, error) {
-	return nil, errors.New("disk broken")
+func (brokenSource) Recall(context.Context, conversation.ID, int) (port.MemoryBlock, error) {
+	return port.MemoryBlock{}, errors.New("disk broken")
 }
 
 // TestRunAutoCompact 触发阈值 → 先压缩（轨2）再生成：摘要入树、NoticeEvent、水位裁掉长文。

@@ -6,6 +6,7 @@ var zhCmdAdminTexts = map[string]string{
 	// 工具页与插件日志（设置窗「工具」页、/plugin logs）
 	"cmd.tools.label.context_compact": "自动上下文压缩",
 	"cmd.tools.err.unknown_builtin":   "未知的内置工具 {name}",
+	"cmd.tools.err.memory_taken":      "「{name}」已随记忆被插件接管而退出：记忆的读写请用插件自己提供的工具",
 	"cmd.tools.err.persist_disabled":  "已热生效，但写回 config tools.disabled 失败",
 	"cmd.policy.err.need_tool":        "本地工具没有「全部请求」这一档，请指定工具名",
 	"cmd.policy.err_persist":          "策略已生效，但写回 config permissions.overrides 失败",

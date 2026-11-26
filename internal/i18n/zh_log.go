@@ -178,6 +178,8 @@ var zhLogTexts = map[string]string{
 	"log.plugin.t1_refused":           "拒绝启用插件 {name}：{err}",
 	"log.plugin.t1_dir_failed":        "插件 {name} 的目录 {dir} 建不出来：{err}",
 	"log.plugin.t1_shutdown_failed":   "插件 {name} 停用时收尾报错：{err}",
+	"log.plugin.t1_memory_takeover":   "插件 {name} 接管记忆：内置记忆工具与 /memory 已退出",
+	"log.plugin.t1_memory_failed":     "插件 {name} 的记忆注入失败，本轮不注入：{err}",
 	"log.plugin.config_wins":          "插件 {name}：以 config 条目为准，未声明的能力与风险等级继承 plugin.json",
 	"log.plugin.trust_no_confirmer":   "插件 {name} 尚未信任，且无人可确认",
 	"log.plugin.trust_confirm_failed": "插件 {name} 的信任确认失败：{err}",

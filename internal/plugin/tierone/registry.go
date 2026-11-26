@@ -19,9 +19,10 @@ const defaultDrainTimeout = 10 * time.Second
 type Options struct {
 	// Factories 编译进二进制的插件入口（main 显式列出，§7「注册表归宿主」）。
 	Factories []v1.Factory
-	// NewHost 造一个插件实例的 Host。装配根在这里把 logger / 密钥 / 附件库 / 工作目录
-	// 接上（adapter/plugingo 只提供包装，接线在 cmd）。
-	NewHost func(name string) v1.Host
+	// NewHost 造一个插件实例的 Host，参数是注册表手里的清单快照。传清单而不只传名字：
+	// Host 的构造有时要看声明（记忆插件才拿得到迁移素材），而此刻注册表锁在 enable 里，
+	// 回调再反查注册表就死锁——清单在锁内是现成的。
+	NewHost func(v1.Manifest) v1.Host
 	// Taken 名字是否已被内置工具、MCP 端点占用：Tier-1 与它们共享模型的命名空间，
 	// 撞名即拒载。nil = 不查。
 	Taken func(name string) bool
@@ -158,7 +159,7 @@ func (r *Registry) enable(ctx context.Context, e *entry) error {
 				"name", e.manifest.Name, "other", other)))
 		}
 	}
-	inst, err := e.factory.Create(r.opts.NewHost(e.manifest.Name))
+	inst, err := e.factory.Create(r.opts.NewHost(e.manifest))
 	if err != nil {
 		return r.refuse(e, err)
 	}

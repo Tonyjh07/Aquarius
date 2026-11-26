@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-11-25 @ 3dd180e -->
+<!-- docs-sync: 2026-11-26 @ 977ccbd -->
 
 > **权威文档之一**：决策节于 2026-09 独立成篇，与 [contracts.md](contracts.md) 同级同权威
 > （该节 2026-10 从总设计文档删除，不再占节号）。编号**跨文件不变**
@@ -352,6 +352,7 @@
 | [D339](#d339) | Tier-1 装载落地的三条取舍：`Host.Confirm` 补 ctx（契约未冻结前改）；provides 自检移到 Create 之后（不为禁用插件造实例）；注册表 `internal/plugin/tierone` 只依赖 pluginapi，Host 由装配根注入避免 plugin→adapter 反向依赖 | 已完成 |
 | [D340](#d340) | 工具面按轮给：`Tools(ctx)` 每次装配都问、清单可随导航变化；内核加 `port.ToolSet`（装配时向源要、执行时按 ctx 的会话找），名字在会话内唯一、撞内置以内置为准、不受 `tools.disabled` 约束；零工具不再拒载 | 已完成 |
 | [D341](#d341) | Host 补两项：`DataDir()`（持久目录）与 `Locale()`（当前界面语言），首发六项 → 八项；目录按生存期分成 DataDir / WorkDir 两个方法而不是加参数；空串 = 宿主未提供，插件降级；语言给值不给访问器（D275 运行内不变），词表与 `Manifest.Locales` 同一套 | 已完成 |
+| [D342](#d342) | 记忆接管的内核接线：端口只留 `port.MemorySource`（带会话与软预算），内置排版搬进 `memoryfs.Source`，装配根用路由器换回答者；顺序修正为「撤内置面 → 启用 → 挂源 → 接管」（挂源只能从 Active 实例取）；接管集不写 `tools.disabled`；`/memory` 用隐藏集退出；`Options.NewHost` 改收清单快照以免锁内反查死锁 | 已完成 |
 
 ## 记录
 
@@ -3432,3 +3433,52 @@
   `WorkDir` 取 `<profile>/plugin-tmp/<name>` 并在每个实例新建前清空（崩溃退出没有关机钩子，
   启动时清才不依赖退出路径），`Locale` 取启动时生效的界面语言（wiring 里那份只读副本，与
   取词口同源）。目录建不出来时给空串让插件降级，不因此拒载。
+
+<a id="d342"></a>
+
+### D342 · 记忆接管的内核接线：一个挂载点，两条切换路径
+
+- **背景**：契约侧只有 `Memory.Recall`（D337），但内核怎么「换人」没定：Agent 原来直接
+  持有 `port.MemoryStore`，按内置的两篇文档组装注入块；而接管与否取决于用户此刻启用了
+  哪个插件，随时会变。要求三件事同时成立：Agent 不知道记忆换了主人、启停不重启进程、
+  接管期间内置面（四工具 / `/memory` / MCP resources）确实消失。
+
+- **决策**：
+  1. **端口只加一个挂载点** `port.MemorySource{Recall(ctx, 会话 ID, 预算)}`，返回
+     `MemoryBlock{Text, Detail}`。Agent 只调它；块内排版、白名单、存在哪全归回答者。
+  2. **内置排版搬进适配器**：`memoryfs.Source` 负责「全局 + 当前会话两篇」这套形状。
+     它不是内核知识，是内置实现的形状——插件接管换掉的就是它。
+  3. **路由器**（`cmd/aquarius/memoryroute.go`）持有当前回答者：`owner == ""` 问内置，
+     否则问插件的 `plugingo.NewMemory`。插件失败返回空块并记一行（记忆坏了不挡对话，与
+     内置读取失败同一姿态）；段细目统一标 `plugin:<名字>`。
+  4. **顺序**：启用 = 撤内置面 → 启用 → 挂源 → 接管；停用 = 摘源 → 停实例 → 交还。
+     撤必须早于启用（否则 Runner 合并时内置工具赢了，插件那份静默消失）；挂源必须晚于
+     启用（工具源只从 Active 实例上取）。这修正了 D340 里「撤 → 挂源 → 启用」的说法：
+     该说法的要点（撤在前）成立，但挂源的位置写错了。
+  5. **接管集不进用户配置**：四工具的禁用来自「用户禁用集 ∪ 接管集」的并集在推给 Runner，
+     接管集不写 `tools.disabled`——用户没关过的工具不该出现在他的配置里。
+  6. **`/memory` 用「隐藏集」退出**：静态命令表不可变，Session 加一份隐藏集，分派与清单
+     都按「不存在」处理，交还后原样回来。
+  7. **`Options.NewHost` 改收清单快照**（`func(v1.Manifest) v1.Host`）：造 Host 时注册表
+     正锁在启用流程里，回调反查注册表会死锁；迁移素材的判据（`provides: memory`）改为
+     直接看这份快照。
+  8. **软预算从窗口算**：窗口上限减已装配部分与输出预留，再以四分之一封顶；超预算按
+     token 估算二进制找最长前缀截断，`/context` 的段细目标 `truncated`。
+
+- **备选**：
+  1. **Agent 直接持有两个字段（内置 + 插件），自己选**：切换逻辑渗进 Agent，且要处理
+     「两边都在」的中间态。
+  2. **每次切换重建 Agent / Session**：会打断进行中的会话与前端状态，代价与收益不成比例。
+  3. **用启动时的选择固定回答者**：用户启用插件后必须重启才生效，与「启停即时生效」
+     的整体口径冲突。
+  4. **把四工具从 Runner 里 Remove 掉**：Specs 与 Execute 的语义变成「有时候不认识这个
+     名字」，与禁用集两条路径并存更难推理；禁用集本来就有「与未注册不可区分」的语义。
+
+- **状态**：已完成。代码：`internal/port/memory.go`（MemorySource / MemoryBlock）、
+  `internal/adapter/memoryfs/source.go`、`internal/app/agent.go`（memoryBlock / 预算 /
+  截断）、`internal/app/session.go`（SetHiddenCommands）、`internal/adapter/plugingo/
+  providers.go`（NewMemory）、`cmd/aquarius/memoryroute.go`、`pluginhost.go`（启停顺序、
+  迁移快照、applyDisabled / syncMemorySurfaces）、`toolsadmin.go`（接管期不列四工具）。
+  测试：`memoryfs/source_test.go`、`app/agent_m2_test.go`（注入 / 预算截断 / 失败静默）、
+  `app/commands_test.go`（隐藏命令）、`cmd/aquarius/memorytakeover_test.go`（撤面、独占、
+  失败还原）。

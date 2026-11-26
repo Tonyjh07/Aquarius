@@ -122,7 +122,7 @@ func newRegistry(t *testing.T, ps ...*fakePlugin) *Registry {
 	for _, p := range ps {
 		fs = append(fs, factory{p: p})
 	}
-	return New(Options{Factories: fs, NewHost: func(string) v1.Host { return fakeHost{} }})
+	return New(Options{Factories: fs, NewHost: func(v1.Manifest) v1.Host { return fakeHost{} }})
 }
 
 func TestManifestValidationStopsPlugin(t *testing.T) {
@@ -170,7 +170,7 @@ func TestNameTakenIsRejected(t *testing.T) {
 	p := &fakePlugin{name: "dup", provides: []string{PortTool}, tools: []v1.ToolSpec{{Name: "t"}}}
 	r := New(Options{
 		Factories: []v1.Factory{factory{p: p}},
-		NewHost:   func(string) v1.Host { return fakeHost{} },
+		NewHost:   func(v1.Manifest) v1.Host { return fakeHost{} },
 		Taken:     func(string) bool { return true },
 	})
 	rec, _ := r.Record("dup")
@@ -336,7 +336,7 @@ func TestDrainTimeoutStillShutsDown(t *testing.T) {
 	p := &fakePlugin{name: "stuck", provides: []string{PortMemory}}
 	r := New(Options{
 		Factories:    []v1.Factory{factory{p: p}},
-		NewHost:      func(string) v1.Host { return fakeHost{} },
+		NewHost:      func(v1.Manifest) v1.Host { return fakeHost{} },
 		DrainTimeout: 10 * time.Millisecond,
 	})
 	if err := r.SetEnabled(context.Background(), "stuck", true); err != nil {

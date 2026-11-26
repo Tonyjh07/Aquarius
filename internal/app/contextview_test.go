@@ -73,9 +73,7 @@ func TestContextReportMatchesRequest(t *testing.T) {
 func TestContextReportLabels(t *testing.T) {
 	rec := &recorder{}
 	a := newAgent(t, &scriptLLM{t: t}, rec, Deps{}, Config{})
-	a.memory = &fakeMemory{docs: map[string]string{
-		port.SessionMemoryDoc("conv"): "note body",
-	}}
+	a.memory = &fakeSource{text: "note body", detail: "session"}
 	c := newConv(t)
 	rep, err := a.ContextReport(context.Background(), c)
 	if err != nil {

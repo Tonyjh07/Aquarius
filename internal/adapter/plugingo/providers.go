@@ -176,6 +176,25 @@ func (a segmenterAdapter) Flush() ([]port.SpeechSegment, error) {
 	return toPortSpeechSegments(segs), nil
 }
 
+// ---------- 记忆 ----------
+
+// NewMemory 插件的 Memory → 内核的记忆挂载点（D337）。会话身份经 ctx 递进去：装配面
+// 按 conversation.ID 调用，这里换成 port 的键再换成 v1 的键（两段都要，插件读 v1 那个）。
+func NewMemory(m v1.Memory) port.MemorySource { return memoryAdapter{m: m} }
+
+type memoryAdapter struct{ m v1.Memory }
+
+func (a memoryAdapter) Recall(ctx context.Context, id conversation.ID, budget int) (port.MemoryBlock, error) {
+	if id != "" {
+		ctx = port.WithSessionID(ctx, id)
+	}
+	mc, err := a.m.Recall(toV1Session(ctx), v1.MemoryRequest{BudgetTokens: budget})
+	if err != nil {
+		return port.MemoryBlock{}, err
+	}
+	return port.MemoryBlock{Text: mc.Text}, nil
+}
+
 // ---------- 密钥 ----------
 
 // NewSecrets 插件的密钥后端 → 内核端口。
@@ -198,4 +217,5 @@ var (
 	_ port.Synthesizer     = synthesizerAdapter{}
 	_ port.SpeechSegmenter = segmenterAdapter{}
 	_ port.Secrets         = secretsAdapter{}
+	_ port.MemorySource    = memoryAdapter{}
 )

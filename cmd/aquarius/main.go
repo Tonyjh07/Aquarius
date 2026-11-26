@@ -305,6 +305,8 @@ type wiring struct {
 	plugins1 *tierone.Registry
 	// pluginSets 已挂进 Runner 的插件工具源（停用时按名摘除；接口值相等靠这张表）。
 	pluginSets map[string]*plugingo.ToolSet
+	// memRoute 记忆挂载点的运行期切换（D337）：内置文档记忆与接管插件之间的路由。
+	memRoute *memoryRoute
 	// inputHist 输入历史的磁盘存储（GUI 与 TUI 共用一份文件）：newUI 时惰性打开。
 	inputHist *inhistory.Store
 	client    port.LLM
@@ -459,7 +461,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	agent, err := app.New(
 		app.Deps{
 			LLM: gen, UI: w.presenter, IDs: ids, Clock: systemClock{},
-			Tools: auditedRunner, Memory: w.merged, Blobs: w.blobs,
+			Tools: auditedRunner, Memory: w.memRoute, Blobs: w.blobs,
 			Characters: w.characters, // D294：世界书条目按会话绑的 slug 现取
 		},
 		app.Config{

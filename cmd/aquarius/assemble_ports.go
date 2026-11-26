@@ -84,6 +84,11 @@ func (w *wiring) assembleStores(ctx context.Context) error {
 	w.merged = &mergedMemory{
 		primary: mem,
 		extras: func() []port.MemoryStore {
+			// 记忆被插件接管时不投影 MCP resources（D337 决策 3）：插件是唯一的记忆所有者，
+			// 再混进一份只读投影就是两个记忆源同时进上下文。
+			if w.memRoute != nil && w.memRoute.Blocking() {
+				return nil
+			}
 			if w.host == nil {
 				return nil
 			}
@@ -97,6 +102,9 @@ func (w *wiring) assembleStores(ctx context.Context) error {
 		log:     w.logFrom,
 		timeout: 5 * time.Second, // 插件投影单次上限（卡死的插件不得拖垮 Turn）
 	}
+	// 记忆挂载点（D337）：默认回答者是内置文档记忆（叠了上面的 resources 投影），
+	// 记忆插件启用后由 memRoute 改问插件。Agent 只认这一个句柄，切换在它背后发生。
+	w.memRoute = newMemoryRoute(memoryfs.NewSource(w.merged), w.logFrom)
 	return nil
 }
 

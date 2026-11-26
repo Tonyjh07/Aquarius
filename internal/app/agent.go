@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -53,8 +52,9 @@ type Deps struct {
 	// Tools 为 nil = 无工具（M0）；Blobs 为 nil = 图片以内联占位代替（附件库 M3）。
 	Tools port.ToolRunner
 	Blobs port.AttachmentStore
-	// Memory 为 nil = 不注入记忆索引与会话记忆（M2，§7.1 承载）。
-	Memory port.MemoryStore
+	// Memory 为 nil = 不注入记忆（M2，§7.1 承载）。回答者由装配根决定：内置文档记忆
+	// 或接管记忆的插件（D337），Agent 只认「问一次要注入什么」。
+	Memory port.MemorySource
 	// Characters 角色卡目录（§5.17）：会话绑了卡时按 slug 取世界书条目（D294）。
 	// nil = 没有世界书，装配与查询都不做这件事。
 	Characters port.CharacterCatalog
@@ -121,7 +121,7 @@ type Agent struct {
 	clock     port.Clock
 	tools     port.ToolRunner
 	blobs     port.AttachmentStore
-	memory    port.MemoryStore
+	memory    port.MemorySource
 	cfg       Config
 	model     atomic.Value // string：当前生成模型（/model 热切换，D32；取代 cfg.Model 读取）
 	think     atomic.Pointer[bool]
@@ -657,35 +657,63 @@ func (a *Agent) buildRequestTracked(ctx context.Context, c *conversation.Convers
 	return req, marks, nil
 }
 
-// memoryBlock 构造记忆注入块（§7.1 承载）：记忆索引（只含全局 + 当前会话两份，
-// D23 名字白名单）+ 当前会话记忆全文（水位无关：压缩/回溯后仍在）。任一读取失败静默跳过。
-func (a *Agent) memoryBlock(ctx context.Context, id conversation.ID) (string, string) {
+// memoryBlock 构造记忆注入块（§7.1 承载 / D337）：每轮问一次 MemorySource 要注入什么，
+// 宿主只加段标题、按软预算硬截断，块内排版原样保留（插件接管后排版归插件）。
+// 读取失败静默跳过：记忆坏了不该挡住对话。
+func (a *Agent) memoryBlock(ctx context.Context, msgs []port.PromptMessage, id conversation.ID) (string, string) {
 	if a.memory == nil {
 		return "", ""
 	}
-	var b strings.Builder
-	var parts []string
-	if entries, err := a.memory.Index(ctx); err == nil {
-		want := map[string]bool{port.GlobalMemoryDoc: true, port.SessionMemoryDoc(id): true}
-		var lines []string
-		for _, e := range entries {
-			if want[e.Name] {
-				lines = append(lines, "- "+e.Name+": "+e.Summary)
-			}
-		}
-		if len(lines) > 0 {
-			sort.Strings(lines) // 确定性（索引顺序不承诺）
-			b.WriteString(memoryIndexHeading)
-			b.WriteString(strings.Join(lines, "\n"))
-			parts = append(parts, "index")
+	budget := a.memoryBudget(ctx, msgs)
+	blk, err := a.memory.Recall(ctx, id, budget)
+	if err != nil || strings.TrimSpace(blk.Text) == "" {
+		return "", ""
+	}
+	// 段标题也占预算：截断留出它的份额，否则「截到预算」之后还是会超。
+	if b := budget - estimateTokens(memoryHeading); budget > 0 && b > 0 {
+		budget = b
+	}
+	text, cut := truncateToBudget(blk.Text, budget)
+	if cut {
+		// 截断点由宿主挑，插件控制不了（所以要自己裁，D337 决策 6）。记在段细目上而不是
+		// 写日志：这一段在 /context 里可见，用户能直接看到记忆被砍了。
+		blk.Detail = strings.TrimPrefix(blk.Detail+"+truncated", "+")
+	}
+	return memoryHeading + text, blk.Detail
+}
+
+// memoryBudget 本轮记忆段的软预算（D337 决策 6）：窗口上限减去已装配部分与输出预留，
+// 且不超过窗口的四分之一——记忆是召回材料，不该把本轮对话挤出去。0 = 不给建议。
+func (a *Agent) memoryBudget(ctx context.Context, msgs []port.PromptMessage) int {
+	if a.maxCtx <= 0 {
+		return 0
+	}
+	used, _ := a.est.Estimate(ctx, port.GenerateRequest{Messages: msgs})
+	left := a.maxCtx - used - a.cfg.Budget.MaxOutputTokens
+	if left <= 0 {
+		return 0
+	}
+	if limit := a.maxCtx / 4; left > limit {
+		return limit
+	}
+	return left
+}
+
+// truncateToBudget 按预算硬截断（按 token 估算的前缀），返回裁剪后的文本与是否裁过。
+// 用估算而不是精确计数：这里是兜底，逐次探测精确计数会让每轮多打几次计数接口。
+func truncateToBudget(text string, budget int) (string, bool) {
+	if budget <= 0 || estimateTokens(text) <= budget {
+		return text, false
+	}
+	runes := []rune(text)
+	lo, hi := 0, len(runes) // 前缀的估算值随长度单调，二分找最长可留前缀
+	for lo < hi {
+		mid := (lo + hi + 1) / 2
+		if estimateTokens(string(runes[:mid])) <= budget {
+			lo = mid
+		} else {
+			hi = mid - 1
 		}
 	}
-	if doc, err := a.memory.Read(ctx, port.SessionMemoryDoc(id)); err == nil {
-		if strings.TrimSpace(doc.Content) != "" {
-			b.WriteString(sessionMemoryHeading)
-			b.WriteString(doc.Content)
-			parts = append(parts, "session")
-		}
-	}
-	return b.String(), strings.Join(parts, "+")
+	return string(runes[:lo]), true
 }
