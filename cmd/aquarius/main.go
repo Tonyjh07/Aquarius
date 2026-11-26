@@ -302,6 +302,9 @@ type wiring struct {
 	plugins1 *tierone.Registry
 	// pluginSets 已挂进 Runner 的插件工具源（停用时按名摘除；接口值相等靠这张表）。
 	pluginSets map[string]*plugingo.ToolSet
+	// cmdTables 动态命令的两个来源合并处：Tier-2 的 MCP prompts 与 Tier-1 插件的
+	// CommandProvider。会话的命令表只有整体替换一个写入口，两边必须在这里合流。
+	cmdTables *cmdTables
 	// memRoute 记忆挂载点的运行期切换（D337）：内置文档记忆与接管插件之间的路由。
 	memRoute *memoryRoute
 	// inputHist 输入历史的磁盘存储（GUI 与 TUI 共用一份文件）：newUI 时惰性打开。

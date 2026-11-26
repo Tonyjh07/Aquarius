@@ -190,6 +190,7 @@ type pluginSurfaces struct {
 	log        port.Log
 	registered map[string][]string            // server → 已注册工具名
 	prompts    map[string][]plugin.PromptInfo // server → 上次成功的 prompt 清单
+	cmds       *cmdTables                     // 动态命令合流处（与 Tier-1 共用一张表）
 }
 
 // toolRunnerAdder Runner 的最小装配面（Add/Remove；main 侧的具体类型）。
@@ -317,7 +318,11 @@ func (p *pluginSurfaces) refresh() {
 			}
 		}
 	}
-	sess.SetDynamicCommands(dyn, meta)
+	if p.cmds != nil {
+		p.cmds.setMCP(dyn, meta)
+		return
+	}
+	sess.SetDynamicCommands(dyn, meta) // 兜底：合流处没接上时仍按原样整体替换
 }
 
 // withPromptSource MCP prompt 渲染文本的来源标记（contracts §6.3）：渲染结果将作为
@@ -340,6 +345,13 @@ func sortedStoreNames(ready map[string]plugin.Session) []string {
 // 特权，D13）。host 与 session 互依——session 经 wiring.sess 字段地址（surfaces
 // 持 **）后绑定，host 经 wiring.host 供记忆投影与 surfaces.ready 读取。
 func (w *wiring) newPluginHost(ctx context.Context, confirmer port.Confirmer) {
+	// 命令合流处先建：Tier-1 与 Tier-2 的刷新都往它里面写，它会话没就绪时只落账不提交。
+	w.cmdTables = newCmdTables(func() cmdSink {
+		if s := w.sessPtr.Load(); s != nil {
+			return s
+		}
+		return nil
+	})
 	surfaces := &pluginSurfaces{
 		runner:  w.runner,
 		session: &w.sess,
@@ -354,6 +366,7 @@ func (w *wiring) newPluginHost(ctx context.Context, confirmer port.Confirmer) {
 		log:        w.logFrom,
 		registered: map[string][]string{},
 		prompts:    map[string][]plugin.PromptInfo{},
+		cmds:       w.cmdTables,
 	}
 	w.host = plugin.New(plugin.Deps{
 		Dial:          mcpgate.NewDialer(w.secrets),

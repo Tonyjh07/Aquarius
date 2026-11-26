@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -181,5 +182,35 @@ func TestSessionDynamicCommands(t *testing.T) {
 	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "mcp:fake:greet"}}); err == nil ||
 		!strings.Contains(err.Error(), i18n.Tf("session.unknown_command", "name", "mcp:fake:greet")) {
 		t.Fatalf("err = %v, want 未知命令", err)
+	}
+}
+
+// 命令也是插件的一个入口：分派前把当前会话放进 ctx，插件才看得见「这是哪个会话」。
+// 上游已经注入过会话的 ctx 不被覆盖——转交与后台任务就是这么进来的。
+func TestDynamicCommandSeesSession(t *testing.T) {
+	s := &Session{cur: &conversation.Conversation{ID: "conv-1"}}
+	var got conversation.ID
+	var ok bool
+	s.SetDynamicCommands(map[string]CommandHandler{
+		"probe": func(ctx context.Context, _ []string) (string, error) {
+			got, ok = port.SessionIDFrom(ctx)
+			return "", nil
+		},
+	}, nil)
+
+	if _, err := s.execCommand(context.Background(), port.Command{Name: "probe"}); err != nil {
+		t.Fatal(err)
+	}
+	if !ok || got != "conv-1" {
+		t.Fatalf("会话应来自当前会话：%q ok=%v", got, ok)
+	}
+
+	// 已带会话的 ctx 不被当前会话覆盖。
+	ctx := port.WithSessionID(context.Background(), "conv-9")
+	if _, err := s.execCommand(ctx, port.Command{Name: "probe"}); err != nil {
+		t.Fatal(err)
+	}
+	if got != "conv-9" {
+		t.Fatalf("上游注入的会话不该被覆盖：%q", got)
 	}
 }

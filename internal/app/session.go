@@ -760,6 +760,12 @@ func (s *Session) levelNow() perm.Level {
 
 // execCommand 命令分发（§7.3）：静态注册表 → 动态命令 → 未知。
 func (s *Session) execCommand(ctx context.Context, cmd port.Command) (string, error) {
+	// 命令也是插件的一个入口（plugin-design.md §5「会话身份」）：动态命令（插件 CommandProvider、
+	// MCP prompt）要按会话取状态，缺了会话身份它们只会悄悄退回全局。已经带了会话的 ctx 不动——
+	// 上游显式注入的会话比「当前会话」更权威（转交、后台任务都这么进来）。
+	if _, ok := port.SessionIDFrom(ctx); !ok && s.cur != nil {
+		ctx = port.WithSessionID(ctx, s.cur.ID)
+	}
 	if e, ok := commandIndex[cmd.Name]; ok && !s.isHiddenCommand(cmd.Name) {
 		return e.Run(s, ctx, cmd)
 	}

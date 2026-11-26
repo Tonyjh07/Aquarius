@@ -163,6 +163,9 @@ var enAdapterGateTexts = map[string]string{
 	"plugin.t1.unwired":           "the built-in plugin registry is not wired; /plugin cannot manage plugins compiled into the binary",
 	"plugin.t1.persist_failed":    "the plugin changed as requested, but writing the config back failed (the next start will not remember it)",
 	"plugin.t1.logs_note":         "calls into built-in plugins are recorded under their tool names; tool names are chosen by the plugin, so calls cannot be traced back to it, and per-plugin logs are not available yet",
+	"plugin.t1.cmd_inactive":      "plugin \"{name}\" is not enabled, so the command cannot run",
+	"plugin.t1.cmd_draining":      "plugin \"{name}\" is shutting down; this command is not accepted",
+	"plugin.t1.cmd_unsupported":   "plugin \"{name}\" declares command, but its instance does not implement the command face",
 
 	// ---- plugin/tierone: the Tier-1 state machine (validation, enable/disable, exclusivity). ----
 

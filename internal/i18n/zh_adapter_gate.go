@@ -169,6 +169,9 @@ var zhAdapterGateTexts = map[string]string{
 	"plugin.t1.unwired":           "内置插件注册表未接线，/plugin 暂时管不了编译进二进制的插件",
 	"plugin.t1.persist_failed":    "插件已按本次操作生效，但写回配置失败（下次启动不会记住）",
 	"plugin.t1.logs_note":         "内置插件的调用记在审计日志的工具名下；工具名由插件自定，无法按插件反查，暂不提供按插件过滤的日志",
+	"plugin.t1.cmd_inactive":      "插件「{name}」当前没有启用，命令跑不了",
+	"plugin.t1.cmd_draining":      "插件「{name}」正在停用，这次的命令不接了",
+	"plugin.t1.cmd_unsupported":   "插件「{name}」声明了 command，但实例没实现命令面",
 
 	// ---- plugin/tierone：Tier-1 状态机（校验、启停、独占）。契约版本与 provides 词表
 	// 都是英文枚举，留在译文里不翻。 ----

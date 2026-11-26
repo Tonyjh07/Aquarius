@@ -145,6 +145,10 @@ func (w *wiring) takenNames(builtin []port.Tool) func(string) bool {
 // closeTierOne 关停全部 Tier-1 插件（§7 第 5 条）。注册表为 nil 时什么也不做：装配失败
 // 的路径上也要能安全 defer。
 func (w *wiring) closeTierOne() {
+	// 插件都关了，命令表也要空：留下一条指向已停用插件的名字，用户点到只会得到报错。
+	if w.cmdTables != nil {
+		w.cmdTables.setTierOne(nil, nil)
+	}
 	if w.plugins1 == nil {
 		return
 	}
@@ -283,6 +287,8 @@ func (w *wiring) setTierOne(ctx context.Context, name string, on, persist bool) 
 			w.syncMemorySurfaces()
 		}
 	}
+	// 命令面跟着启停走：整体按当前 Active 集合重建（工具源是增删式，命令表只能整换）。
+	w.rebuildTierOneCommands()
 	if !persist {
 		return nil
 	}
