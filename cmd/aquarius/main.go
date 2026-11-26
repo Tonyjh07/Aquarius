@@ -25,6 +25,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/adapter/jobproc"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/memoryfs"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/outputtts"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/plugingo"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/secretbin"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/skillfs"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/toolrun"
@@ -302,6 +303,8 @@ type wiring struct {
 	pluginFactories []v1.Factory
 	// plugins1 Tier-1 注册表（装配期建，关停时 Close）；启停状态另存 config plugins 段。
 	plugins1 *tierone.Registry
+	// pluginSets 已挂进 Runner 的插件工具源（停用时按名摘除；接口值相等靠这张表）。
+	pluginSets map[string]*plugingo.ToolSet
 	// inputHist 输入历史的磁盘存储（GUI 与 TUI 共用一份文件）：newUI 时惰性打开。
 	inputHist *inhistory.Store
 	client    port.LLM
@@ -510,6 +513,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// 退出时优雅关闭（§6.4 #4）。OnChange 已在 Start 内把工具/动态命令同步到位。
 	w.host.Start(ctx)
 	defer w.host.Close()
+	// 编译进二进制的插件按 config 恢复启停（键缺失 = 启用）。放在工具源与会话都就绪之后：
+	// 启用即挂工具源，挂不上就等于启用了却没有工具面。
+	w.startTierOne(ctx)
 
 	// 启动提示：GUI 做成 logo 悬浮 tips（§15.1，不入转写区、初始即空）；
 	// repl/TUI 照常一行。
@@ -556,27 +562,30 @@ func (w *wiring) sessionDeps(agent *app.Agent, ids port.IDGen, sessPersona *app.
 	confirmer port.Confirmer, filesUp port.FileUploader, filesPurpose string, filesTTL time.Duration,
 	version string) app.SessionDeps {
 	return app.SessionDeps{
-		Store:            w.store,
-		Agent:            agent,
-		IDs:              ids,
-		Clock:            systemClock{},
-		Persona:          sessPersona,
-		Level:            w.lvl.Get, // D331：直接读活等级，改档后 /permission 报告立刻跟着变
-		SandboxPath:      w.sandboxDir,
-		Perms:            permSettings{w: w},
-		Confirmer:        confirmer,
-		Jobs:             w.jobs,
-		Delegate:         w.delegates,
-		Watches:          w.watcher,
-		Skills:           w.skills,
-		SkillAdmin:       skillsAdminApp{w: w},
-		WatchCancel:      watchCancel{w: w},
-		Log:              w.logFrom,
-		Ingestors:        []port.Ingestor{ingestfile.New(w.blobs), ingestclip.New(w.blobs), w.mic},
-		UI:               w.presenter,
-		Wake:             w.uiWake,
-		Memories:         memoryOpener{w: w},
-		Plugins:          hostAdmin{h: w.host, auditPath: filepath.Join(w.profileDir, "audit.log")},
+		Store:       w.store,
+		Agent:       agent,
+		IDs:         ids,
+		Clock:       systemClock{},
+		Persona:     sessPersona,
+		Level:       w.lvl.Get, // D331：直接读活等级，改档后 /permission 报告立刻跟着变
+		SandboxPath: w.sandboxDir,
+		Perms:       permSettings{w: w},
+		Confirmer:   confirmer,
+		Jobs:        w.jobs,
+		Delegate:    w.delegates,
+		Watches:     w.watcher,
+		Skills:      w.skills,
+		SkillAdmin:  skillsAdminApp{w: w},
+		WatchCancel: watchCancel{w: w},
+		Log:         w.logFrom,
+		Ingestors:   []port.Ingestor{ingestfile.New(w.blobs), ingestclip.New(w.blobs), w.mic},
+		UI:          w.presenter,
+		Wake:        w.uiWake,
+		Memories:    memoryOpener{w: w},
+		Plugins: pluginAdminAll{
+			mcp: hostAdmin{h: w.host, auditPath: filepath.Join(w.profileDir, "audit.log")},
+			t1:  tierOneAdmin{w: w},
+		},
 		Models:           modelCatalog{w: w},
 		ModelSwitch:      modelCatalog{w: w},
 		Thinking:         thinkSettings{w: w},

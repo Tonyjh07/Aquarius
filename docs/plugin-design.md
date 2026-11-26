@@ -1,5 +1,5 @@
 # Tier-1 Go 插件契约（pluginapi，v1）设计规格
-<!-- docs-sync: 2026-11-25 @ 3dd180e -->
+<!-- docs-sync: 2026-11-26 @ 19eebb8 -->
 
 > 定位：Tier-1 进程内 Go 插件契约包（`pluginapi`，本代为 v1）的实现规格——接口面、UI 扩展面、宿主服务、
 > 生命周期、版本纪律、能力边界。Tier-2（MCP server）的规格在 [contracts.md](contracts.md) §6.2–§6.4，
@@ -376,8 +376,14 @@ type Instance interface {
 
 1. `/plugin enable|disable <name>` 与设置窗「插件」页开关，写同一个 config
    `plugins.<name>.enabled`（启停状态存 config，D31 语义复用），改动立即生效、不重启。
-2. Tier-2 的启停沿用现有进程级 enable/disable；用户操作一致，内部机制各自。
+2. Tier-2 的启停沿用现有进程级 enable/disable；用户操作一致，内部机制各自。`/plugin list`
+   把两边合成一张表，Tier-1 显示的来源是 `binary`、传输是 `in-process`，另列供给面。
 3. 唯一需要重启的：换二进制本身（新增或删除编译进去的插件）。
+4. **启动恢复**：启动期按 config 逐个启用（键缺失 = 启用，同 Tier-2 语义），时机在工具源与
+   会话都就绪之后——启用即挂工具源，挂不上的启用等于「有插件没有工具面」。启动期启用失败
+   只记一行、继续下一个，且**不写盘**：一次失败的启动不该把用户的启用意图改成停用。
+5. `/plugin logs <Tier-1 名>` 暂不按插件过滤：调用记在审计日志的工具名下，而工具名由插件
+   自定，反查不到所属插件。给一句说明，不猜一份看起来像日志的数据。
 
 ### 装配顺序（记忆接管专用，D340）
 

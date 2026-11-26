@@ -55,6 +55,7 @@ var zhRuntimeTexts = map[string]string{
 	"plugin.list.empty":      "没有已声明的插件（config mcpServers 或 ~/.aquarius/plugins/*/plugin.json）",
 	"plugin.list.head":       "插件（{n} 个）:",
 	"plugin.list.caps":       " 能力:{caps}",
+	"plugin.list.provides":   " 供给:{list}",
 	"plugin.list.calls":      " 调用{calls}",
 	"plugin.list.errors":     ", 失败{errors}",
 	"plugin.list.restarts":   " 重启{restarts}",

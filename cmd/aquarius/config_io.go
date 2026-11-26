@@ -433,6 +433,25 @@ func (c *cfgWriter) persistUnattended(on bool) error {
 	return nil
 }
 
+// persistPluginEnabled 写回 config 的 plugins.<name>.enabled（Tier-1 启停，§7 操作面）。
+// 只改这一个键，不整体重写 plugins 段：Tier-2 的 granted / trusted 由宿主自己维护，两边
+// 各写各的才不会被对方的旧快照覆盖。
+func (c *cfgWriter) persistPluginEnabled(name string, on bool) error {
+	return persistConfig(c.path, func(generic map[string]any) {
+		plugins, _ := generic["plugins"].(map[string]any)
+		if plugins == nil {
+			plugins = map[string]any{}
+			generic["plugins"] = plugins
+		}
+		entry, _ := plugins[name].(map[string]any)
+		if entry == nil {
+			entry = map[string]any{}
+			plugins[name] = entry
+		}
+		entry["enabled"] = on
+	})
+}
+
 // persistPlugins 实现 /plugin 状态写回 config 的 plugins 段（D31）：键缺失语义靠
 // 省略表达（enabled 缺省启用、granted 缺省空、trusted 缺省未信任）。
 // trusted 是 D138 的启动信任指纹：**随 profile 走**（本文件就在 profiles/<name>/ 下）——两个

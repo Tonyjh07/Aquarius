@@ -14,9 +14,11 @@ import (
 // PluginInfo /plugin list 的一行（§7.3）：宿主快照的 app 侧投影——
 // app 只定义消费面，不 import 插件宿主内部包（同 D13 边界）。
 type PluginInfo struct {
-	Name         string
-	Source       string // 「config」 | 「plugins」（声明来源，D31）
-	Transport    string // "stdio" | "streamable-http"
+	Name      string
+	Source    string // 「config」 | 「plugins」（声明来源，D31）| 「binary」（编译进二进制）
+	Transport string // "stdio" | "streamable-http" | "in-process"
+	// Provides 供给面（Tier-1 才有：memory / tool / llm …；Tier-2 为空）。
+	Provides     []string
 	Capabilities []string
 	Granted      []string // 已授权能力（config plugins.<name>.granted）
 	Risk         string
@@ -123,6 +125,9 @@ func formatPlugins(list []PluginInfo) string {
 		fmt.Fprintf(&b, "  [%s] %-16s %s/%s", p.Status, p.Name, orDash(p.Source), orDash(p.Transport))
 		if caps := capLabels(p); caps != "" {
 			b.WriteString(i18n.Tf("plugin.list.caps", "caps", caps))
+		}
+		if len(p.Provides) > 0 {
+			b.WriteString(i18n.Tf("plugin.list.provides", "list", strings.Join(p.Provides, ",")))
 		}
 		if p.Calls > 0 {
 			b.WriteString(i18n.Tf("plugin.list.calls", "calls", strconv.Itoa(p.Calls)))

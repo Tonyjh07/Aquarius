@@ -51,6 +51,7 @@ var enRuntimeTexts = map[string]string{
 	"plugin.list.empty":      "no plugins are declared (config mcpServers or ~/.aquarius/plugins/*/plugin.json)",
 	"plugin.list.head":       "Plugins ({n}):",
 	"plugin.list.caps":       " caps:{caps}",
+	"plugin.list.provides":   " provides:{list}",
 	"plugin.list.calls":      " calls {calls}",
 	"plugin.list.errors":     ", failed {errors}",
 	"plugin.list.restarts":   " restarts {restarts}",

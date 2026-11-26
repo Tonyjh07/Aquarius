@@ -166,6 +166,9 @@ var zhAdapterGateTexts = map[string]string{
 	"plugin.t1.bad_tool_name":     "插件「{name}」的工具名「{tool}」不合文法（只允许字母、数字、下划线、连字符，最长 64）",
 	"plugin.t1.dup_tool_name":     "插件「{name}」同一轮声明了两个同名工具「{tool}」",
 	"plugin.t1.shutdown":          "插件「{name}」停用时收尾失败：{err}",
+	"plugin.t1.unwired":           "内置插件注册表未接线，/plugin 暂时管不了编译进二进制的插件",
+	"plugin.t1.persist_failed":    "插件已按本次操作生效，但写回配置失败（下次启动不会记住）",
+	"plugin.t1.logs_note":         "内置插件的调用记在审计日志的工具名下；工具名由插件自定，无法按插件反查，暂不提供按插件过滤的日志",
 
 	// ---- plugin/tierone：Tier-1 状态机（校验、启停、独占）。契约版本与 provides 词表
 	// 都是英文枚举，留在译文里不翻。 ----
