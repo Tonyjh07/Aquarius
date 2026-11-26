@@ -1,9 +1,9 @@
 # Tier-1 Go 插件契约（pluginapi，v1）设计规格
-<!-- docs-sync: 2026-11-26 @ 38de038 -->
+<!-- docs-sync: 2026-11-26 @ f3dcf69 -->
 
 > 定位：Tier-1 进程内 Go 插件契约包（`pluginapi`，本代为 v1）的实现规格——接口面、UI 扩展面、宿主服务、
 > 生命周期、版本纪律、能力边界。Tier-2（MCP server）的规格在 [contracts.md](contracts.md) §6.2–§6.4，
-> 本文不重复也不改动 Tier-2 的规格；两级模型的总形状同样见那一节。决策动机与否决见
+> 本文不重复也不改动 Tier-2 / Tier-3 的规格；三级模型的总形状同样见那一节。决策动机与否决见
 > [decisions.md](decisions.md) 的 D327。
 
 ## 1. 定位与范围
@@ -14,7 +14,8 @@ Tier-2（MCP server）已是交付成品，见 contracts §6.2–§6.4；本文�
 三句边界，先立住：
 
 1. **Tier-1 装载是编译期的**：main 显式注册、随二进制分发（D29）。运行期动态装载（.so）
-   与无 cgo、单二进制两条交付规则冲突，不做（D29 否决理由，本文重申）。
+   与无 cgo、单二进制两条交付规则冲突，不做（D29 否决理由，本文重申）；要「装了就能用」
+   的插件走 Tier-3（wasm 沙箱，见 [wasm-plugin-design.md](wasm-plugin-design.md)）。
 2. **插件永远编译到 v1 契约包（`pluginapi`）上，不编译到内核类型上**：v1 类型与 `internal/port`
    完全独立，双向转换只在 `adapter/plugingo` 一处（硬性规则 4 的展开）。
 3. **Tier-1 是同进程 Go 代码，没有沙箱**：安全边界是契约边界。插件技术上能做契约之外的
@@ -519,7 +520,9 @@ Draining → Stopped 是唯一出路。Go 同进程里「挂起」没有可执�
 语义，半截状态自理）；插件间直接调用（无寻址，除非经内核工具注册表绕行）。
 
 **v1 先不做、登记重启条件**：面板词汇表扩展（每项要 GUI / TUI 两个渲染器跟上）；
-状态栏挂件位；消息流装饰 API（等「MCP 富内容回传」排期交付时一并设计）；运行期装载（不做）。
+状态栏挂件位；消息流装饰 API（等「MCP 富内容回传」排期交付时一并设计）；Tier-1 的运行期
+装载（不做；运行期装载由 Tier-3 承担，但那条路只给工具面，见
+[wasm-plugin-design.md](wasm-plugin-design.md)）。
 
 ## 11. 防腐层（plugingo）
 
@@ -574,7 +577,8 @@ Draining → Stopped 是唯一出路。Go 同进程里「挂起」没有可执�
 5. 插件文案自带 zh / en，不进内核 i18n 表。
 6. 生命周期工厂化；运行时启停走状态机，无暂停档。
 7. capabilities 降为展示语义；确认链强制走 Host。
-8. 运行期动态装载、消息流渲染 API、样式主题 API：不做（各有否决理由）；外部插件经
-   构建期注入进入二进制（§7，D343）。
+8. Tier-1 的运行期动态装载、消息流渲染 API、样式主题 API：不做（各有否决理由）；外部插件
+   经构建期注入进入二进制（§7，D343）。运行期装载单独立为 Tier-3（wasm 沙箱、只有工具面）：
+   [wasm-plugin-design.md](wasm-plugin-design.md)，D344。
 9. 记忆由插件完全拥有：契约只留 `Memory.Recall` 注入挂载点，`provides: memory` 独占，
    迁移走 `LegacyMemoryHost` 一次性快照（D337）。

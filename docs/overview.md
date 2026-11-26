@@ -1,5 +1,5 @@
 # 架构导读
-<!-- docs-sync: 2026-11-17 @ b80ea1d -->
+<!-- docs-sync: 2026-11-26 @ f3dcf69 -->
 
 > **定位、统一语言与限界上下文以本文为准**，同时是 **10 分钟建立索引的地图**：内核做什么、
 > 目录怎么分、端口对哪个适配器。内核的逐条规格（领域不变量、端口接口、应用层语义、
@@ -175,12 +175,15 @@ S1/S1b/S1c/S2/S2b 增强均已完成，步骤见 [roadmap.md](roadmap.md)，后�
 | `Ingestor` / `OutputAdapter` | ingestfile/ingestclip/ingestmic（文本/文件/剪贴板/麦克风）；notify | **M3 ✓**（mic 随 M11） | 脚本 |
 | `JobManager` | jobproc（日志写入磁盘，D8 内存表；进程输出按行解码为 UTF-8，D41） | **M3 ✓** | 假任务 |
 
-## 两个稳定级
+## 三个稳定级
 
 - **`internal/port`**：内核内部的缝，可随内核自由重构；
 - **`pluginapi/v1`**（D29 后移出 M4，见 [plan.md](plan.md) 的 Tier-1 条目）：对外严格 semver，只增不改，breaking 走 v2；
-  两侧类型互不引用，由 `adapter/plugingo`（后移）与 `adapter/mcpgate`（M4 ✓）做防腐转换——
-  外部插件永远编译不到内核类型。
+- **Tier-3 的 wasm ABI v1**（D344，规格见 [wasm-plugin-design.md](wasm-plugin-design.md)）：
+  两个导出 + 一个宿主函数，`op` 只增不改，不兼容走 `api: 2`。
+
+三者互不引用类型，由 `adapter/plugingo`、`adapter/mcpgate` 与 `adapter/wasmplug` 做防腐转换——
+外部插件永远编译不到内核类型。
 
 ## 延伸阅读
 

@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-26 @ 38de038 -->
+<!-- docs-sync: 2026-11-26 @ f3dcf69 -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -60,6 +60,29 @@
   winres 1.0.0.0。
 
 P4 可穿插；关键路径在 P3。
+
+---
+
+## Tier-3 WASM 插件（在排，v1.0.0 之后）
+
+> 规格见 [wasm-plugin-design.md](wasm-plugin-design.md)，动机与否决见 D344。只做工具面；
+> 沙箱边界（`/data` + 无网络 + 无密钥）已写死，施工时不再讨论。
+
+- **T1 · guest SDK**（S）：`pluginapi/wasm/v1`，只依赖标准库——请求 / 响应类型、`Serve`
+  辅助（挂住缓冲、导出 `aq_alloc` / `aq_invoke`、包 `aquarius.log`）。独立性测试照
+  `pluginapi` 的既有做法加一条。
+- **T2 · 装载器**（M）：`adapter/wasmplug`——wazero runtime（wasip1 + 宿主模块）、实例化
+  （`WithStartFunctions("_initialize")`、`WithDirMount` 到 `/data`、64 MiB 内存上限）、
+  `invoke`（写请求缓冲 → 读响应 → 解信封）、单实例串行化、30 秒超时即关模块。
+- **T3 · 工具面**（S）：实例包成 `port.ToolSet`（名字 `w3:<插件>:<工具>`、`params` 直接
+  转 `tool.Spec`、`risk` 映射到确认链）；故障（trap / 超时 / 坏 JSON）与业务失败分开报。
+- **T4 · 发现与启停**（S）：`plugin.json` 的 `wasm` 段解析（与 `mcp` 段互斥、`module`
+  禁绝对路径与 `..`、名字须等于目录名）；config `plugins.<name>.enabled` 启停、启动恢复、
+  崩溃重建限次退避（沿用 Tier-2 的常量）；Tier-2 的发现扫描静默跳过 wasm 清单。
+- **T5 · 管理面**（S）：`/plugin` 合并第三个来源（`source: plugins`、`transport: wasm`），
+  list / enable / disable 与写回 config 一套；设置窗插件页只读展示。
+- **T6 · 验收**（M）：测试内 `go build` 编 testdata guest（不依赖网络），覆盖 ABI 端到端、
+  `/data` 越界、超时打断、崩溃重建、两插件同名工具不互相覆盖。
 
 ---
 

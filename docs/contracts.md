@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-26 @ 977ccbd -->
+<!-- docs-sync: 2026-11-26 @ f3dcf69 -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -1452,7 +1452,7 @@ type Decision struct {
 
 | # | 扩展点 | 内核侧契约 | 三方接入方式 |
 |---|---|---|---|
-| 1 | Tool | `port.Tool` | **MCP server**（tools） |
+| 1 | Tool | `port.Tool` | **MCP server**（tools）/ **Tier-3 WASM**（工具面） |
 | 2 | LLM | `port.LLM` | Tier-1 Go 插件 |
 | 3 | MemoryStore | `port.MemoryStore` | **MCP server**（resources，只读投影）/ Tier-1 |
 | 4 | Command | `app.CommandHandler` | **MCP server**（prompts）/ Tier-1 |
@@ -1461,21 +1461,23 @@ type Decision struct {
 | 7 | Transcriber / Synthesizer | `port.Transcriber/Synthesizer` | Tier-1 |
 | 8 | Secrets | `port.Secrets` | Tier-1 |
 
-### 6.2 两级插件
+### 6.2 三级插件
 
-| | Tier-1 进程内（Go） | Tier-2 进程外 = **MCP server** |
-|---|---|---|
-| 契约 | `pluginapi/v1` Go 接口（独立 go.mod，严格 semver） | MCP 协议（stdio / streamable HTTP） |
-| 内核侧接入 | `adapter/plugingo`（**D29：后移出 M4**，见 §14） | `adapter/mcpgate`（MCP client → port 实现，M4） |
-| 发现 | main 显式注册 | config `mcpServers` + `~/.aquarius/plugins/*/plugin.json` |
-| 装载 | 编译期 | 运行期 enable/disable，不重编 |
-| 隔离 | 同进程 | 独立进程（崩溃不带崩内核） |
+| | Tier-1 进程内（Go） | Tier-2 进程外 = **MCP server** | Tier-3 进程内（WASM） |
+|---|---|---|---|
+| 契约 | `pluginapi/v1` Go 接口（独立 go.mod，严格 semver） | MCP 协议（stdio / streamable HTTP） | `aq_alloc` / `aq_invoke` 两个导出 + `aquarius.log`，JSON over 线性内存（ABI v1） |
+| 内核侧接入 | `adapter/plugingo`（**D29：后移出 M4**，见 §14） | `adapter/mcpgate`（MCP client → port 实现，M4） | `adapter/wasmplug`（wazero 装载 → `port.ToolSet`） |
+| 发现 | main 显式注册 | config `mcpServers` + `~/.aquarius/plugins/*/plugin.json` | 同一目录的 `plugin.json` 的 `wasm` 段 |
+| 装载 | 编译期 | 运行期 enable/disable，不重编 | 运行期 enable/disable，不重编 |
+| 隔离 | 同进程（无沙箱） | 独立进程（崩溃不带崩内核） | 进程内 wasm 沙箱：只见 `/data`、无网络、无密钥 |
+| 供给面 | 九个供给接口 + UI 扩展面 | 工具 / 记忆只读投影 / 命令（prompts） | **只有工具面** |
 
 **双稳定级规则**：`internal/port` 可随内核重构；`pluginapi/v1` 只增不改，breaking change 走 `v2` 并存期。
 两者类型独立，由 `plugingo`/`mcpgate` 做防腐转换——外部插件永远编译不到内核类型上。
 
 Tier-1 的接口面、UI 扩展面、宿主服务（Host）与生命周期规格见 [plugin-design.md](plugin-design.md)（D327）；
-本节保留两级模型的形状结论，规格细节不在此重复。
+Tier-3 的 ABI、沙箱边界与启停规格见 [wasm-plugin-design.md](wasm-plugin-design.md)（D344）。
+本节保留三级模型的形状结论，规格细节不在这两处重复。
 
 ### 6.3 MCP ⇄ Aquarius 映射（mcpgate 职责）
 

@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-11-26 @ 38de038 -->
+<!-- docs-sync: 2026-11-26 @ f3dcf69 -->
 
 > **权威文档之一**：决策节于 2026-09 独立成篇，与 [contracts.md](contracts.md) 同级同权威
 > （该节 2026-10 从总设计文档删除，不再占节号）。编号**跨文件不变**
@@ -354,6 +354,7 @@
 | [D341](#d341) | Host 补两项：`DataDir()`（持久目录）与 `Locale()`（当前界面语言），首发六项 → 八项；目录按生存期分成 DataDir / WorkDir 两个方法而不是加参数；空串 = 宿主未提供，插件降级；语言给值不给访问器（D275 运行内不变），词表与 `Manifest.Locales` 同一套 | 已完成 |
 | [D342](#d342) | 记忆接管的内核接线：端口只留 `port.MemorySource`（带会话与软预算），内置排版搬进 `memoryfs.Source`，装配根用路由器换回答者；顺序修正为「撤内置面 → 启用 → 挂源 → 接管」（挂源只能从 Active 实例取）；接管集不写 `tools.disabled`；`/memory` 用隐藏集退出；`Options.NewHost` 改收清单快照以免锁内反查死锁 | 已完成 |
 | [D343](#d343) | 外部插件靠构建期注入进二进制：上游只留 `pluginext.go` 一个中性接入口（`!tier1sample` 返回空），用 `-overlay` 换文件 + `-modfile` 换依赖视图注入，产物零落在上游；`tier1sample` 作互斥开关；构建器 `cmd/aqbuild` 归上游；pluginapi 必须指宿主自己那份，兼容性靠编译期失败兜住 | 已完成（构建器待落） |
+| [D344](#d344) | Tier-3 = WASM 插件：运行期从目录装载、进程内沙箱，只做工具面（ABI v1：`aq_alloc`/`aq_invoke` + `aquarius.log`，JSON over 线性内存）；沙箱写死 `/data` + 无网络 + 无密钥；工具名 `w3:<插件>:<工具>`；三条被否路线（`plugin` 包、c-shared、内嵌脚本）与「不重造 MCP」一并记录 | 生效（实作待落） |
 
 ## 记录
 
@@ -3532,3 +3533,54 @@
 - **状态**：上游侧已完成（`cmd/aquarius/pluginext.go`、`assembleTierOne` 从它取工厂、
   `pluginext_test.go`、plugin-design.md §7「插件怎么进到二进制里」/§12/§13）。构建器
   `cmd/aqbuild` 与其 testdata 探针待落，见 plan.md P3 第 4 步。
+
+<a id="d344"></a>
+
+### D344 · Tier-3 = WASM 插件：运行期装载只换工具面
+
+- **背景**：Tier-1 的装载是编译期的（D29），插件作者想试跑就得在宿主仓库里做一次注入构建
+  （D343）。这条对「我写了个小工具，装上就能用」的场景太重：用户要拿到一个新二进制，
+  插件作者要理解 overlay/modfile 那一套。需求是运行期装载，约束却没松——Windows、无 cgo、
+  单二进制交付三条都还在。
+
+- **决策**：
+  1. **第三种形态 Tier-3：进程内 wasm（wasip1 reactor），wazero 解释执行**。模块由
+     `GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared` 产出，放目录里即可用，不重编宿主。
+  2. **只做工具面**。命令面、记忆接管、面板 / UI、LLM / ASR / TTS 供给面、后台任务一律不做。
+     能力不够就换 Tier-1，不靠 Tier-3 勉强凑。
+  3. **ABI v1 只有两个导出 + 一个宿主函数**：`aq_alloc` / `aq_invoke`（JSON over 线性内存，
+     `op` 取 manifest / init / tools / call）与 `aquarius.log`。不加自定义 IDL、不重造 MCP。
+  4. **沙箱边界写死**：只挂 `<profile>/plugin-data/<name>` 为 `/data`；无网络（wasip1 无 socket，
+     宿主也不注入）；不给密钥；确认走宿主的工具风险链，插件不弹窗。资源上限 64 MiB / 30 秒，
+     超时即关模块、实例重建。
+  5. **工具名 `w3:<插件>:<工具>`**：与 `mcp:` 同一套命名纪律，审计归组与重名消解沿用现成机制。
+  6. **v1 只承诺 Go**：wasip1 reactor 任何语言都能产，但 `//go:wasmexport` 只有 Go 有；SDK
+     只出 Go，其他语言只给 ABI 文档、不承诺。
+
+- **备选（都不成立）**：
+  1. **标准库 `plugin` 包**：Windows 不支持；没有卸载；宿主与插件的 Go 版本、依赖、构建标志
+     必须完全一致——三条里任何一条都足以否掉。
+  2. **`-buildmode=c-shared` 产 .so/.dll**：要 cgo，破「无 cgo」；两个 Go runtime 同进程，
+     初始化与 GC 互不知情；契约要跨 C ABI 重写成不透明句柄，等于把 `pluginapi/v1` 重写一遍
+     还换不来隔离。
+  3. **内嵌脚本（Starlark / Lua）**：依赖现成（`go.starlark.net` 已在），但它是配置语言不是
+     编程语言——没有包管理、没有标准库、性能差一个量级，写不了「插件」这个量级的代码。更要紧
+     的是 `starlarkrun` 已是 `run_code` 的执行面，把它开放给三方插件会把「模型的代码执行面」
+     与「三方插件面」糊在一起，信任边界说不清。
+  4. **自造子进程协议**：MCP（Tier-2）已经覆盖这一形态，重造只多一套规约。
+  5. **扫到了就自动加载**：目录扫描是发现机制，不是装载机制；装不装仍由
+     `plugins.<name>.enabled` 决定，默认值沿用 D31。
+
+- **实测**（2026-11-26，临时探针，未入库）：
+  - Go 1.27 直接产 reactor，**不需要 cgo、不需要外部链接器**；最小模块 1.9 MB，带
+    `encoding/json` + `os` 的 4.5 MB。
+  - wazero v1.12.0 纯 Go、无 cgo，Windows 上可用；`wasi_snapshot_preview1` + 自定义宿主模块
+    同进程共存。
+  - 三个必须写进文档的坑：实例化要 `WithStartFunctions("_initialize")`，否则
+    `runtime.notInitialized`；`aq_alloc` 返回的缓冲必须挂包级变量，局部 slice 的指针会被回收，
+    宿主读出来是脏数据；ctx 超时是**关模块**，实例当场死、必须重建，没有「打断再续」。
+  - 沙箱实测：`WithDirMount` 到 `/data` 后 guest 只看得见 `/data`；300 ms 超时能打断死循环。
+
+- **状态**：规格已定（[wasm-plugin-design.md](wasm-plugin-design.md)；contracts §6.1/§6.2 已按三级
+  模型改口径），实作待落，见 plan.md 的 Tier-3 条目。ABI v1 只有规格、没有实现，尚未冻结——
+  第一个实现落地时如有必要改动，仍属「冻结前」的自由。
