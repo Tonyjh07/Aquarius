@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-26 @ 18a84ce -->
+<!-- docs-sync: 2026-11-26 @ e1daffd -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -48,7 +48,8 @@
   第 4 步的施工顺序：① `cmd/aqbuild` 构建器（已完成：参数见 plugin-design.md §7「构建器参数」，
   testdata 微型宿主/插件跑通端到端——含相对 replace 改写、宿主零改动两条断言）；② 样例插件的
   `store/` 与单测（已完成：独立仓库 `aq-memory-plugin` 的 `store` 包，落盘形状与四条实现口径
-  记在其 design.md §9）；③ 工具面 + `Recall`；④ 命令面 + 面板 + 迁移。
+  记在其 design.md §9）；③ 工具面 + `Recall`（已完成：`memplug` 包，窗口/命名/同轮稳定三条口径
+  与一处契约缺口 D345 记在其 design.md §10）；④ 命令面 + 面板 + 迁移。
 
   **样例插件定为间隔重复记忆插件**（独立仓库，设计稿见该仓库
   design.md；`Memory`（含首次启用的内置记忆迁移）+ `ToolProvider` + 面板形态），验收标准
