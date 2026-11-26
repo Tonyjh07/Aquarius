@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-11-26 @ f3dcf69 -->
+<!-- docs-sync: 2026-11-26 @ d18dba8 -->
 
 > **权威文档之一**：决策节于 2026-09 独立成篇，与 [contracts.md](contracts.md) 同级同权威
 > （该节 2026-10 从总设计文档删除，不再占节号）。编号**跨文件不变**
@@ -353,7 +353,7 @@
 | [D340](#d340) | 工具面按轮给：`Tools(ctx)` 每次装配都问、清单可随导航变化；内核加 `port.ToolSet`（装配时向源要、执行时按 ctx 的会话找），名字在会话内唯一、撞内置以内置为准、不受 `tools.disabled` 约束；零工具不再拒载 | 已完成 |
 | [D341](#d341) | Host 补两项：`DataDir()`（持久目录）与 `Locale()`（当前界面语言），首发六项 → 八项；目录按生存期分成 DataDir / WorkDir 两个方法而不是加参数；空串 = 宿主未提供，插件降级；语言给值不给访问器（D275 运行内不变），词表与 `Manifest.Locales` 同一套 | 已完成 |
 | [D342](#d342) | 记忆接管的内核接线：端口只留 `port.MemorySource`（带会话与软预算），内置排版搬进 `memoryfs.Source`，装配根用路由器换回答者；顺序修正为「撤内置面 → 启用 → 挂源 → 接管」（挂源只能从 Active 实例取）；接管集不写 `tools.disabled`；`/memory` 用隐藏集退出；`Options.NewHost` 改收清单快照以免锁内反查死锁 | 已完成 |
-| [D343](#d343) | 外部插件靠构建期注入进二进制：上游只留 `pluginext.go` 一个中性接入口（`!tier1sample` 返回空），用 `-overlay` 换文件 + `-modfile` 换依赖视图注入，产物零落在上游；`tier1sample` 作互斥开关；构建器 `cmd/aqbuild` 归上游；pluginapi 必须指宿主自己那份，兼容性靠编译期失败兜住 | 已完成（构建器待落） |
+| [D343](#d343) | 外部插件靠构建期注入进二进制：上游只留 `pluginext.go` 一个中性接入口（`!tier1sample` 返回空），用 `-overlay` 换文件 + `-modfile` 换依赖视图注入，产物零落在上游；`tier1sample` 作互斥开关；构建器 `cmd/aqbuild` 归上游；pluginapi 必须指宿主自己那份，兼容性靠编译期失败兜住 | 已完成 |
 | [D344](#d344) | Tier-3 = WASM 插件：运行期从目录装载、进程内沙箱，只做工具面（ABI v1：`aq_alloc`/`aq_invoke` + `aquarius.log`，JSON over 线性内存）；沙箱写死 `/data` + 无网络 + 无密钥；工具名 `w3:<插件>:<工具>`；三条被否路线（`plugin` 包、c-shared、内嵌脚本）与「不重造 MCP」一并记录 | 生效（实作待落） |
 
 ## 记录
@@ -3531,8 +3531,8 @@
   `git status` 只有本次源码改动。
 
 - **状态**：上游侧已完成（`cmd/aquarius/pluginext.go`、`assembleTierOne` 从它取工厂、
-  `pluginext_test.go`、plugin-design.md §7「插件怎么进到二进制里」/§12/§13）。构建器
-  `cmd/aqbuild` 与其 testdata 探针待落，见 plan.md P3 第 4 步。
+  `pluginext_test.go`、`cmd/aqbuild` 构建器与其 testdata 微型宿主/插件、
+  plugin-design.md §7「插件怎么进到二进制里」/§12/§13）。
 
 <a id="d344"></a>
 

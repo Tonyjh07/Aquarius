@@ -71,6 +71,7 @@ go vet ./...                   # 静态检查
 gofmt -l .                     # 格式检查（应无输出）
 go run ./cmd/linuxgate         # 非 Windows 门禁：WSL 内 linux 目标的 build + vet（D119）
 go run ./cmd/docsync           # 刷新文档头「更新日期 + 代码基线」标记（改过的用今天+HEAD，其余按历史）
+go run ./cmd/aqbuild -plugin <插件仓库>   # 构建带某个 Tier-1 插件的二进制（参数见 plugin-design.md §7）
 go run ./cmd/ci                # 本机门禁（default 档，合入前）；-profile=fast / full 见 development.md
 go run golang.org/x/vuln/cmd/govulncheck@latest ./...   # 依赖漏洞体检（D137；需网络）
 ```

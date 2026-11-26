@@ -1,5 +1,5 @@
 # Tier-1 Go 插件契约（pluginapi，v1）设计规格
-<!-- docs-sync: 2026-11-26 @ f3dcf69 -->
+<!-- docs-sync: 2026-11-26 @ d18dba8 -->
 
 > 定位：Tier-1 进程内 Go 插件契约包（`pluginapi`，本代为 v1）的实现规格——接口面、UI 扩展面、宿主服务、
 > 生命周期、版本纪律、能力边界。Tier-2（MCP server）的规格在 [contracts.md](contracts.md) §6.2–§6.4，
@@ -447,6 +447,38 @@ needed」）；副本、go.sum、overlay.json 与可执行文件全部落在插�
 类型；插件若 require 了另一份 pluginapi，`Create(Host)` 签名对不上，编译直接失败，不会
 等到运行期才发现两份契约不是一回事。构建器因此有一条硬要求：**必须把 pluginapi 指到宿主
 自己的那份**，而不是让 MVS 去挑一个版本。
+
+#### 构建器参数（`cmd/aqbuild`）
+
+参数化到不认识任何具体插件：只认路径、包名与 tag，不认插件名。
+
+| 参数 | 缺省 | 作用 |
+|---|---|---|
+| `-plugin` | 必填 | 插件仓库根（含 go.mod） |
+| `-hook` | `pluginext.go` | 注入用的实现文件（相对 `-plugin`）：`package main`、带 `-tag` 那个约束、定义与 `-target` 同名的函数 |
+| `-host` | `.` | 宿主仓库根 |
+| `-target` | `cmd/aquarius/pluginext.go` | 被替换的中性接入口（相对 `-host`）；文件不存在即报错，不猜 |
+| `-pkg` | `./cmd/aquarius` | 要构建的包（相对 `-host`） |
+| `-tag` | `tier1sample` | 互斥开关；与 `-target` 那份文件里的约束成对 |
+| `-o` | `<plugin>/<宿主模块名末段>-with-plugin[.exe]` | 产物路径；允许落在宿主之外 |
+| `-work` | 缓存目录下 `aquarius/aqbuild/<宿主>-<插件>-<hash>` | modfile、go.sum 副本、overlay.json 的落点 |
+| `-v` | 关 | 打每条 `go` 命令原文（排障用） |
+
+执行顺序固定，四步各自可单测：
+
+1. **建工作区**：复制宿主 `go.mod` 为 `<work>/build.mod`、`go.sum` 为 `<work>/build.sum`
+   （有才复制）。副本放在工作区而不是宿主目录，宿主不产生任何新文件。
+2. **改依赖视图**：`go mod edit -require=<插件模块>@v0.0.0 -replace=<插件模块>=<插件目录>`；
+   同时把宿主原有的**相对路径 replace** 改写成绝对路径——modfile 移到宿主之外以后，
+   `./pluginapi` 会按工作区解析，不改写就找不到模块。版本形式的 replace 原样保留。
+3. **写 overlay**：`{"Replace": {"<host>/<target>": "<plugin>/<hook>"}}`；两边都必须是
+   绝对路径（overlay 不认相对路径）。
+4. **构建**：`go build -modfile=<work>/build.mod -mod=mod -overlay=<work>/overlay.json
+   -tags=<tag> -o <out> <pkg>`，工作目录是宿主根，子进程 `GOFLAGS` 清空——用户环境里的
+   `-mod=readonly` 之类会让这一步失败。任何一步失败即停，报出是哪一步、哪条命令。
+
+`-mod=mod` 不是可选项：没有它，`require` 规整不进副本，构建直接报「updates to go.mod
+needed」。产物与工作区都在宿主之外，用完宿主 `git status` 不变。
 
 ### 操作面
 
