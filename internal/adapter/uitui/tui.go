@@ -69,6 +69,9 @@ type Options struct {
 	// Pending 待发清单（D272）：生成中键入的消息停在这里，由内核在两个取用边界拿走；
 	// nil = 没有清单（全部经输入通道，等本轮结束）。
 	Pending func() port.Pending
+	// Views 插件面板（D346）：行式界面没有次窗，接到 OpenViewEvent 时就地渲染成文本。
+	// nil = 没有面板可看（忽略该事件）。
+	Views port.PluginViews
 	// Keys 输入栏三键（§5.19）：发送 / 引导 / 换行。零值 = 缺省 Enter / Alt+Enter /
 	// Ctrl+J（终端里 Shift+Enter 与 Enter 不可分，故 TUI 的引导键放宽到 Alt+Enter——
 	// 配置里写了 Shift+Enter 也照 Alt+Enter 认，见 model.key）。

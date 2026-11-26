@@ -8,7 +8,8 @@ import (
 )
 
 // Event UI 事件（联合类型）：DeltaEvent | ToolCallEvent | ToolResultEvent | CommittedEvent
-// | ErrorEvent | NoticeEvent | HistoryEvent | ClearEvent | TextViewEvent。
+// | ErrorEvent | NoticeEvent | HistoryEvent | ClearEvent | TextViewEvent | OpenViewEvent
+// | CloseViewEvent。
 type Event any
 
 // DeltaEvent 流式增量，只进 UI 不进领域（D3）；MessageID 为 Turn 开始时预分配的关联 ID。
@@ -68,6 +69,20 @@ type NoticeEvent struct {
 type TextViewEvent struct {
 	Title string
 	Text  string
+}
+
+// OpenViewEvent 打开一个插件面板（plugin-design.md §6：用户从命令或菜单打开为次窗）。
+//
+// 事件里只有「打开哪个」，没有内容：内容由前端拿 PluginViews 现取（拉模式）。所以有次窗的
+// 前端（GUI）开窗渲染组件树，没有的前端（TUI）就地渲染成文本——同一条事件两种消费。
+type OpenViewEvent struct {
+	Plugin string
+	ViewID string
+}
+
+// CloseViewEvent 关掉某个插件打开的面板（停用插件时发）。前端没有面板面就忽略。
+type CloseViewEvent struct {
+	Plugin string
 }
 
 // Presenter 事件呈现端口。

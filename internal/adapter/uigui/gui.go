@@ -81,6 +81,9 @@ type Options struct {
 	// Log 运行日志出口（D288）：托盘、快捷键、图标、首帧上屏这些界面外的诊断走这里，
 	// 不再直写 stdout。nil = 不记（headless 测试与未注入的旧路径）。
 	Log port.Log
+	// Views 插件面板供给面（D346）：`/plugin view` 打开次窗后由本窗拉帧。nil = 面板窗
+	// 打开也只会显示「没有内容」。
+	Views port.PluginViews
 	// PosFile 窗口位置记忆文件（§15.1）；空 = 不记忆。
 	PosFile string
 	// Interrupt 初始中断行为（装配根一般经 SetInterrupt 每轮注入，留 nil 即可）。
@@ -442,6 +445,9 @@ type UI struct {
 	// winImage 次窗帧内 Load——同 rawView 规则，跨线程只经原子快照；窗单实例，
 	// 已开 = 聚焦 + 原地换图。
 	imageView atomic.Pointer[imageContent]
+	// viewTarget 插件面板窗的目标原子槽（D346）：事件处理处 Store，面板窗帧内 Load。
+	// 同 rawView 规则；窗单实例，再开另一个面板 = 原地换目标。
+	viewTarget atomic.Pointer[viewTarget]
 	// nodeAction 图侧菜单动作槽（D132）：shell 线程菜单分发 Store，历史窗帧首 Swap
 	// 排空——复制 ID 要在 Gio 帧内落剪贴板、开遮罩/开小卡要碰图状态与帧内文本，都不能在分发处直连。
 	nodeAction atomic.Pointer[nodeAction]

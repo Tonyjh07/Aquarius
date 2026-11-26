@@ -357,12 +357,12 @@ var zhCmdTexts = map[string]string{
 	"cmd.quit.desc": "退出",
 
 	// /plugin
-	"cmd.plugin.desc":    "MCP 插件管理（列表、启用、停用）",
-	"cmd.plugin.usage":   "[list|enable <name>|disable <name>]",
+	"cmd.plugin.desc":    "插件管理（列表、启用、停用、日志、面板）",
+	"cmd.plugin.usage":   "[list|enable <name>|disable <name>|logs [name]|view <name> [id]]",
 	"cmd.plugin.p1.name": "子命令",
 	"cmd.plugin.p1.desc": "省略 = list",
 	"cmd.plugin.p2.name": "<name>",
-	"cmd.plugin.p2.desc": "插件名（enable / disable / logs）",
+	"cmd.plugin.p2.desc": "插件名（enable / disable / logs / view）",
 
 	// /model
 	"cmd.model.desc":    "查看可用模型 / 切换并写回配置 / 实测能力（probe）",

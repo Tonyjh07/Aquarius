@@ -172,6 +172,9 @@ var zhAdapterGateTexts = map[string]string{
 	"plugin.t1.cmd_inactive":      "插件「{name}」当前没有启用，命令跑不了",
 	"plugin.t1.cmd_draining":      "插件「{name}」正在停用，这次的命令不接了",
 	"plugin.t1.cmd_unsupported":   "插件「{name}」声明了 command，但实例没实现命令面",
+	"plugin.t1.view_inactive":     "插件「{name}」当前没有启用，面板打不开",
+	"plugin.t1.view_draining":     "插件「{name}」正在停用，面板暂时打不开",
+	"plugin.t1.view_unsupported":  "插件「{name}」没有声明任何面板",
 
 	// ---- plugin/tierone：Tier-1 状态机（校验、启停、独占）。契约版本与 provides 词表
 	// 都是英文枚举，留在译文里不翻。 ----

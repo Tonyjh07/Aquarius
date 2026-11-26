@@ -218,6 +218,11 @@ var enGuiWelcomeTexts = map[string]string{
 	"ui.win.title.raw":      "Aquarius Source view",
 	"ui.win.title.image":    "Aquarius Image preview",
 	"ui.win.title.welcome":  "Aquarius Welcome",
-	"ui.win.ph.settings":    "Settings form not ready.",
-	"ui.win.ph.welcome":     "Welcome to Aquarius — first-run setup is coming soon.",
+	// D346: plugin panel window. The title is a fixed shell plus the view title
+	// supplied by the plugin (plugin copy never enters this table).
+	"ui.win.title.view":  "Aquarius · {title}",
+	"ui.win.ph.view":     "(this plugin has nothing to show)",
+	"ui.view.failed":     "cannot load the panel: {err}",
+	"ui.win.ph.settings": "Settings form not ready.",
+	"ui.win.ph.welcome":  "Welcome to Aquarius — first-run setup is coming soon.",
 }

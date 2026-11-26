@@ -202,6 +202,31 @@ func (a tierOneAdmin) Disable(name string) error {
 	return a.w.setTierOne(context.Background(), name, false, true)
 }
 
+// Views 某个插件声明的面板（D346）。只认已启用的实例——停用的插件没有实例可以问，而
+// 「声明在手但打不开」对用户毫无用处，不如直接报「没启用」。
+func (a tierOneAdmin) Views(name string) ([]app.PluginViewSpec, error) {
+	if a.w.plugins1 == nil {
+		return nil, errors.New(i18n.T("plugin.t1.unwired"))
+	}
+	if _, ok := a.w.plugins1.Record(name); !ok {
+		return nil, errors.New(i18n.Tf("plugin.t1.not_found", "name", name))
+	}
+	inst, _, active := a.w.plugins1.Active(name)
+	if !active {
+		return nil, errors.New(i18n.Tf("plugin.t1.view_inactive", "name", name))
+	}
+	vp, ok := inst.(v1.ViewProvider)
+	if !ok {
+		return nil, nil
+	}
+	specs := vp.Views()
+	out := make([]app.PluginViewSpec, 0, len(specs))
+	for _, v := range specs {
+		out = append(out, app.PluginViewSpec{Plugin: name, ID: v.ID, Title: v.Title})
+	}
+	return out, nil
+}
+
 // Logs Tier-1 的调用台账还没接：工具调用记在审计日志的工具名下，而插件可以任意命名工具，
 // 从名字反查不到所属插件。给一句实话，不去猜。
 func (a tierOneAdmin) Logs(string) (string, error) {
@@ -251,6 +276,12 @@ func (a pluginAdminAll) Logs(name string) (string, error) {
 	return a.mcp.Logs(name)
 }
 
+// Views 面板只有 Tier-1 有（MCP server 没有界面面），所以这里不给 mcp 留分支：名字不
+// 属于 Tier-1 就是「没有这个插件」。
+func (a pluginAdminAll) Views(name string) ([]app.PluginViewSpec, error) {
+	return a.t1.Views(name)
+}
+
 // setTierOne 启停的唯一入口（命令面与启动期共用）。persist 区分两种来源：用户操作要写回
 // config，启动期恢复不写——否则一次启动失败会把用户的启用意图改成停用。
 func (w *wiring) setTierOne(ctx context.Context, name string, on, persist bool) error {
@@ -281,6 +312,11 @@ func (w *wiring) setTierOne(ctx context.Context, name string, on, persist bool) 
 		w.detachToolSet(name)
 		if err := w.plugins1.SetEnabled(ctx, name, false); err != nil {
 			return err
+		}
+		// 面板跟着走（plugin-design.md §6）：留着上一帧等于让用户对着一个已经死掉的
+		// 插件的界面点按钮。关窗失败不影响停用——那是界面层的事，记不记都在日志里。
+		if w.ui != nil {
+			_ = w.ui.Emit(ctx, port.CloseViewEvent{Plugin: name})
 		}
 		if memPlugin { // 停用之后再交还：先让插件的 Recall 彻底退出，再恢复内置面
 			w.memRoute.Release(name)

@@ -95,14 +95,35 @@ type (
 	}
 )
 
+// routeEvent 先拦下「不进转写」的那几类事件：上下文全文（§7.1）与插件面板（D346）。
+// 返回 true = 已消费，不再交给转写模型。
+//
+// 单独拎出来是因为 apply 已经顶到函数长度上限：再往里塞几条 if，那个数字就要往上抬，
+// 而它抬上去之后下一个人就没有约束了。
+func (u *UI) routeEvent(ev port.Event) bool {
+	// 上下文全文走次窗，不进转写：一份十几万字符的排查材料，进转写区会把 markdown 解析
+	// 与逐行选区一起拖进来。内容已先行写入磁盘，忽略也无损。
+	if cv, ok := ev.(port.TextViewEvent); ok {
+		u.showTextView(cv)
+		return true
+	}
+	// 插件面板：事件里只有目标，内容由面板窗自己拉（拉模式）。
+	if ov, ok := ev.(port.OpenViewEvent); ok {
+		u.showPluginView(ov)
+		return true
+	}
+	if cv, ok := ev.(port.CloseViewEvent); ok {
+		u.closePluginView(cv.Plugin)
+		return true
+	}
+	return false
+}
+
 // apply 把桥接消息应用到状态机（仅事件循环 goroutine 调用）；false = 循环应退出。
 func (u *UI) apply(msg uiMsg) bool {
 	switch m := msg.(type) {
 	case eventMsg:
-		// 上下文全文（§7.1）走次窗，不进转写：上下文全文是一份十几万字符的排查材料，
-		// 进转写区会把 markdown 解析与逐行选区一起拖进来。内容已先行写入磁盘，忽略也无损。
-		if cv, ok := m.ev.(port.TextViewEvent); ok {
-			u.showTextView(cv)
+		if u.routeEvent(m.ev) {
 			break
 		}
 		u.m.handleEvent(m.ev)

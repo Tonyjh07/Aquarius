@@ -1,6 +1,7 @@
 package uitui
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -379,6 +380,9 @@ func (m *model) handleEvent(ev port.Event) {
 		// 上下文全文只投给有次窗的前端（§7.1）。行式界面没有次窗，而这份内容
 		// 已经写进导出目录了，读文件即可——这里刻意什么都不做。
 		return
+	case port.OpenViewEvent:
+		m.showPluginView(e)
+		return
 	default:
 		m.add(blockPlain, sanitizeControl(fmt.Sprintf("%v", ev)))
 	}
@@ -750,4 +754,33 @@ func (m *model) statusLine() string {
 	}
 	parts = append(parts, i18n.T("tui.hint.scroll"), i18n.T("tui.hint.cancel"))
 	return lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(strings.Join(parts, " · "))
+}
+
+// showPluginView 把插件面板就地渲染成文本（D346）。
+//
+// 行式界面没有次窗，也没有逐字段问答的输入循环——面板在这里是**只读的**：形状照渲染，
+// 操作仍走命令（`/mem` 之类）。这条口径与 §6 的降级表差一处（form / buttons 不接交互），
+// 已在 plugin-design.md 里写明，不让它悄悄成为「TUI 支持面板」的印象。
+//
+// Render 是同步调用：插件实现要求便宜（读自己的内存），这里也就没有必要为它铺一条异步
+// 通道——真慢了会卡住输入循环，但那是插件违反契约，与界面层无关。
+func (m *model) showPluginView(ev port.OpenViewEvent) {
+	if m.u.opts.Views == nil {
+		return
+	}
+	n, err := m.u.opts.Views.Render(context.Background(), ev.Plugin, ev.ViewID)
+	if err != nil {
+		m.add(blockError, sanitizeControl(err.Error()))
+		return
+	}
+	width := m.width
+	if width <= 0 {
+		width = 80
+	}
+	text := uicommon.PlainNode(n, width-2)
+	if text == "" {
+		text = i18n.Tf("tui.view.empty", "plugin", ev.Plugin)
+	}
+	m.add(blockPlain, text)
+	m.add(blockNotice, i18n.T("tui.view.readonly"))
 }

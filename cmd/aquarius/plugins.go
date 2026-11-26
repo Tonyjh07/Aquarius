@@ -132,6 +132,10 @@ type hostAdmin struct {
 	auditPath string // 审计日志路径（S6/D143：/plugin logs 读 tail）
 }
 
+// Views MCP server 没有界面面：面板（ViewProvider）是 Tier-1 的概念，process 外的插件只
+// 交工具与 prompts。组合面只把这条请求转给 Tier-1，这里留一句实话兜底。
+func (hostAdmin) Views(string) ([]app.PluginViewSpec, error) { return nil, nil }
+
 var _ app.PluginAdmin = hostAdmin{}
 
 // Plugins 宿主快照 → app 侧投影。

@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-11-26 @ e1daffd -->
+<!-- docs-sync: 2026-11-26 @ 830e85d -->
 
 > **权威文档之一**：决策节于 2026-09 独立成篇，与 [contracts.md](contracts.md) 同级同权威
 > （该节 2026-10 从总设计文档删除，不再占节号）。编号**跨文件不变**
@@ -356,6 +356,7 @@
 | [D343](#d343) | 外部插件靠构建期注入进二进制：上游只留 `pluginext.go` 一个中性接入口（`!tier1sample` 返回空），用 `-overlay` 换文件 + `-modfile` 换依赖视图注入，产物零落在上游；`tier1sample` 作互斥开关；构建器 `cmd/aqbuild` 归上游；pluginapi 必须指宿主自己那份，兼容性靠编译期失败兜住 | 已完成 |
 | [D344](#d344) | Tier-3 = WASM 插件：运行期从目录装载、进程内沙箱，只做工具面（ABI v1：`aq_alloc`/`aq_invoke` + `aquarius.log`，JSON over 线性内存）；沙箱写死 `/data` + 无网络 + 无密钥；工具名 `w3:<插件>:<工具>`；三条被否路线（`plugin` 包、c-shared、内嵌脚本）与「不重造 MCP」一并记录 | 生效（实作待落） |
 | [D345](#d345) | `MemoryRequest` 缺「工具面是否可用」信号：插件无法判断该走标题注入还是只给一句引导，只能永远带标题（多占预算但不会让模型彻底看不见记忆）；建议末尾加 `ToolsAvailable bool`（零值 = 未知，按不可用处理），装配点填 `Caps.Tools`，待 v1 冻结前一并落 | 缺口登记（待落） |
+| [D346](#d346) | 插件面板落地（`ViewProvider` → `port.PluginViews` 防腐转换、`/plugin view` 唯一入口、窗单实例、停用即关窗、动作带全量表单值、TUI 只读、`Kind` 零值 = 纯容器）；`provides` 词表加 `view` | 已完成 |
 
 ## 记录
 
@@ -3615,3 +3616,44 @@
   属于「只增不改」允许的范围（末尾加字段 + 注释零值语义）。落地时要同时改三处：
   `pluginapi/memory.go`、`internal/adapter/plugingo` 的记忆适配、`internal/app/agent.go`
   的 `memoryBlock`；插件侧再把「总是带标题」收窄成两条路径。
+
+<a id="d346"></a>
+
+### D346 · 插件面板落地：一份组件树，两个渲染器，一条命令
+
+- **背景**：`pluginapi` 的 UI 扩展面（`ViewProvider` / `SettingsSectionProvider`）从 D327 起
+  就只有契约、没有调用点。面板是其中最先能独立落地的一块：设置页要接 `settingsForm` 的
+  表单体系与保存链，面板只需要「取帧 → 画 → 交动作」。
+
+- **决策**：
+  1. **防腐转换照旧**：`internal/port/uiview.go` 定义中性的组件树（`UINode` / `UIField` /
+     `UIAction`），`adapter/plugingo/view.go` 做一次平铺转换（把嵌套的 `*TableSpec` 摊成
+     `Columns` / `Rows`）。界面层不 import `pluginapi`——两个稳定级互不引用这条不能破。
+  2. **拉模式的实现方式是「三处取帧」**：打开、动作之后、目标换了之后。其余帧都画缓存里的
+     那一棵，所以拖窗口、滚动、打字都不会碰到插件。
+  3. **入口只有 `/plugin view <插件> [<面板ID>]`**。省略 ID 时一个面板直接开、多个列出来挑。
+     事件只带目标（`port.OpenViewEvent`），内容由前端拉——同一条事件，GUI 开次窗、TUI
+     就地渲染文本。
+  4. **窗单实例**：沿用 `winKind` 作注册表 key，再开另一个面板 = 原地换目标。「多个面板
+     并排」不做，理由是没有需求、而按「种类 + 名字」重建注册表会影响所有次窗的语义。
+  5. **停用即关窗**：新增 `port.CloseViewEvent`，只关「正在看的是它」那一个（同时开着别的
+     插件的面板时不能顺手关掉）。
+  6. **TUI 只读**：形状、当前值、按钮编号都渲染，但不接交互，末行写明「操作请用命令」。
+     设计稿的降级表原要求 `form → 逐行问答`，那会把面板接进输入循环，与命令面重复。
+  7. **`provides` 词表加 `view`**：与 `command` 同款——声明与实现自检一致，`/plugin list`
+     也能显示这个插件有面板。只增不改，v1 尚未冻结。
+
+- **为什么不给 `Host` 加 `ShowView(spec)`（推模式）**：D327 已经否决过，这里再记一次落地
+  时的实测理由——推模式要求宿主接受任意时刻的界面变更，回放、切会话、插件停用都会留下
+  要同步的 UI 状态；拉模式把这些都变成「下一次取帧自然正确」。
+
+- **一处需要写进契约的语义**：`Node.Kind` 零值 = 纯容器（不产生像素与文本行，只渲染
+  `Children`），`Children` 与任何 `Kind` 都可共存。插件要「表和它的按钮并成一棵」时没有
+  别的表达方式，而借 `list` 充当容器会多出一行空列表。已写进 `pluginapi/uiext.go` 注释与
+  plugin-design.md §6。
+
+- **状态**：已完成。宿主侧 `port/uiview.go`、`plugingo/view.go`、`cmd/aquarius/pluginview.go`
+  （聚合）、`/plugin view` 子命令、`uicommon/plainview.go`（文本渲染）、`uigui/pluginview.go`
+  （次窗 + Gio 渲染）；样例插件 `aq-memory-plugin` 的 `memplug/views.go` 提供「记忆树」与
+  「归档」两个面板。测试：文本渲染 7 组、适配转换 2 组、`/plugin view` 命令 1 组多分支、
+  聚合器 1 组、GUI 字段同步与取值 4 组、TUI 事件 3 组、插件面板 5 组。

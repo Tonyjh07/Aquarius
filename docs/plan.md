@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-26 @ 9098b7d -->
+<!-- docs-sync: 2026-11-26 @ 830e85d -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -51,8 +51,9 @@
   记在其 design.md §9）；③ 工具面 + `Recall`（已完成：`memplug` 包，窗口/命名/同轮稳定三条口径
   与一处契约缺口 D345 记在其 design.md §10）；④ 命令面 + 面板 + 迁移（命令面与迁移已完成：
   插件侧 `/mem` 六个子命令与首次启用的内置记忆搬迁，宿主侧 Tier-1 命令并入会话动态命令表、
-  与 MCP prompts 合流，口径见 plugin-design.md「命令面」一节与插件 design.md §11；面板待落，
-  需要 GUI 与 TUI 两个渲染器）。
+  与 MCP prompts 合流，口径见 plugin-design.md「命令面」一节与插件 design.md §11；面板已完成：
+  `/plugin view` 打开次窗（GUI 组件树渲染、TUI 渲染成只读文本），四条落地口径与「零 Kind =
+  纯容器」的契约语义见 plugin-design.md §6「面板的落地口径」与 D346）。
 
   **样例插件定为间隔重复记忆插件**（独立仓库，设计稿见该仓库
   design.md；`Memory`（含首次启用的内置记忆迁移）+ `ToolProvider` + 面板形态），验收标准

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // PluginInfo /plugin list 的一行（§7.3）：宿主快照的 app 侧投影——
@@ -31,10 +32,19 @@ type PluginInfo struct {
 	LastMS       int64
 }
 
+// PluginViewSpec 一个可打开的面板（/plugin view 用；app 只认这三个字段）。
+type PluginViewSpec struct {
+	Plugin string
+	ID     string
+	Title  string
+}
+
 // PluginAdmin 插件管理面（§7.3 /plugin；装配根把宿主适配到此接口，M4）。
 type PluginAdmin interface {
 	// Plugins 全部插件快照（含解析失败的条目）。
 	Plugins() []PluginInfo
+	// Views 某个插件声明的面板（只含有面板面的插件；停用的插件返回空）。
+	Views(name string) ([]PluginViewSpec, error)
 	// Enable 启用并连接（含 capability 首用授权流）；未声明的插件报错。
 	Enable(ctx context.Context, name string) error
 	// Disable 停用并断开；未声明的插件报错。
@@ -93,9 +103,60 @@ func (s *Session) execPlugin(ctx context.Context, args []string) (string, error)
 			return "", err
 		}
 		return out, nil
+	case "view":
+		return s.openPluginView(ctx, args[1:])
 	default:
 		return "", errors.New(i18n.T("plugin.usage"))
 	}
+}
+
+// openPluginView /plugin view <插件> [<面板ID>]：把「打开哪个面板」交给前端。
+//
+// 命令这一层只做选择与报因，不渲染：组件树归前端（GUI 开次窗、TUI 渲染成文本），事件里
+// 只有目标。省略面板 ID 而插件只有一个面板时直接打开，多个则列出来让人挑——猜一个打开是
+// 最坏的选择，用户看到的会是自己没要的那块。
+func (s *Session) openPluginView(ctx context.Context, args []string) (string, error) {
+	if len(args) < 1 || len(args) > 2 {
+		return "", errors.New(i18n.T("plugin.usage.view"))
+	}
+	name := args[0]
+	views, err := s.plugins.Views(name)
+	if err != nil {
+		return "", err
+	}
+	if len(views) == 0 {
+		return "", errors.New(i18n.Tf("plugin.view.empty", "name", name))
+	}
+	var pick PluginViewSpec
+	switch {
+	case len(args) == 2:
+		found := false
+		for _, v := range views {
+			if v.ID == args[1] {
+				pick, found = v, true
+				break
+			}
+		}
+		if !found {
+			return "", errors.New(i18n.Tf("plugin.view.empty", "name", name))
+		}
+	case len(views) == 1:
+		pick = views[0]
+	default:
+		var b strings.Builder
+		b.WriteString(i18n.Tf("plugin.view.ambiguous", "name", name))
+		for _, v := range views {
+			b.WriteString("\n  " + v.ID + "  " + v.Title)
+		}
+		return b.String(), nil
+	}
+	if s.ui == nil {
+		return "", errors.New("session: " + i18n.T("agent.err_no_presenter"))
+	}
+	if err := s.ui.Emit(ctx, port.OpenViewEvent{Plugin: pick.Plugin, ViewID: pick.ID}); err != nil {
+		return "", err
+	}
+	return i18n.Tf("plugin.view.opened", "title", pick.Title), nil
 }
 
 // enableResult 启用结果行（含授权被拒等非 ready 终态的报因）。

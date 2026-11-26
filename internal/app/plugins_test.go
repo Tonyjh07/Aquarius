@@ -19,6 +19,8 @@ type fakeAdmin struct {
 	enableErr error
 	logsOut   string
 	logsErr   error
+	views     []PluginViewSpec
+	viewsErr  error
 }
 
 func (f *fakeAdmin) Plugins() []PluginInfo { return f.list }
@@ -39,6 +41,14 @@ func (f *fakeAdmin) Disable(name string) error {
 // Logs S6/D143：/plugin logs 测试替身。
 func (f *fakeAdmin) Logs(name string) (string, error) {
 	return f.logsOut, f.logsErr
+}
+
+// Views D346：/plugin view 测试替身。
+func (f *fakeAdmin) Views(name string) ([]PluginViewSpec, error) {
+	if f.viewsErr != nil {
+		return nil, f.viewsErr
+	}
+	return f.views, nil
 }
 
 // TestSessionPluginCommand /plugin：list 格式（状态/能力授权/统计/报因）、
@@ -212,5 +222,83 @@ func TestDynamicCommandSeesSession(t *testing.T) {
 	}
 	if got != "conv-9" {
 		t.Fatalf("上游注入的会话不该被覆盖：%q", got)
+	}
+}
+
+// fakePresenter 只收事件的最小 Presenter（/plugin view 断言「交出去的是什么」）。
+type fakePresenter struct{ events []port.Event }
+
+func (p *fakePresenter) Emit(_ context.Context, ev port.Event) error {
+	p.events = append(p.events, ev)
+	return nil
+}
+
+// TestPluginViewCommand /plugin view（D346）：打开的唯一视图、多视图必须点名、点名不中、
+// 没有面板、缺 presenter、用法错误。
+func TestPluginViewCommand(t *testing.T) {
+	ctx := context.Background()
+	one := []PluginViewSpec{{Plugin: "memory", ID: "tree", Title: "记忆树"}}
+
+	ui := &fakePresenter{}
+	s := &Session{plugins: &fakeAdmin{views: one}, ui: ui}
+	out, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "plugin", Args: []string{"view", "memory"}}})
+	if err != nil {
+		t.Fatalf("view: %v", err)
+	}
+	if !strings.Contains(out, i18n.Tf("plugin.view.opened", "title", "记忆树")) {
+		t.Errorf("输出缺打开回执：%s", out)
+	}
+	if len(ui.events) != 1 {
+		t.Fatalf("应投一条事件：%v", ui.events)
+	}
+	if ev, ok := ui.events[0].(port.OpenViewEvent); !ok || ev.Plugin != "memory" || ev.ViewID != "tree" {
+		t.Fatalf("事件形状不对：%#v", ui.events[0])
+	}
+
+	// 多视图：不点名就列出来，不猜一个打开。
+	multi := []PluginViewSpec{one[0], {Plugin: "memory", ID: "list", Title: "记忆列表"}}
+	ui = &fakePresenter{}
+	s = &Session{plugins: &fakeAdmin{views: multi}, ui: ui}
+	out, err = s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "plugin", Args: []string{"view", "memory"}}})
+	if err != nil {
+		t.Fatalf("ambiguous: %v", err)
+	}
+	if !strings.Contains(out, "list") || !strings.Contains(out, "记忆列表") || len(ui.events) != 0 {
+		t.Fatalf("多视图应列出且不开窗：%q %v", out, ui.events)
+	}
+
+	// 点名打开第二个。
+	out, err = s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "plugin", Args: []string{"view", "memory", "list"}}})
+	if err != nil || len(ui.events) != 1 {
+		t.Fatalf("点名打开失败：%q %v", out, err)
+	}
+	if ev := ui.events[0].(port.OpenViewEvent); ev.ViewID != "list" {
+		t.Fatalf("打开的不是点名的那个：%#v", ev)
+	}
+
+	// 点名不中：报「没有可打开的面板」，不打开别的。
+	ui.events = nil
+	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "plugin", Args: []string{"view", "memory", "nope"}}}); err == nil {
+		t.Fatal("点名的视图不存在应报错")
+	}
+	if len(ui.events) != 0 {
+		t.Fatalf("不该打开任何视图：%v", ui.events)
+	}
+
+	// 没有面板 / 没有 presenter。
+	s = &Session{plugins: &fakeAdmin{}, ui: &fakePresenter{}}
+	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "plugin", Args: []string{"view", "memory"}}}); err == nil ||
+		err.Error() != i18n.Tf("plugin.view.empty", "name", "memory") {
+		t.Fatalf("无面板报因不对：%v", err)
+	}
+	s = &Session{plugins: &fakeAdmin{views: one}}
+	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "plugin", Args: []string{"view", "memory"}}}); err == nil {
+		t.Fatal("没有 presenter 应报错")
+	}
+
+	// 用法。
+	if _, err := s.Handle(ctx, port.UserInput{Command: &port.Command{Name: "plugin", Args: []string{"view"}}}); err == nil ||
+		err.Error() != i18n.T("plugin.usage.view") {
+		t.Fatalf("用法报因不对：%v", err)
 	}
 }

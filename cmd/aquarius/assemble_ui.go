@@ -160,7 +160,8 @@ func (w *wiring) newUI(stdin io.Reader, stdout io.Writer) {
 		// 设置窗「角色」页只读数据面（§5.17）：角色卡目录晚于 UI 就绪，故现取。
 		charView := newCharactersView(func() *characterfs.Store { return w.characters })
 		ui := uigui.New(uigui.Options{
-			Log: w.logFrom, // D288：托盘 / 快捷键 / 图标 / 首帧的诊断走运行日志（不再直写 stdout）
+			Log:   w.logFrom,                    // D288：托盘 / 快捷键 / 图标 / 首帧的诊断走运行日志（不再直写 stdout）
+			Views: pluginViews{reg: w.plugins1}, // D346：/plugin view 打开的面板（拉模式取帧）
 			Status: func() uigui.Status {
 				if agent := w.agentPtr.Load(); agent != nil {
 					st := uigui.Status{
@@ -235,9 +236,10 @@ func (w *wiring) newUI(stdin io.Reader, stdout io.Writer) {
 				}
 				return uitui.Status{}
 			},
-			Pending:      w.pendingInput,   // D272：生成中键入的行停在清单里
-			HistoryStore: w.inputHistory(), // 输入历史写入磁盘（与 GUI 同一份文件）
-			Keys:         w.keys,           // §5.19：三键（启动时已校验；TUI 引导键回落 Alt+Enter）
+			Pending:      w.pendingInput,               // D272：生成中键入的行停在清单里
+			HistoryStore: w.inputHistory(),             // 输入历史写入磁盘（与 GUI 同一份文件）
+			Views:        pluginViews{reg: w.plugins1}, // D346：/plugin view 打开的面板（行式界面渲染成文本）
+			Keys:         w.keys,                       // §5.19：三键（启动时已校验；TUI 引导键回落 Alt+Enter）
 		})
 	default:
 		w.ui = repl.New(stdin, stdout)

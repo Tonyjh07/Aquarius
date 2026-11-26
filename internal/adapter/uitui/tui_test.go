@@ -805,3 +805,70 @@ func TestHistoryLoadedFromStore(t *testing.T) {
 		t.Fatalf("persisted history = %v", got)
 	}
 }
+
+// fakeViews 行式界面的面板来源：一棵固定的小树。
+type fakeViews struct{ err error }
+
+func (f fakeViews) Views() []port.UIViewInfo {
+	return []port.UIViewInfo{{Plugin: "memory", ID: "tree", Title: "记忆树"}}
+}
+
+func (f fakeViews) Render(_ context.Context, plugin, viewID string) (port.UINode, error) {
+	if f.err != nil {
+		return port.UINode{}, f.err
+	}
+	return port.UINode{Children: []port.UINode{
+		{Kind: port.UIKV, Items: []string{"活动记忆", "2"}},
+		{Kind: port.UITable, Columns: []string{"层", "标题"}, Rows: [][]string{{"1", "部署脚本"}}},
+		{Kind: port.UIButtons, Actions: []port.UIAction{{ID: "scan", Label: "立即扫描"}}},
+	}}, nil
+}
+
+func (f fakeViews) Act(context.Context, port.UIViewAction) (port.UINode, error) {
+	return port.UINode{Kind: port.UIText, Text: "acted"}, nil
+}
+
+// 行式界面没有次窗：面板就地渲染成文本，并明说只读（面板里的按钮在 TUI 按不了）。
+func TestOpenViewEventRendersPlain(t *testing.T) {
+	m, u := newTestModel(t)
+	u.opts.Views = fakeViews{}
+	m.width = 80
+
+	m.handleEvent(port.OpenViewEvent{Plugin: "memory", ViewID: "tree"})
+
+	var body string
+	for _, b := range m.blocks {
+		if b.kind == blockPlain {
+			body += b.text
+		}
+	}
+	for _, want := range []string{"活动记忆", "部署脚本", "[1] 立即扫描"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("面板文本缺 %q：%s", want, body)
+		}
+	}
+	last := m.blocks[len(m.blocks)-1]
+	if last.kind != blockNotice || last.text != i18n.T("tui.view.readonly") {
+		t.Errorf("应有一条只读提示：%+v", last)
+	}
+}
+
+// 取帧失败要当成错误行显示，不能静默空白。
+func TestOpenViewEventError(t *testing.T) {
+	m, u := newTestModel(t)
+	u.opts.Views = fakeViews{err: errors.New("plugin is gone")}
+
+	m.handleEvent(port.OpenViewEvent{Plugin: "memory", ViewID: "tree"})
+	if len(m.blocks) != 1 || m.blocks[0].kind != blockError || !strings.Contains(m.blocks[0].text, "plugin is gone") {
+		t.Fatalf("应落一条错误行：%+v", m.blocks)
+	}
+}
+
+// 没有面板面（repl / 未注入）时静默忽略，不能让一条事件把界面搞崩。
+func TestOpenViewEventNoSource(t *testing.T) {
+	m, _ := newTestModel(t)
+	m.handleEvent(port.OpenViewEvent{Plugin: "memory", ViewID: "tree"})
+	if len(m.blocks) != 0 {
+		t.Fatalf("没有面板面时应忽略：%+v", m.blocks)
+	}
+}

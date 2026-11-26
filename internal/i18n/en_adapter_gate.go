@@ -166,6 +166,9 @@ var enAdapterGateTexts = map[string]string{
 	"plugin.t1.cmd_inactive":      "plugin \"{name}\" is not enabled, so the command cannot run",
 	"plugin.t1.cmd_draining":      "plugin \"{name}\" is shutting down; this command is not accepted",
 	"plugin.t1.cmd_unsupported":   "plugin \"{name}\" declares command, but its instance does not implement the command face",
+	"plugin.t1.view_inactive":     "plugin \"{name}\" is not enabled, so its panel cannot open",
+	"plugin.t1.view_draining":     "plugin \"{name}\" is shutting down; its panel cannot open right now",
+	"plugin.t1.view_unsupported":  "plugin \"{name}\" declares no panel",
 
 	// ---- plugin/tierone: the Tier-1 state machine (validation, enable/disable, exclusivity). ----
 

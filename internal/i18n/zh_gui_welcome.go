@@ -218,6 +218,10 @@ var zhGuiWelcomeTexts = map[string]string{
 	"ui.win.title.raw":      "Aquarius 查看原文",
 	"ui.win.title.image":    "Aquarius 图片预览",
 	"ui.win.title.welcome":  "Aquarius 欢迎",
-	"ui.win.ph.settings":    "设置窗表单未就绪。",
-	"ui.win.ph.welcome":     "欢迎使用 Aquarius——首次运行引导即将提供。",
+	// D346：插件面板次窗。标题 = 固定壳 + 插件自己给的视图标题（插件文案不进本表）。
+	"ui.win.title.view":  "Aquarius · {title}",
+	"ui.win.ph.view":     "（这个插件没有可显示的内容）",
+	"ui.view.failed":     "面板取不到内容：{err}",
+	"ui.win.ph.settings": "设置窗表单未就绪。",
+	"ui.win.ph.welcome":  "欢迎使用 Aquarius——首次运行引导即将提供。",
 }

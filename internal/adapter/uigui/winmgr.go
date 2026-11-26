@@ -39,6 +39,7 @@ const (
 	winWelcome
 	winRaw   // 查看原文（D99：气泡右键原始块只读次窗）
 	winImage // 图片预览（D207：转写区缩略图点击 → 看原图）
+	winView  // 插件面板（D346：/plugin view 打开，组件树次窗）
 )
 
 // title 窗标题（app.Title）。
@@ -52,6 +53,10 @@ func (k winKind) title() string {
 		return i18n.T("ui.win.title.raw")
 	case winImage:
 		return i18n.T("ui.win.title.image")
+	case winView:
+		// 窗标题固定：视图标题由插件给、会随动作变，而 app.Title 只在建窗时设一次。
+		// 当前视图标题画在窗内标题行（pluginview.go 的 header）。
+		return i18n.T("ui.win.title.view")
 	default:
 		return i18n.T("ui.win.title.welcome")
 	}
@@ -69,6 +74,8 @@ func (k winKind) placeholder() string {
 		return "" // D99：专用帧（rawViewFrame），不走占位正文
 	case winImage:
 		return "" // D207：专用帧（imgViewFrame），不走占位正文
+	case winView:
+		return "" // D346：专用帧（viewFrame），不走占位正文
 	case winWelcome:
 		return "" // D141：专用帧（welcomeFrame），不走占位正文
 	default:
@@ -87,6 +94,9 @@ func (k winKind) geometry() (width, height, minW, minH int) {
 		return 720, 560, 620, 360
 	case winRaw:
 		return 560, 520, 420, 360
+	case winView:
+		// 面板要放得下表格与表单：比只读原文宽一档，最小尺寸留出「标题 + 两行 + 按钮」。
+		return 640, 560, 480, 380
 	case winImage:
 		// 预览要够大才看得出细节；最小尺寸留出「图 + 标题 + 提示」三行。
 		return 900, 700, 480, 360
@@ -314,6 +324,11 @@ func (u *UI) runSecondary(w *app.Window, k winKind, ctl *winHandle) {
 	if k == winRaw {
 		raw = newRawViewState() // D99：查看原文帧状态（仅本窗 goroutine 读写）
 	}
+	var vw *pluginViewState
+	if k == winView {
+		// D346：面板帧状态（仅本窗 goroutine 读写）；动作完成后请求本窗重绘。
+		vw = newPluginViewState(u, w.Invalidate)
+	}
 	var iview *imageViewState
 	if k == winImage {
 		// D207：图片预览帧状态（Esc = 真关窗）；解码 goroutine 完成后请求本窗重绘。
@@ -354,6 +369,8 @@ func (u *UI) runSecondary(w *app.Window, k winKind, ctl *winHandle) {
 				settingsFrame(gtx, th, u, form) // 设置窗 = 核心档表单（§15.7/D60）
 			} else if raw != nil {
 				rawViewFrame(gtx, th, u, raw) // 查看原文 = 只读编辑器（D99）
+			} else if vw != nil {
+				viewFrame(gtx, th, u, vw) // D346：插件面板 = 组件树（拉模式）
 			} else if iview != nil {
 				imgViewFrame(gtx, th, u, iview) // 图片预览 = 适配 + 缩放平移（D207）
 			} else if hist != nil {

@@ -51,6 +51,17 @@ var expectEqualFns = map[string]bool{"Equal": true}
 // 只许三类理由（plan I6 第 2 类）：用户数据、模型输出、写入磁盘的内容。匹配规则同 cjkAllowed：
 // 整串相等或以片段为前缀——写短片段要小心，一条 "会话" 会放过 "会话树"。
 var testDataLiterals = map[string][]string{
+	// D346 面板：这些中文都是**被测对象**——插件声明的视图标题、记忆点标题、用户输入
+	// 与面板正文。内核文案走 i18n 表，这一批不随界面语言变（换语言也还是这几串）。
+	"cmd/aquarius/pluginview_test.go":           {"帧内容", "记忆树"},
+	"internal/adapter/plugingo/view_test.go":    {"记忆树", "甲", "开始"},
+	"internal/adapter/uigui/pluginview_test.go": {"甲", "用户输入"},
+	"internal/adapter/uicommon/plainview_test.go": {
+		"次数", "部署脚本放在哪", "层", "孤立",
+		"  - 甲\n  - 乙",
+		"[1] 刷新", "[2] 清空", "下面是说明", "一份图", "子项",
+		"中  ", "已经超宽了",
+	},
 	// 气泡测试的消息正文：用户内容原样流回，不随界面语言变（下同，uigui 各测试文件）。
 	"internal/adapter/uigui/bubble_test.go": {
 		"问", "想一想", "完毕", "\n完毕",
@@ -304,6 +315,7 @@ var testDataLiterals = map[string][]string{
 	// plugins_test：fakeAdmin 注入的日志/错误文本与动态命令返回值。
 	"internal/app/plugins_test.go": {
 		"插件 web 摘要", "读取审计日志失败", "动态输出", "未知 risk",
+		"记忆列表", // D346：假插件声明的面板标题
 	},
 	// session_misc_test：注入的存储错误、标题参数、脚本流生成的摘要正文。
 	"internal/app/session_misc_test.go": {

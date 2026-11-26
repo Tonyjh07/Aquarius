@@ -356,12 +356,12 @@ var enCmdTexts = map[string]string{
 	"cmd.quit.desc": "Quit",
 
 	// /plugin
-	"cmd.plugin.desc":    "MCP plugin management (list, enable, disable)",
-	"cmd.plugin.usage":   "[list|enable <name>|disable <name>]",
+	"cmd.plugin.desc":    "Plugin management (list, enable, disable, logs, panels)",
+	"cmd.plugin.usage":   "[list|enable <name>|disable <name>|logs [name]|view <name> [id]]",
 	"cmd.plugin.p1.name": "subcommand",
 	"cmd.plugin.p1.desc": "omitted = list",
 	"cmd.plugin.p2.name": "<name>",
-	"cmd.plugin.p2.desc": "plugin name (enable / disable / logs)",
+	"cmd.plugin.p2.desc": "plugin name (enable / disable / logs / view)",
 
 	// /model
 	"cmd.model.desc":    "Show available models / switch and write back to config / probe capabilities",
