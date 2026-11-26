@@ -44,7 +44,9 @@ func (w *wiring) pluginWorkDir(name string) (string, error) {
 // 这里只校验清单，实例在 enable 时才造。
 func (w *wiring) assembleTierOne(confirmer port.Confirmer, builtin []port.Tool) {
 	w.plugins1 = tierone.New(tierone.Options{
-		Factories: w.pluginFactories,
+		// 外部插件只从这一处进来（pluginext.go）：默认构建为空，验收构建由 -overlay
+		// 换成带插件的实现。装配根不认识任何具体插件。
+		Factories: externalFactories(),
 		NewHost:   w.pluginHostFor(confirmer),
 		Taken:     w.takenNames(builtin),
 		Log:       w.logFrom,

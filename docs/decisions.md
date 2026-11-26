@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-11-26 @ 977ccbd -->
+<!-- docs-sync: 2026-11-26 @ 38de038 -->
 
 > **权威文档之一**：决策节于 2026-09 独立成篇，与 [contracts.md](contracts.md) 同级同权威
 > （该节 2026-10 从总设计文档删除，不再占节号）。编号**跨文件不变**
@@ -353,6 +353,7 @@
 | [D340](#d340) | 工具面按轮给：`Tools(ctx)` 每次装配都问、清单可随导航变化；内核加 `port.ToolSet`（装配时向源要、执行时按 ctx 的会话找），名字在会话内唯一、撞内置以内置为准、不受 `tools.disabled` 约束；零工具不再拒载 | 已完成 |
 | [D341](#d341) | Host 补两项：`DataDir()`（持久目录）与 `Locale()`（当前界面语言），首发六项 → 八项；目录按生存期分成 DataDir / WorkDir 两个方法而不是加参数；空串 = 宿主未提供，插件降级；语言给值不给访问器（D275 运行内不变），词表与 `Manifest.Locales` 同一套 | 已完成 |
 | [D342](#d342) | 记忆接管的内核接线：端口只留 `port.MemorySource`（带会话与软预算），内置排版搬进 `memoryfs.Source`，装配根用路由器换回答者；顺序修正为「撤内置面 → 启用 → 挂源 → 接管」（挂源只能从 Active 实例取）；接管集不写 `tools.disabled`；`/memory` 用隐藏集退出；`Options.NewHost` 改收清单快照以免锁内反查死锁 | 已完成 |
+| [D343](#d343) | 外部插件靠构建期注入进二进制：上游只留 `pluginext.go` 一个中性接入口（`!tier1sample` 返回空），用 `-overlay` 换文件 + `-modfile` 换依赖视图注入，产物零落在上游；`tier1sample` 作互斥开关；构建器 `cmd/aqbuild` 归上游；pluginapi 必须指宿主自己那份，兼容性靠编译期失败兜住 | 已完成（构建器待落） |
 
 ## 记录
 
@@ -3482,3 +3483,52 @@
   测试：`memoryfs/source_test.go`、`app/agent_m2_test.go`（注入 / 预算截断 / 失败静默）、
   `app/commands_test.go`（隐藏命令）、`cmd/aquarius/memorytakeover_test.go`（撤面、独占、
   失败还原）。
+
+<a id="d343"></a>
+
+### D343 · 外部插件靠构建期注入进二进制：上游只留一个中性接入口
+
+- **背景**：Tier-1 是编译期链接，`externalFactories` 这个列表就是「谁能装进来」的唯一
+  答案。但列表写在哪、谁能改它，决定了插件作者要不要碰上游仓库。真实的三方各有边界：
+  上游不想在版本库里留任何具体插件的痕迹（发布产物要干净）；插件作者不想 fork 上游才能
+  试跑；使用者只想拿到一个带插件的可执行文件。三者只能在一个接入口上汇合。
+
+- **决策**：
+  1. **上游只留一个文件** `cmd/aquarius/pluginext.go`：`//go:build !tier1sample` 的
+     `externalFactories() []v1.Factory`，默认返回空。文件里没有插件名、没有模块路径，
+     读代码的人看到的是「宿主支持外部注入」，不是「宿主内置了某个插件」。
+  2. **注入用 `-overlay` + `-modfile`**：前者把该文件在编译单元里换成插件仓库里的实现
+     （`package main`、`tier1sample` 约束、同名函数），后者让依赖解析读插件侧那份
+     go.mod 副本。两条 flag 只影响这一次编译，上游磁盘与 `go.mod` 零改动。
+  3. **`tier1sample` 是互斥开关而不是便利标签**：带它时上游那份退出编译（不会两份实现
+     打架），不带它时插件那份退出编译（否则「`package main` 没有 `func main`」会挡住
+     插件作者在插件仓库跑 `go test ./...`）。
+  4. **构建器归上游**（`cmd/aqbuild`）：协议只有上游解释得准，让每个插件各写一遍必然
+     走样。它按参数干活（宿主目录、插件目录、hook 文件、tag、输出路径），不认识任何具体
+     插件。
+  5. **pluginapi 必须指向宿主自己那份**：不让 MVS 挑版本。指错了 `Create(Host)` 签名
+     对不上，编译期就失败——这是这套机制里最结实的兼容闸门。
+  6. **默认构建的工厂列表必须为空**，由 `pluginext_test.go` 守着：往 `pluginext.go` 里
+     硬写一个工厂，等于把它悄悄塞进所有人的二进制，这件事不该只靠 review 记住。
+
+- **备选**：
+  1. **`replace` 写进上游 go.mod**：本地最省事，但它入库，发布产物与下游构建都被绑上
+     插件，正好是「远端看不到示例插件」的反面。
+  2. **`go.work`**：不入库、干净，但作用域是目录，每个新 clone 与 CI 都要自己
+     `go work init`，忘了就报「找不着模块」——把一次性成本摊给所有人。
+  3. **生成一个 `.go` 文件再 gitignore**：文件落在上游磁盘上，「迟早有人 `git add -A`」，
+     而且 `go mod tidy` 会扫到那份 import 把 `require` 写进真 go.mod。
+  4. **`-buildmode=plugin`**：Windows 不支持；Linux 上要求两边 Go 版本、依赖版本、构建
+     标志完全一致，不构成可用的产品路径。
+  5. **CI 里 `go list -deps` 断言「依赖图里没有插件模块」**：写不出不点名具体插件的版本，
+     而点名的断言本身就把插件名留在了上游仓库里。真正的保证在构建约束与 `-modfile`
+     上，不在事后检查。
+
+- **实测**（2026-11-26，探针插件仓库）：`-modfile` 指向仓库目录之外合法；必须带
+  `-mod=mod` 才允许把 `require` 规整进那份副本（否则报「updates to go.mod needed」）；
+  注入后二进制里能搜到插件模块的常量，不带 overlay 的构建搜不到；两次构建之后上游
+  `git status` 只有本次源码改动。
+
+- **状态**：上游侧已完成（`cmd/aquarius/pluginext.go`、`assembleTierOne` 从它取工厂、
+  `pluginext_test.go`、plugin-design.md §7「插件怎么进到二进制里」/§12/§13）。构建器
+  `cmd/aqbuild` 与其 testdata 探针待落，见 plan.md P3 第 4 步。

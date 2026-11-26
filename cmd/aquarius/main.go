@@ -37,7 +37,6 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/plugin"
 	"github.com/Tonyjh07/Aquarius/internal/plugin/tierone"
 	"github.com/Tonyjh07/Aquarius/internal/port"
-	v1 "github.com/Tonyjh07/Aquarius/pluginapi"
 )
 
 // version 构建版本号：发布构建用 `-ldflags "-X main.version=v0.1.0"` 注入，开发构建
@@ -298,10 +297,8 @@ type wiring struct {
 	exchange *exchange.Exchange
 	runner   *toolrun.Runner
 	audit    *decorate.Audit
-	// pluginFactories 编译进二进制的 Tier-1 插件入口：main 显式列出，注册表归宿主
-	// （设计 §7「注册表归宿主」）。样例插件在独立仓库，接入时只往这个切片加一行。
-	pluginFactories []v1.Factory
 	// plugins1 Tier-1 注册表（装配期建，关停时 Close）；启停状态另存 config plugins 段。
+	// 外部插件的工厂从 pluginext.go 的 externalFactories 来，本结构不持有。
 	plugins1 *tierone.Registry
 	// pluginSets 已挂进 Runner 的插件工具源（停用时按名摘除；接口值相等靠这张表）。
 	pluginSets map[string]*plugingo.ToolSet
