@@ -25,7 +25,7 @@ type Manifest struct {
 	// 空 = 不宣称任何能力。
 	Capabilities []string
 	// Provides 供给面自述（"llm" / "tool" / "memory" / "ingest" / "output" /
-	// "transcribe" / "synthesize" / "secrets" / "command"）：宿主据此做 provides
+	// "transcribe" / "synthesize" / "secrets" / "command" / "view" / "settings"）：宿主据此做 provides
 	// 自检（声明 llm 必须实现 LanguageModel）。"memory" 是独占的：同一时刻至多
 	// 一个插件启用，两个同时启用由宿主拒绝（D337）。空 = 不供给任何端口。
 	Provides []string
