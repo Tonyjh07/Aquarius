@@ -100,11 +100,12 @@ func shapeOnce(t *testing.T, th *material.Theme, wt font.Weight, s string, sp fl
 // 无 CJK 系统字体时返回 nil —— 此时字重由 gofont 提供，断言无意义。
 func weightProbeTheme(t *testing.T) *material.Theme {
 	t.Helper()
-	cands := newPlatform(Options{}, true).SystemFontCandidates()
+	plat := newPlatform(Options{}, true)
+	cands := plat.SystemFontCandidates()
 	if len(loadCJKFaces(cands)) == 0 {
 		return nil
 	}
-	return newTheme(cands)
+	return newTheme(cands, plat.SymbolFontCandidates())
 }
 
 // TestWeightTiersBoldIsHeavier 粗体必须比常规**显著**更粗。

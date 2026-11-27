@@ -1,5 +1,5 @@
 # Tier-1 Go 插件契约（pluginapi，v1）设计规格
-<!-- docs-sync: 2026-11-27 @ 15b9f93 -->
+<!-- docs-sync: 2026-11-27 @ 3ab2972 -->
 
 > 定位：Tier-1 进程内 Go 插件契约包（`pluginapi`，本代为 v1）的实现规格——接口面、UI 扩展面、宿主服务、
 > 生命周期、版本纪律、能力边界。Tier-2（MCP server）的规格在 [contracts.md](contracts.md) §6.2–§6.4，

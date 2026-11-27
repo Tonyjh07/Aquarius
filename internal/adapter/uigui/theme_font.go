@@ -51,10 +51,13 @@ var faceCache struct {
 // sharedFaces 取（必要时解析并缓存）候选表对应的字体集合。返回值**封住了容量**，调用方
 // 不能用 append 改写共享底层数组（与 gofont.Collection 同一条防护）。
 //
+// symbols 是符号回退面（可空）：排在集合末尾，只补主面缺的几何符号（折叠三角、勾叉之类）。
+// 缓存键含两份候选表——测试里换符号表不会被旧结果串味。
+//
 // 并发安全：解析在锁内完成，同一候选表只会解析一次；解析结果只读，可被多个 Shaper 同时
 // 使用——每个 Shaper 仍各自建 Face 与字形尺寸缓存，共享的只有字体表与字形轮廓。
-func sharedFaces(candidates []string) []text.FontFace {
-	key := strings.Join(candidates, "\x00")
+func sharedFaces(candidates, symbols []string) []text.FontFace {
+	key := strings.Join(candidates, "\x00") + "\x01" + strings.Join(symbols, "\x00")
 	faceCache.mu.Lock()
 	defer faceCache.mu.Unlock()
 	if faceCache.byKey == nil {
@@ -63,12 +66,15 @@ func sharedFaces(candidates []string) []text.FontFace {
 	if faces, ok := faceCache.byKey[key]; ok {
 		return faces
 	}
-	faces := loadCJKFaces(candidates)
-	if len(faces) == 0 {
-		faces = gofont.Collection() // 自带 Go Mono；本身即共享返回
+	var faces []text.FontFace
+	if cjk := loadCJKFaces(candidates); len(cjk) == 0 {
+		// gofont 集合是共享返回，先复制一层再追加，免得把符号面写进它的底层数组。
+		faces = append(faces, gofont.Collection()...)
 	} else {
+		faces = append(faces, cjk...)
 		faces = append(faces, monoFontFaces()...)
 	}
+	faces = append(faces, loadSymbolFaces(symbols)...)
 	faces = faces[:len(faces):len(faces)] // 封容量：防调用方 append 改写共享底层数组
 	faceCache.byKey[key] = faces
 	return faces
@@ -81,9 +87,9 @@ func sharedFaces(candidates []string) []text.FontFace {
 //
 // 字体集合进程内共享一份（D240）：解析结果只读，多窗复用省下每窗 75～80MB；但 Shaper
 // 仍每窗各建一份（首次排版要为该 Shaper 解析字形轮廓，那份数据按 Shaper 存）。
-func newTheme(candidates []string) *material.Theme {
+func newTheme(candidates, symbols []string) *material.Theme {
 	th := material.NewTheme()
-	faces := sharedFaces(candidates)
+	faces := sharedFaces(candidates, symbols)
 	setCodeFont(pickMonoFace(faces))
 	th.Shaper = text.NewShaper(text.WithCollection(faces))
 	return th
@@ -152,4 +158,25 @@ func loadCJKFaces(paths []string) []text.FontFace {
 		return faces
 	}
 	return nil
+}
+
+// loadSymbolFaces 符号回退面：逐个候选解析，缺失或坏文件跳过。
+//
+// 与 loadCJKFaces 的「首个胜出」不同，这里**全部追加**：符号字体各自覆盖的区段不一样
+// （Segoe UI Symbol 有几何图形但缺 CJK 标点，DejaVu 反之），多一份只在缺字时才被选中，
+// 不会改变正常排版。
+func loadSymbolFaces(paths []string) []text.FontFace {
+	var out []text.FontFace
+	for _, p := range paths {
+		src, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		faces, err := opentype.ParseCollection(src)
+		if err != nil || len(faces) == 0 {
+			continue
+		}
+		out = append(out, faces...)
+	}
+	return out
 }

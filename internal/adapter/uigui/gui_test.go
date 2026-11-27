@@ -28,7 +28,8 @@ func newHeadless(t *testing.T, opts Options) *UI {
 // testTheme 测试用主题实例（字体候选取自平台实现——与生产同源，保证 CJK 字面在
 // 离屏渲染/几何测试里可用，不因平台层迁入而退回无 CJK 的 gofont）。
 func testTheme() *material.Theme {
-	return newTheme(newPlatform(Options{}, true).SystemFontCandidates())
+	plat := newPlatform(Options{}, true)
+	return newTheme(plat.SystemFontCandidates(), plat.SymbolFontCandidates())
 }
 
 // drainSync 等待此前所有 post 应用进状态机（drain → close 提供 happens-before，

@@ -175,7 +175,7 @@ func (u *UI) runWindow(w *app.Window) {
 		app.Decorated(decorated),
 		app.TopMost(u.plat.TopMost()), // 悬浮球常驻顶层（平台缺此能力时恒真）
 	)
-	u.th = newTheme(u.plat.SystemFontCandidates())
+	u.th = newTheme(u.plat.SystemFontCandidates(), u.plat.SymbolFontCandidates())
 	if p := u.pal.Load(); p != nil { // 初始主题快照校正默认色（§15.4/D61）
 		u.th.Palette.Fg, u.th.Palette.Bg = p.fg, p.bg
 	}

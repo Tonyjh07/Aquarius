@@ -34,6 +34,7 @@ type fakePlat struct {
 	PresentOK  bool // Present 返回值
 	Dark       bool
 	Fonts      []string
+	Symbols    []string // SymbolFontCandidates（符号回退面）
 	// ClipImage 剪贴板位图（D187：nil = 剪贴板里没有图；入口据此决定是否消费 Ctrl+V）。
 	ClipImage []byte
 	// ClipErr ClipboardImage 的读取错误（模拟剪贴板被别的程序占用）。
@@ -140,6 +141,7 @@ func (f *fakePlat) HideWindow(platform.Handle)                    { f.Hides++ }
 func (f *fakePlat) HideMain(platform.Handle)                      { f.Hides++ }
 func (f *fakePlat) DarkMode() bool                                { return f.Dark }
 func (f *fakePlat) SystemFontCandidates() []string                { return f.Fonts }
+func (f *fakePlat) SymbolFontCandidates() []string                { return f.Symbols }
 func (f *fakePlat) SetHost(h platform.Host) {
 	f.mu.Lock()
 	f.host = h

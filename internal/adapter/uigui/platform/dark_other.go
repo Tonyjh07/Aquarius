@@ -47,3 +47,19 @@ func (p *Plat) SystemFontCandidates() []string {
 		"/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
 	}
 }
+
+// SymbolFontCandidates 几何符号回退面：CJK 字体通常不含折叠三角（U+25B8 / U+25BE），
+// 缺字会渲染成方框。这里给常见的符号字体，按序尝试，缺失即跳过（不报错）。
+func (p *Plat) SymbolFontCandidates() []string {
+	if runtime.GOOS == "darwin" {
+		return []string{
+			"/System/Library/Fonts/Apple Symbols.ttf",
+			"/System/Library/Fonts/SFNS.ttf",
+		}
+	}
+	return []string{
+		"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+		"/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf",
+		"/usr/share/fonts/truetype/noto/NotoSansSymbols-Regular.ttf",
+	}
+}

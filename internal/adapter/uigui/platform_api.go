@@ -56,6 +56,10 @@ type platformAPI interface {
 	// —— 系统外观 ——
 	DarkMode() bool
 	SystemFontCandidates() []string
+	// SymbolFontCandidates 符号回退面（可空）：正文 CJK 字体普遍不含折叠三角
+	// （U+25B8 / U+25BE）这类几何符号，缺字会渲染成方框。给定路径按序追加到字体
+	// 集合末尾，正常文字仍由主面命中，只有主面缺字时才轮到它们。
+	SymbolFontCandidates() []string
 
 	// —— 外壳（托盘 / 全局热键 / 原生菜单 / 文件框；非 Windows 为降级实现）——
 	SetHost(platform.Host)

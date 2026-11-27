@@ -826,7 +826,7 @@ func RunSetupWindow(req SetupRequest) (SetupOutcome, error) {
 	p := resolvePalette(req.Theme, plat.DarkMode())
 	activeTokens.Store(&p) // 装配前：主窗 goroutine 尚未启动，写活动快照无并发（同 newUI 规则）
 	applyPaper(resolvePaper(req.Theme, p.isDark()))
-	th := newTheme(plat.SystemFontCandidates())
+	th := newTheme(plat.SystemFontCandidates(), plat.SymbolFontCandidates())
 	th.Palette.Fg, th.Palette.Bg = p.fg, p.bg
 
 	snap := req.Mgr.Snapshot()

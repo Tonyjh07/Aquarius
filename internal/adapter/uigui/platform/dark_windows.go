@@ -69,3 +69,12 @@ func (p *Plat) SystemFontCandidates() []string {
 		`C:\Windows\Fonts\simsun.ttc`,
 	}
 }
+
+// SymbolFontCandidates 几何符号回退面：雅黑、黑体、宋体与 Segoe UI 都不含 ▸（U+25B8）
+// 与 ▾（U+25BE），折叠指示会渲染成方框。Segoe UI Symbol 有这两个字形，排在集合末尾
+// 只补缺字，不抢正常文字。
+func (p *Plat) SymbolFontCandidates() []string {
+	return []string{
+		`C:\Windows\Fonts\seguisym.ttf`,
+	}
+}

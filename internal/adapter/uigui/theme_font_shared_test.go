@@ -21,8 +21,8 @@ import (
 func TestSharedFacesSameCollection(t *testing.T) {
 	t.Parallel()
 	cands := newPlatform(Options{}, true).SystemFontCandidates()
-	a := sharedFaces(cands)
-	b := sharedFaces(cands)
+	a := sharedFaces(cands, nil)
+	b := sharedFaces(cands, nil)
 	if len(a) == 0 || len(b) == 0 {
 		t.Fatal("字体集合为空（解析与回落都失败）")
 	}
@@ -39,7 +39,7 @@ func TestSharedFacesSameCollection(t *testing.T) {
 func TestSharedFacesCapacityClamped(t *testing.T) {
 	t.Parallel()
 	cands := newPlatform(Options{}, true).SystemFontCandidates()
-	faces := sharedFaces(cands)
+	faces := sharedFaces(cands, nil)
 	if cap(faces) != len(faces) {
 		t.Fatalf("共享集合容量未封住：len=%d cap=%d（调用方 append 会改写共享底层数组）",
 			len(faces), cap(faces))
@@ -65,8 +65,8 @@ func TestSharedFacesCapacityClamped(t *testing.T) {
 // 「两份解析结果的地址一定不同」。
 func TestSharedFacesDistinctCandidates(t *testing.T) {
 	t.Parallel()
-	sharedFaces([]string{"/nonexistent/a.ttf"})
-	sharedFaces([]string{"/nonexistent/b.ttf"})
+	sharedFaces([]string{"/nonexistent/a.ttf"}, nil)
+	sharedFaces([]string{"/nonexistent/b.ttf"}, nil)
 
 	faceCache.mu.Lock()
 	n := len(faceCache.byKey)
@@ -77,7 +77,7 @@ func TestSharedFacesDistinctCandidates(t *testing.T) {
 
 	// 同一组候选（顺序一致）再取一次，仍应命中同一档、不分出新档。
 	before := n
-	a := sharedFaces([]string{"/nonexistent/a.ttf"})
+	a := sharedFaces([]string{"/nonexistent/a.ttf"}, nil)
 	if a == nil || len(a) == 0 {
 		t.Fatal("候选缺失时应回落 gofont，不该为空")
 	}
@@ -92,17 +92,40 @@ func TestSharedFacesDistinctCandidates(t *testing.T) {
 // TestNewThemeSharesFaces 两个主题必须共用一份字体集合（生产每窗各建主题的真实路径）。
 func TestNewThemeSharesFaces(t *testing.T) {
 	t.Parallel()
-	cands := newPlatform(Options{}, true).SystemFontCandidates()
-	th1 := newTheme(cands)
-	th2 := newTheme(cands)
+	plat := newPlatform(Options{}, true)
+	cands := plat.SystemFontCandidates()
+	syms := plat.SymbolFontCandidates()
+	th1 := newTheme(cands, syms)
+	th2 := newTheme(cands, syms)
 	if th1.Shaper == nil || th2.Shaper == nil {
 		t.Fatal("主题缺 Shaper")
 	}
 	if th1.Shaper == th2.Shaper {
 		t.Fatal("两个主题共用了同一个 Shaper：每窗应各建一份（首次排版的数据按 Shaper 存）")
 	}
-	faces := sharedFaces(cands)
+	faces := sharedFaces(cands, syms)
 	if cap(faces) != len(faces) {
 		t.Fatalf("newTheme 之后共享集合的容量被改动了：len=%d cap=%d", len(faces), cap(faces))
+	}
+}
+
+// TestSymbolFacesAppended 符号回退面要全部追加到集合末尾：折叠箭头这类几何符号在
+// 正文 CJK 字体里没有字形，只能靠末尾的符号面兜住。
+func TestSymbolFacesAppended(t *testing.T) {
+	t.Parallel()
+	syms := newPlatform(Options{}, true).SymbolFontCandidates()
+	loaded := loadSymbolFaces(syms)
+	if len(loaded) == 0 {
+		t.Skip("本机没有可用的符号字体")
+	}
+	base := sharedFaces([]string{"/nonexistent/base.ttf"}, nil)
+	with := sharedFaces([]string{"/nonexistent/base.ttf"}, syms)
+	if len(with) != len(base)+len(loaded) {
+		t.Fatalf("符号面没追加上：base=%d 符号=%d 合计=%d", len(base), len(loaded), len(with))
+	}
+	// 缓存键含符号表：换一份符号表不能拿到上一份的结果。
+	other := sharedFaces([]string{"/nonexistent/base.ttf"}, nil)
+	if len(other) == len(with) {
+		t.Fatalf("不同符号表共用了一条缓存（都是 %d 份面）", len(other))
 	}
 }
