@@ -11,6 +11,7 @@ var enGuiSettingsTexts = map[string]string{
 	"ui.settings.page.chat":       "Chat",
 	"ui.settings.page.prompt":     "System prompt",
 	"ui.settings.page.tools":      "Tools & MCP",
+	"ui.settings.page.plugins":    "Plugins",
 	"ui.settings.page.delegate":   "External agents",
 	"ui.settings.page.skills":     "Skills",
 	"ui.settings.page.characters": "Characters",
@@ -233,4 +234,11 @@ var enGuiSettingsTexts = map[string]string{
 	"ui.settings.tool.revoke_trust":      "Revoke trust",
 	"ui.settings.tool.grant_prefix":      "Grant {cap}",
 	"ui.settings.tool.revoke_prefix":     "Revoke {cap}",
+	// ── Plugins page (D347): the row table comes from plugins; the host only
+	// renders controls and hands values back.
+	"ui.page.plugins.note":    "These parameters belong to the plugins. Each section saves on its own, so only the rows you see are submitted.",
+	"ui.page.plugins.unwired": "Plugin settings are not wired up; there is nothing to configure.",
+	"ui.page.plugins.empty":   "No enabled plugin exposes adjustable parameters.",
+	"ui.page.plugins.save":    "Save",
+	"ui.page.plugins.saved":   "Saved",
 }

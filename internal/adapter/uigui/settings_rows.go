@@ -228,6 +228,14 @@ const (
 	rowDecideHuman     // decide 放行 needs_human 上界（空 = 不改）
 	rowDecideDeny      // decide「明显该拒」开关
 	rowDecideDenyAbove // decide 拒绝 needs_human 下界（空 = 不改）
+	// 插件页（D347）：字段由插件声明，宿主只按行表渲染（见 settings_page_plugins.go）。
+	rowPlugNote   // 页级说明（说明本页规则；text 忽略）
+	rowPlugEmpty  // 没有插件贡献参数（text 忽略）
+	rowPlugGroup  // 分区标题（text = 插件声明的标题；prov = 分区下标）
+	rowPlugDesc   // 分区说明（text = 插件文案）
+	rowPlugRow    // 一行参数（field = 平铺行下标）
+	rowPlugSave   // 分区保存按钮（prov = 分区下标）
+	rowPlugStatus // 保存反馈状态行
 )
 
 // provModelCandMax 候选 chip 的上限（D153；欢迎窗「获取模型」仍用 provModelCandMax）：服务端可能列出

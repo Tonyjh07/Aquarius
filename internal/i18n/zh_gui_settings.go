@@ -12,6 +12,7 @@ var zhGuiSettingsTexts = map[string]string{
 	"ui.settings.page.chat":       "对话",
 	"ui.settings.page.prompt":     "系统提示词",
 	"ui.settings.page.tools":      "工具与 MCP",
+	"ui.settings.page.plugins":    "插件",
 	"ui.settings.page.delegate":   "外部代理",
 	"ui.settings.page.skills":     "技能",
 	"ui.settings.page.characters": "角色",
@@ -234,4 +235,10 @@ var zhGuiSettingsTexts = map[string]string{
 	"ui.settings.tool.revoke_trust":      "撤销信任",
 	"ui.settings.tool.grant_prefix":      "预授权 {cap}",
 	"ui.settings.tool.revoke_prefix":     "撤销 {cap}",
+	// ── 插件页（D347）：参数表由插件声明，宿主只负责渲染与回传。
+	"ui.page.plugins.note":    "这些参数由插件自己维护：改完点分区下面的「保存」，只会提交这一段。",
+	"ui.page.plugins.unwired": "插件设置没有接线，暂时没有可调参数。",
+	"ui.page.plugins.empty":   "当前没有已启用的插件提供可调参数。",
+	"ui.page.plugins.save":    "保存",
+	"ui.page.plugins.saved":   "已保存",
 }

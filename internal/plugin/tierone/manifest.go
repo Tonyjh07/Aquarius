@@ -21,12 +21,13 @@ const (
 	PortSecrets    = "secrets"
 	PortCommand    = "command"
 	PortView       = "view"
+	PortSettings   = "settings"
 )
 
 // providesPorts 词表全集，顺序即 /plugin 的展示序。
 var providesPorts = []string{
 	PortLLM, PortTool, PortMemory, PortIngest, PortOutput,
-	PortTranscribe, PortSynthesize, PortSecrets, PortCommand, PortView,
+	PortTranscribe, PortSynthesize, PortSecrets, PortCommand, PortView, PortSettings,
 }
 
 // validateManifest 启动期的清单校验（§7 第 2 条）。只查**声明**，不碰实例——
@@ -110,6 +111,9 @@ func implements(inst v1.Instance, port string) bool {
 		return ok
 	case PortView:
 		_, ok := inst.(v1.ViewProvider)
+		return ok
+	case PortSettings:
+		_, ok := inst.(v1.SettingsSectionProvider)
 		return ok
 	}
 	return false

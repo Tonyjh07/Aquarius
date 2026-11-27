@@ -271,6 +271,11 @@ type settingsForm struct {
 	logStatus  string
 	logErr     bool
 
+	// 插件页（D347）：参数表由插件给，快照在开窗与每次保存成功后现取（见
+	// settings_page_plugins.go）。nil = 本页只显示一行「未接线」。
+	plugins port.PluginSettings
+	plug    pluginSettingsState
+
 	snap     SettingsSnapshot // 开窗快照（保存 diff 基准 + 变更提示）
 	profiles ProfilesSnapshot // profile 区数据面（动作后刷新，D110③）
 	status   string           // 保存反馈（本 goroutine 独占；"" = 默认提示）
@@ -369,6 +374,10 @@ func newSettingsForm(u *UI) *settingsForm {
 	f.syncSkillsSnapshot()     // 开窗即取一次（帧首同款；动作后再取）
 	f.skillSource.SingleLine = true
 	f.skillDirInput.SingleLine = true
+	// 插件页（D347）：开窗现取一次分区表；未接线时页面显示一行说明。
+	f.plugins = u.opts.PluginSettings
+	f.plug.wired = f.plugins != nil
+	f.reloadPluginSettings()
 	if u.opts.Characters != nil { // §5.17：角色卡清单（nil = 只读占位）
 		f.charWired = true
 		f.charactersSnap = u.opts.Characters() // 开窗即取一次（进入本页时帧首同款再取）

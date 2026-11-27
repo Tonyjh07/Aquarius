@@ -162,6 +162,8 @@ func (w *wiring) newUI(stdin io.Reader, stdout io.Writer) {
 		ui := uigui.New(uigui.Options{
 			Log:   w.logFrom,                    // D288：托盘 / 快捷键 / 图标 / 首帧的诊断走运行日志（不再直写 stdout）
 			Views: pluginViews{reg: w.plugins1}, // D346：/plugin view 打开的面板（拉模式取帧）
+			// D347：插件自己声明的参数（设置窗「插件」页的分区表与提交）。
+			PluginSettings: pluginSettings{reg: w.plugins1},
 			Status: func() uigui.Status {
 				if agent := w.agentPtr.Load(); agent != nil {
 					st := uigui.Status{

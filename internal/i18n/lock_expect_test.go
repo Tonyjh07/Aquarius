@@ -56,6 +56,10 @@ var testDataLiterals = map[string][]string{
 	"cmd/aquarius/pluginview_test.go":           {"帧内容", "记忆树"},
 	"internal/adapter/plugingo/view_test.go":    {"记忆树", "甲", "开始"},
 	"internal/adapter/uigui/pluginview_test.go": {"甲", "用户输入"},
+	// D347 设置页：分区标题、说明与用户提交的正文都是**被测对象**——它们由插件声明或
+	// 由测试当作用户输入写进去，不随宿主界面语言变（插件自己带 zh/en 两套）。
+	"internal/adapter/plugingo/settings_test.go":           {"回忆", "token 数"},
+	"internal/adapter/uigui/settings_page_plugins_test.go": {"改过的正文"},
 	"internal/adapter/uicommon/plainview_test.go": {
 		"次数", "部署脚本放在哪", "层", "孤立",
 		"  - 甲\n  - 乙",
