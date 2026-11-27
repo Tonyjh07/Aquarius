@@ -14,7 +14,7 @@ import (
 // v1 之外还受 layerPluginAPI 依赖层约束）由 internal/arch 的 arch 测试守着。
 func TestIndependence(t *testing.T) {
 	// 标准库前缀白名单（go.mod 无 require，理论上不可能出现三方，这里再锁一道）。
-	allowPrefix := []string{"time", "strings", "errors", "os", "regexp", "testing", "path/filepath", "fmt", "context", "io", "encoding/json", "sort", "slices"}
+	allowPrefix := []string{"time", "strings", "errors", "os", "regexp", "testing", "path/filepath", "fmt", "context", "io", "encoding/json", "sort", "slices", "reflect"}
 	importRe := regexp.MustCompile(`(?m)^\s*"([a-zA-Z0-9_./\-]+)"\s*$`)
 	return1 := regexp.MustCompile(`(?m)^\s*(?:\w[\w ]*,?\s*)?"([a-zA-Z0-9_./\-]+)"\s*$`)
 	files, err := filepath.Glob("*.go")

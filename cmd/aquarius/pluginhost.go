@@ -87,6 +87,8 @@ func (w *wiring) pluginHostFor(confirmer port.Confirmer) func(v1.Manifest) v1.Ho
 			WorkDir:   work,
 			Locale:    locale,
 			Confirmer: confirmer,
+			// D352：环境快照按需现取（方法值绑定 w，读的是当时的 w.ui 与主题）。
+			Environ: w.uiEnvironment,
 		}
 		// 迁移素材只给记忆插件（D337 决策 5）：它是内置记忆的交接面，别的插件没有理由读它。
 		// 判据用清单快照而不是反查注册表：此刻注册表正锁在 enable 里（见 Options.NewHost）。

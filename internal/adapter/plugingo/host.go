@@ -32,6 +32,9 @@ type HostOptions struct {
 	Notice func(level, text string, kv ...any)
 	// LegacyMemory 非 nil 时返回的 Host 额外实现 LegacyMemoryHost（内置记忆快照）。
 	LegacyMemory func(ctx context.Context) (v1.LegacyMemorySnapshot, error)
+	// Environ 非 nil 时返回的 Host 额外实现 UIEnviron（D352）：界面环境只读快照。
+	// 存函数而不是快照：深浅色、DPI 都会变，插件每次问都要拿到当时的值。
+	Environ func() v1.UIEnvironment
 }
 
 // Host v1 Host 的实现：八项内核服务的转发壳。
@@ -42,13 +45,13 @@ type Host struct {
 // NewHost 按 HostOptions 造 Host。返回的是 v1.Host 而不是 *Host：需要时换成带可选扩展
 // 的包装类型，插件对句柄做 type assertion 才有意义。
 func NewHost(opts HostOptions) v1.Host {
-	if opts.Notice == nil && opts.LegacyMemory == nil {
+	if opts.Notice == nil && opts.LegacyMemory == nil && opts.Environ == nil {
 		return &Host{opts: opts}
 	}
 	return &hostExt{Host: Host{opts: opts}}
 }
 
-// hostExt 带可选扩展的 Host。两个扩展都是「实现即被探测到」，不需要开关位。
+// hostExt 带可选扩展的 Host。三个扩展都是「实现即被探测到」，不需要开关位。
 type hostExt struct {
 	Host
 }
@@ -57,6 +60,7 @@ var (
 	_ v1.Host             = (*Host)(nil)
 	_ v1.NoticePoster     = (*hostExt)(nil)
 	_ v1.LegacyMemoryHost = (*hostExt)(nil)
+	_ v1.UIEnviron        = (*hostExt)(nil)
 )
 
 // Logger 插件日志出口。上下文段由宿主填成 plugin:<name>，插件改不了——日志按来源
@@ -124,6 +128,15 @@ func (x *hostExt) LegacyMemory(ctx context.Context) (v1.LegacyMemorySnapshot, er
 		return v1.LegacyMemorySnapshot{}, errNoService("legacy-memory")
 	}
 	return x.opts.LegacyMemory(ctx)
+}
+
+// Environ 界面环境快照（可选扩展，D352）。没接线时返回零快照而不是报错：契约里零值
+// 就是「什么都不知道」，插件按自己的缺省退化——为一个可选信息面让调用点写错误分支不值得。
+func (x *hostExt) Environ() v1.UIEnvironment {
+	if x.opts.Environ == nil {
+		return v1.UIEnvironment{}
+	}
+	return x.opts.Environ()
 }
 
 // ---------- Logger ----------

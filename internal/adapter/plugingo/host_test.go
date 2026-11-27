@@ -39,6 +39,9 @@ func TestOptionalExtensionsAreDiscoverable(t *testing.T) {
 	if _, ok := plain.(v1.LegacyMemoryHost); ok {
 		t.Fatal("没给 LegacyMemory 时不该被断言到 LegacyMemoryHost")
 	}
+	if _, ok := plain.(v1.UIEnviron); ok {
+		t.Fatal("没给 Environ 时不该被断言到 UIEnviron")
+	}
 	rich := NewHost(HostOptions{
 		Plugin: "p",
 		Notice: func(string, string, ...any) {},
@@ -56,6 +59,29 @@ func TestOptionalExtensionsAreDiscoverable(t *testing.T) {
 	snap, err := lm.LegacyMemory(context.Background())
 	if err != nil || snap.Global != "g" {
 		t.Fatalf("快照没转发：%+v %v", snap, err)
+	}
+}
+
+// TestUIEnvironIsLive 环境快照是「现问」而不是「造 Host 时冻结」：深浅色会在运行中变，
+// 存值的话插件永远拿到第一眼那个。
+func TestUIEnvironIsLive(t *testing.T) {
+	dark := false
+	h := NewHost(HostOptions{
+		Plugin: "p",
+		Environ: func() v1.UIEnvironment {
+			return v1.UIEnvironment{Frontend: v1.FrontendGUI, Dark: dark, Scale: 1.5}
+		},
+	})
+	env, ok := h.(v1.UIEnviron)
+	if !ok {
+		t.Fatal("给了 Environ 就该命中 UIEnviron")
+	}
+	if got := env.Environ(); got.Dark || got.Scale != 1.5 || got.Frontend != v1.FrontendGUI {
+		t.Fatalf("快照没转发：%+v", got)
+	}
+	dark = true // 模拟设置窗切深色
+	if !env.Environ().Dark {
+		t.Fatal("第二次调用没看到变化：存的是值不是函数")
 	}
 }
 
