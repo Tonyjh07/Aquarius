@@ -28,6 +28,14 @@ type UIViewInfo struct {
 	Plugin string // 插件名（打开时回传）
 	ID     string // 视图 ID（插件自己的命名空间）
 	Title  string // 标题（插件文案，不进内核 i18n）
+	// Window 窗口尺寸请求（dp；零值 = 宿主缺省）。只有图形界面有窗口，文本界面忽略。
+	Window UIWindow
+}
+
+// UIWindow 面板窗口的尺寸请求（dp）。宿主负责夹取与兑现，插件只说想要多大。
+type UIWindow struct {
+	Width, Height       int
+	MinWidth, MinHeight int
 }
 
 // UINode 组件树的一个节点。各字段按 Kind 取用，其余留零值。

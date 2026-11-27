@@ -28,6 +28,7 @@ import (
 	"gioui.org/widget/material"
 
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
+	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
 // winKind 功能窗种类（§15.7 窗口清单；设置窗数据面随设置步实现）。
@@ -41,6 +42,26 @@ const (
 	winImage // 图片预览（D207：转写区缩略图点击 → 看原图）
 	winView  // 插件面板（D346：/plugin view 打开，组件树次窗）
 )
+
+// winKey 窗口身份。内置窗只有 kind；插件面板按 (plugin, view) 各开一个窗——同一插件的
+// 两个视图并存，同一视图重开 = 聚焦（D351）。
+//
+// 键不是封闭枚举，这是给「插件自持窗口」留的口：任何持有 app.Window 的实现都能被
+// `winHost.spawn` 塞进来，收编/关窗/主题广播（winHandle）不用改。但那是**不承诺**的
+// 扩展方向——插件侧没有 gio 类型，也不打算有。
+type winKey struct {
+	kind   winKind
+	plugin string // 仅 winView
+	view   string // 仅 winView
+}
+
+// keyOf 内置窗的身份。
+func keyOf(k winKind) winKey { return winKey{kind: k} }
+
+// winGeom 窗口尺寸（dp）。
+type winGeom struct {
+	width, height, minW, minH int
+}
 
 // title 窗标题（app.Title）。
 func (k winKind) title() string {
@@ -84,28 +105,29 @@ func (k winKind) placeholder() string {
 }
 
 // geometry 常规窗尺寸（dp；宽/高/最小宽/最小高——与悬浮球几何无关）。
-func (k winKind) geometry() (width, height, minW, minH int) {
+func (k winKind) geometry() winGeom {
 	switch k {
 	case winSettings:
 		// S4d/D142：左侧 140dp 导航栏 + 右页内容 + 全局底栏（分页后需要更宽的内容区）。
-		return 720, 560, 620, 420
+		return winGeom{720, 560, 620, 420}
 	case winHistory:
 		// §5.4：左栏 200dp + 右栏关系图 + 状态栏；min 620×360。
-		return 720, 560, 620, 360
+		return winGeom{720, 560, 620, 360}
 	case winRaw:
-		return 560, 520, 420, 360
+		return winGeom{560, 520, 420, 360}
 	case winView:
 		// 面板要放得下表格与表单：比只读原文宽一档，最小尺寸留出「标题 + 两行 + 按钮」。
-		return 640, 560, 480, 380
+		// 插件可以在 ViewSpec.Window 里改，见 u.windowShape。
+		return winGeom{640, 560, 480, 380}
 	case winImage:
 		// 预览要够大才看得出细节；最小尺寸留出「图 + 标题 + 提示」三行。
-		return 900, 700, 480, 360
+		return winGeom{900, 700, 480, 360}
 	case winWelcome:
 		// D153：标题 + 副标题 + 编号圆徽步骤条 + 四行分组卡 + 候选 chip + 内联连通结果 +
 		// 页脚三钮。模拟稿比例接近 1:1，560×520 会把卡片压到只剩两行，故放宽到 660×640。
-		return 660, 640, 560, 520
+		return winGeom{660, 640, 560, 520}
 	default:
-		return 560, 440, 460, 320
+		return winGeom{560, 440, 460, 320}
 	}
 }
 
@@ -129,6 +151,9 @@ type winHandle struct {
 	// closePending 关闭请求早于 HWND 就绪时置位，attach 到件补投（Dekker 两步：
 	// 请求先置位后读句柄、挂接先存句柄后读置位——任一次序至少投出一次关闭）。
 	closePending atomic.Bool
+	// reload「再打开一次」的重取请求（D351）：面板窗每帧 Swap 一次，真 = 重新问插件
+	// 要一帧。其他窗不看它——重开即聚焦，没有要刷新的东西。
+	reload atomic.Bool
 }
 
 // doneClosed 次窗循环是否已退出。
@@ -184,52 +209,67 @@ func (h *winHandle) focus() {
 
 // winHost 功能窗注册表（§15.7 生命周期）：单实例防重开 + 退出收编。
 // spawn 可注入（headless 测试）；锁内只做登记，跨线程投递（聚焦/关闭）放锁外。
+//
+// 单实例按 key 算：内置窗每 kind 一个；插件面板每个 (plugin, view) 一个——两个视图
+// 可以同时开着，同一个视图重开只是聚焦。
 type winHost struct {
 	mu    sync.Mutex
-	live  map[winKind]*winHandle
-	spawn func(winKind) *winHandle // nil = 无开窗能力（headless）：openWin no-op
+	live  map[winKey]*winHandle
+	spawn func(winKey) *winHandle // nil = 无开窗能力（headless）：openWin no-op
 }
 
 // newWinHost 构造注册表（spawn 见字段注释）。
-func newWinHost(spawn func(winKind) *winHandle) *winHost {
-	return &winHost{live: make(map[winKind]*winHandle), spawn: spawn}
+func newWinHost(spawn func(winKey) *winHandle) *winHost {
+	return &winHost{live: make(map[winKey]*winHandle), spawn: spawn}
 }
 
-// openWin 打开功能窗：已开 = 尽力聚焦（不开第二实例）；上一实例已退出但
+// openWin 打开内置功能窗。
+func (h *winHost) openWin(k winKind) { h.open(keyOf(k)) }
+
+// openView 打开一个插件面板窗（同一 (plugin, view) 已开 = 聚焦并重取一帧）。
+func (h *winHost) openView(plugin, view string) {
+	h.open(winKey{kind: winView, plugin: plugin, view: view})
+}
+
+// open 打开一个窗口：已开 = 尽力聚焦（不开第二实例）；上一实例已退出但
 // watcher 未及摘除时直接补开。用户关窗（X/WM_CLOSE）经 watcher 摘除登记。
-func (h *winHost) openWin(k winKind) {
+func (h *winHost) open(key winKey) {
 	h.mu.Lock()
-	if cur, ok := h.live[k]; ok {
+	if cur, ok := h.live[key]; ok {
 		if !cur.doneClosed() {
 			h.mu.Unlock()
+			cur.reload.Store(true) // 再打开一次 = 重新问插件要一帧（面板窗用，其他窗忽略）
 			cur.focus()
 			return
 		}
-		delete(h.live, k) // 循环已退出、摘除未及：本条视同已关
+		delete(h.live, key) // 循环已退出、摘除未及：本条视同已关
 	}
 	if h.spawn == nil {
 		h.mu.Unlock()
 		return
 	}
-	hs := h.spawn(k)
-	h.live[k] = hs
+	hs := h.spawn(key)
+	h.live[key] = hs
 	h.mu.Unlock()
 	go func() { // 实例退出 → 摘除登记（身份校验：不误删后开的同类实例）
 		<-hs.done
 		h.mu.Lock()
-		if h.live[k] == hs {
-			delete(h.live, k)
+		if h.live[key] == hs {
+			delete(h.live, key)
 		}
 		h.mu.Unlock()
 	}()
 }
 
 // closeWin 关闭单窗；false = 本就未开。
-func (h *winHost) closeWin(k winKind) bool {
+func (h *winHost) closeWin(k winKind) bool { return h.close(keyOf(k)) }
+
+// close 关闭指定 key 的窗；false = 本就未开。
+func (h *winHost) close(key winKey) bool {
 	h.mu.Lock()
-	hs, ok := h.live[k]
+	hs, ok := h.live[key]
 	if ok {
-		delete(h.live, k)
+		delete(h.live, key)
 	}
 	h.mu.Unlock()
 	if ok {
@@ -238,11 +278,29 @@ func (h *winHost) closeWin(k winKind) bool {
 	return ok
 }
 
+// closeViewsOf 关掉某个插件的全部面板窗（停用插件时发），返回关掉的窗数。
+// 按插件关而不是按 key 关：那个插件可能同时开着几个视图。
+func (h *winHost) closeViewsOf(plugin string) int {
+	h.mu.Lock()
+	var hit []*winHandle
+	for k, hs := range h.live {
+		if k.kind == winView && k.plugin == plugin {
+			delete(h.live, k)
+			hit = append(hit, hs)
+		}
+	}
+	h.mu.Unlock()
+	for _, hs := range hit {
+		hs.requestClose()
+	}
+	return len(hit)
+}
+
 // closeAll 退出收编全部次窗（返回收编数；幂等）。
 func (h *winHost) closeAll() int {
 	h.mu.Lock()
 	live := h.live
-	h.live = make(map[winKind]*winHandle)
+	h.live = make(map[winKey]*winHandle)
 	h.mu.Unlock()
 	n := 0
 	for _, hs := range live {
@@ -252,19 +310,25 @@ func (h *winHost) closeAll() int {
 	return n
 }
 
-// isOpen 查询开窗状态（测试/菜单勾选规则）。
-func (h *winHost) isOpen(k winKind) bool {
+// isOpen 查询内置窗的开窗状态（测试/菜单勾选规则）。
+func (h *winHost) isOpen(k winKind) bool { return h.isOpenKey(keyOf(k)) }
+
+// isOpenKey 查询指定 key 的开窗状态。
+func (h *winHost) isOpenKey(key winKey) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	cur, ok := h.live[k]
+	cur, ok := h.live[key]
 	return ok && !cur.doneClosed()
 }
 
 // invalidateKind 对已开的 k 窗请求重绘（D99：rawView 原子槽更新后的重绘触发；
 // 未开/已退出 = no-op）。线程安全（锁内取句柄、锁外投递）。
-func (h *winHost) invalidateKind(k winKind) {
+func (h *winHost) invalidateKind(k winKind) { h.invalidateKey(keyOf(k)) }
+
+// invalidateKey 对指定 key 的已开窗请求重绘。
+func (h *winHost) invalidateKey(key winKey) {
 	h.mu.Lock()
-	cur, ok := h.live[k]
+	cur, ok := h.live[key]
 	h.mu.Unlock()
 	if ok && !cur.doneClosed() {
 		if inv := cur.invalidate.Load(); inv != nil {
@@ -292,20 +356,81 @@ func (h *winHost) propagatePalette(p *palette) {
 
 // spawnSecondary 起次窗（独立 goroutine + 独立 app.Window；不接主窗任何全局态，
 // §15.7 形态与并发模型）。返回的句柄由注册表持有。
-func (u *UI) spawnSecondary(k winKind) *winHandle {
+//
+// 标题与尺寸在这里一次算定并交给窗口 goroutine：帧内不再查插件声明表（Views() 每次
+// 调用都要问插件，帧内问一次就是每帧问一次）。
+func (u *UI) spawnSecondary(key winKey) *winHandle {
 	ctl := &winHandle{done: make(chan struct{}), plat: u.plat}
 	ctl.pal.Store(u.pal.Load()) // 初始主题快照（spawn 可能在托盘线程，原子读）
+	title, geom := u.windowShape(key)
 	w := new(app.Window)
-	go u.runSecondary(w, k, ctl)
+	go u.runSecondary(w, key, ctl, title, geom)
 	return ctl
+}
+
+// windowShape 一个窗口的标题与尺寸。内置窗取常量；面板窗在常量之上叠加插件声明
+// （ViewSpec.Window），夹取后兑现——插件只说想要多大，窗口是宿主的。
+func (u *UI) windowShape(key winKey) (string, winGeom) {
+	if key.kind != winView {
+		return key.kind.title(), key.kind.geometry()
+	}
+	title, g := i18n.T("ui.win.title.view"), winView.geometry()
+	if u.opts.Views == nil {
+		return title, g
+	}
+	for _, v := range u.opts.Views.Views() {
+		if v.Plugin != key.plugin || v.ID != key.view {
+			continue
+		}
+		if v.Title != "" {
+			title = v.Title // 一窗一视图，标题可以是插件文案（不必等帧内更新）
+		}
+		g = applyWinSpec(g, v.Window)
+		break
+	}
+	return title, g
+}
+
+// applyWinSpec 把插件声明的尺寸叠到缺省值上。零值 = 不动；越界夹进 [320,4096]，
+// 最小尺寸不超过最终尺寸——插件写错不该让窗口开成一个点或撑满整块屏。
+func applyWinSpec(g winGeom, s port.UIWindow) winGeom {
+	if s.Width > 0 {
+		g.width = clampDp(s.Width, 320, 4096)
+	}
+	if s.Height > 0 {
+		g.height = clampDp(s.Height, 320, 4096)
+	}
+	if s.MinWidth > 0 {
+		g.minW = clampDp(s.MinWidth, 240, g.width)
+	} else if g.minW > g.width {
+		g.minW = g.width
+	}
+	if s.MinHeight > 0 {
+		g.minH = clampDp(s.MinHeight, 200, g.height)
+	} else if g.minH > g.height {
+		g.minH = g.height
+	}
+	return g
+}
+
+// clampDp 夹取一个 dp 值。
+func clampDp(v, lo, hi int) int {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
 }
 
 // runSecondary 次窗事件循环（每窗一 goroutine、自持状态；不排空主窗 inbox——
 // 次窗与渲染状态机无共享可变态，跨窗只经注册表与回调，§15.7 并发模型）。
 // 关闭 = 真关闭：次窗不挂 WM_CLOSE 子类化，X/收编投递的 WM_CLOSE 走 Gio 默认
 // 销毁 → DestroyEvent → 退出。
-func (u *UI) runSecondary(w *app.Window, k winKind, ctl *winHandle) {
+func (u *UI) runSecondary(w *app.Window, key winKey, ctl *winHandle, title string, geom winGeom) {
 	defer close(ctl.done)
+	k := key.kind
 	runFn := w.Run
 	ctl.runFn.Store(&runFn) // 次窗自己的线程投递槽——主窗投递槽归平台层，不碰
 	inval := w.Invalidate
@@ -326,8 +451,9 @@ func (u *UI) runSecondary(w *app.Window, k winKind, ctl *winHandle) {
 	}
 	var vw *pluginViewState
 	if k == winView {
-		// D346：面板帧状态（仅本窗 goroutine 读写）；动作完成后请求本窗重绘。
-		vw = newPluginViewState(u, w.Invalidate)
+		// D346/D351：面板帧状态（仅本窗 goroutine 读写）；一窗钉住一个 (plugin, view)，
+		// 换视图 = 另一个窗。动作完成后请求本窗重绘。
+		vw = newPluginViewState(u, key.plugin, key.view, w.Invalidate)
 	}
 	var iview *imageViewState
 	if k == winImage {
@@ -344,11 +470,10 @@ func (u *UI) runSecondary(w *app.Window, k winKind, ctl *winHandle) {
 		welc = newUISideWelcome(u.opts.Welcome, ctl.requestClose)
 		welc.env.inval = w.Invalidate // 连通性测试异步结果回灌重绘
 	}
-	width, height, minW, minH := k.geometry()
 	w.Option(
-		app.Title(k.title()),
-		app.Size(unit.Dp(width), unit.Dp(height)),
-		app.MinSize(unit.Dp(minW), unit.Dp(minH)),
+		app.Title(title),
+		app.Size(unit.Dp(geom.width), unit.Dp(geom.height)),
+		app.MinSize(unit.Dp(geom.minW), unit.Dp(geom.minH)),
 		app.Decorated(true), // 常规装饰窗（D60：无边框形裁等主窗机制一律不接）
 	)
 	th := newTheme(u.plat.SystemFontCandidates(), u.plat.SymbolFontCandidates()) // 每窗独立主题实例（material：不同顶层窗应各自持有 Shaper）
@@ -370,6 +495,9 @@ func (u *UI) runSecondary(w *app.Window, k winKind, ctl *winHandle) {
 			} else if raw != nil {
 				rawViewFrame(gtx, th, u, raw) // 查看原文 = 只读编辑器（D99）
 			} else if vw != nil {
+				if ctl.reload.Swap(false) {
+					vw.reload() // 再打开一次：重新问插件要一帧（D351）
+				}
 				viewFrame(gtx, th, u, vw) // D346：插件面板 = 组件树（拉模式）
 			} else if iview != nil {
 				imgViewFrame(gtx, th, u, iview) // 图片预览 = 适配 + 缩放平移（D207）

@@ -849,11 +849,11 @@ func RunSetupWindow(req SetupRequest) (SetupOutcome, error) {
 	// in-app 宿主不给这个回调：那边语言只记录不热切（D278）。
 	f.env.retitle = func() { w.Option(app.Title(winWelcome.title())) }
 
-	width, height, minW, minH := winWelcome.geometry()
+	geom := winWelcome.geometry()
 	w.Option(
 		app.Title(winWelcome.title()),
-		app.Size(unit.Dp(width), unit.Dp(height)),
-		app.MinSize(unit.Dp(minW), unit.Dp(minH)),
+		app.Size(unit.Dp(geom.width), unit.Dp(geom.height)),
+		app.MinSize(unit.Dp(geom.minW), unit.Dp(geom.minH)),
 		app.Decorated(true), // 常规装饰窗（不接主窗形裁/ULW/置顶等机制，§15.7）
 	)
 	var ops op.Ops

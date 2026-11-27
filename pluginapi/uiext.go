@@ -83,10 +83,27 @@ type Action struct {
 }
 
 // ViewSpec 一个面板视图的声明：ID 与标题。标题是插件文案。
+//
+// Window 声明这一页要多大（dp）。零值 = 宿主缺省，宿主会夹到合理区间；文本界面没有
+// OS 窗口，忽略这些值。窗口是**宿主的**：插件只说尺寸，不拿到窗口句柄，也不见任何 GUI
+// 类型（§6 总原则）。
 // 兼容承诺：改字段会破坏面板注册与菜单展示。
 type ViewSpec struct {
-	ID    string
-	Title string
+	ID     string
+	Title  string
+	Window WindowSpec
+}
+
+// WindowSpec 面板窗口的尺寸请求（dp）。
+//
+// 只是请求：宿主把宽高夹进 [320,4096]、最小尺寸不超过声明尺寸，并且只在有 OS 窗口的
+// 前端生效。没有「置顶 / 无边框 / 位置 / 父子窗」这些字段——窗口形态由宿主统一，插件
+// 一旦能定制形态，用户就会遇到每个插件一张脸的窗口。
+type WindowSpec struct {
+	// Width/Height 初始尺寸；0 = 宿主缺省。
+	Width, Height int
+	// MinWidth/MinHeight 最小尺寸；0 = 宿主缺省。
+	MinWidth, MinHeight int
 }
 
 // ViewAction 用户的一次操作：点了哪个按钮（ActionID），或提交了哪些字段（Values）。

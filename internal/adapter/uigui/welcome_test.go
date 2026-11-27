@@ -859,9 +859,9 @@ func TestOpenWelcomeSpawnsWindow(t *testing.T) {
 	var mu sync.Mutex
 	var spawned []winKind
 	u := newHeadless(t, Options{Welcome: baseFake()})
-	u.wins.spawn = func(k winKind) *winHandle {
+	u.wins.spawn = func(k winKey) *winHandle {
 		mu.Lock()
-		spawned = append(spawned, k)
+		spawned = append(spawned, k.kind)
 		mu.Unlock()
 		return &winHandle{done: make(chan struct{})}
 	}
@@ -930,9 +930,9 @@ func TestTutorialCommandNamesLocked(t *testing.T) {
 
 // TestWelcomeGeometry D153：欢迎窗几何（标题 + 副标题 + 圆徽步骤条 + 四行卡 + 页脚）。
 func TestWelcomeGeometry(t *testing.T) {
-	w, h, minW, minH := winWelcome.geometry()
-	if w != 660 || h != 640 || minW != 560 || minH != 520 {
-		t.Fatalf("几何 = (%d,%d,%d,%d)", w, h, minW, minH)
+	g := winWelcome.geometry()
+	if g.width != 660 || g.height != 640 || g.minW != 560 || g.minH != 520 {
+		t.Fatalf("几何 = (%d,%d,%d,%d)", g.width, g.height, g.minW, g.minH)
 	}
 	if winWelcome.title() != i18n.T("ui.win.title.welcome") {
 		t.Fatalf("标题 = %q", winWelcome.title())

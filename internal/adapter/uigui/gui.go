@@ -451,9 +451,6 @@ type UI struct {
 	// winImage 次窗帧内 Load——同 rawView 规则，跨线程只经原子快照；窗单实例，
 	// 已开 = 聚焦 + 原地换图。
 	imageView atomic.Pointer[imageContent]
-	// viewTarget 插件面板窗的目标原子槽（D346）：事件处理处 Store，面板窗帧内 Load。
-	// 同 rawView 规则；窗单实例，再开另一个面板 = 原地换目标。
-	viewTarget atomic.Pointer[viewTarget]
 	// nodeAction 图侧菜单动作槽（D132）：shell 线程菜单分发 Store，历史窗帧首 Swap
 	// 排空——复制 ID 要在 Gio 帧内落剪贴板、开遮罩/开小卡要碰图状态与帧内文本，都不能在分发处直连。
 	nodeAction atomic.Pointer[nodeAction]

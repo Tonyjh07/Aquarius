@@ -377,11 +377,11 @@ func TestSettingsRowGeometryTracksDensity(t *testing.T) {
 // 140dp 导航栏之外仍留 ≈552dp 页内容区（改前 = 532dp，不得倒退）。
 func TestSettingsWindowGeometry(t *testing.T) {
 	t.Parallel()
-	w, h, minW, minH := winSettings.geometry()
-	if w != 720 || h != 560 || minW != 620 || minH != 420 {
-		t.Fatalf("几何 = (%d,%d,%d,%d), want (720,560,620,420)", w, h, minW, minH)
+	g := winSettings.geometry()
+	if g.width != 720 || g.height != 560 || g.minW != 620 || g.minH != 420 {
+		t.Fatalf("几何 = (%d,%d,%d,%d), want (720,560,620,420)", g.width, g.height, g.minW, g.minH)
 	}
-	if got := w - int(navColumnDp); got < 532 {
+	if got := g.width - int(navColumnDp); got < 532 {
 		t.Errorf("页内容区宽 = %d, want ≥532（不低于分页前）", got)
 	}
 }

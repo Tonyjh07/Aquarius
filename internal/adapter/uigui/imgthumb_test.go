@@ -133,8 +133,8 @@ func TestOpenImageOpensPreviewWindow(t *testing.T) {
 	u := newFrameUI()
 	var spawned []winKind
 	var last *winHandle
-	u.wins = newWinHost(func(k winKind) *winHandle {
-		spawned = append(spawned, k)
+	u.wins = newWinHost(func(k winKey) *winHandle {
+		spawned = append(spawned, k.kind)
 		last = &winHandle{done: make(chan struct{})}
 		return last
 	})
@@ -430,8 +430,8 @@ func TestImageClickOpensPreview(t *testing.T) {
 	t.Parallel()
 	u := frameUIWithInbox()
 	var spawned []winKind
-	u.wins = newWinHost(func(k winKind) *winHandle {
-		spawned = append(spawned, k)
+	u.wins = newWinHost(func(k winKey) *winHandle {
+		spawned = append(spawned, k.kind)
 		return &winHandle{done: make(chan struct{})}
 	})
 	u.m.blocks = []block{

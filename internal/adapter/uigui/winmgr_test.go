@@ -30,9 +30,9 @@ func TestWinHostSingleInstance(t *testing.T) {
 	t.Parallel()
 	var mu sync.Mutex
 	var spawned []winKind
-	h := newWinHost(func(k winKind) *winHandle {
+	h := newWinHost(func(k winKey) *winHandle {
 		mu.Lock()
-		spawned = append(spawned, k)
+		spawned = append(spawned, k.kind)
 		mu.Unlock()
 		return &winHandle{done: make(chan struct{})}
 	})
@@ -58,12 +58,12 @@ func TestWinHostSingleInstance(t *testing.T) {
 // = no-op（不 panic）。
 func TestWinHostInvalidateKind(t *testing.T) {
 	t.Parallel()
-	h := newWinHost(func(winKind) *winHandle { return &winHandle{done: make(chan struct{})} })
+	h := newWinHost(func(winKey) *winHandle { return &winHandle{done: make(chan struct{})} })
 	h.invalidateKind(winRaw) // 未开：no-op
 	h.openWin(winRaw)
 	h.invalidateKind(winHistory) // 其它 kind 未开：no-op
 	h.mu.Lock()
-	cur := h.live[winRaw]
+	cur := h.live[keyOf(winRaw)]
 	h.mu.Unlock()
 	called := make(chan struct{}, 1)
 	inv := func() { called <- struct{}{} }
@@ -83,7 +83,7 @@ func TestWinHostReopenAfterClose(t *testing.T) {
 	var mu sync.Mutex
 	var spawns int
 	var handles []*winHandle
-	h := newWinHost(func(k winKind) *winHandle {
+	h := newWinHost(func(k winKey) *winHandle {
 		mu.Lock()
 		spawns++
 		hd := &winHandle{done: make(chan struct{})}
@@ -114,7 +114,7 @@ func TestWinHostCloseAll(t *testing.T) {
 	t.Parallel()
 	var mu sync.Mutex
 	var handles []*winHandle
-	h := newWinHost(func(k winKind) *winHandle {
+	h := newWinHost(func(k winKey) *winHandle {
 		mu.Lock()
 		hd := &winHandle{done: make(chan struct{})}
 		handles = append(handles, hd)
@@ -148,7 +148,7 @@ func TestWinHostCloseAll(t *testing.T) {
 func TestWinHostConcurrentOpen(t *testing.T) {
 	t.Parallel()
 	var spawns atomic.Int32
-	h := newWinHost(func(k winKind) *winHandle {
+	h := newWinHost(func(k winKey) *winHandle {
 		spawns.Add(1)
 		return &winHandle{done: make(chan struct{})}
 	})
@@ -185,7 +185,7 @@ func TestWinHostPropagatePalette(t *testing.T) {
 	t.Parallel()
 	var mu sync.Mutex
 	var handles []*winHandle
-	h := newWinHost(func(k winKind) *winHandle {
+	h := newWinHost(func(k winKey) *winHandle {
 		mu.Lock()
 		hd := &winHandle{done: make(chan struct{})}
 		handles = append(handles, hd)

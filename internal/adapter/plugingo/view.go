@@ -31,7 +31,13 @@ func (v *Views) Views() []port.UIViewInfo {
 	specs := v.p.Views()
 	out := make([]port.UIViewInfo, 0, len(specs))
 	for _, s := range specs {
-		out = append(out, port.UIViewInfo{Plugin: v.name, ID: s.ID, Title: s.Title})
+		out = append(out, port.UIViewInfo{
+			Plugin: v.name, ID: s.ID, Title: s.Title,
+			Window: port.UIWindow{
+				Width: s.Window.Width, Height: s.Window.Height,
+				MinWidth: s.Window.MinWidth, MinHeight: s.Window.MinHeight,
+			},
+		})
 	}
 	return out
 }

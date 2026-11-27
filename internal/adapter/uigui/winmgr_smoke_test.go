@@ -25,8 +25,8 @@ func TestSecondaryWindowSmoke(t *testing.T) {
 	u.wins.openWin(winHistory)
 	u.wins.openWin(winSettings)
 	u.wins.mu.Lock()
-	hd := u.wins.live[winHistory]
-	hs := u.wins.live[winSettings]
+	hd := u.wins.live[keyOf(winHistory)]
+	hs := u.wins.live[keyOf(winSettings)]
 	u.wins.mu.Unlock()
 	if hd == nil || hs == nil {
 		t.Fatal("开窗后登记缺失")

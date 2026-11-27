@@ -26,13 +26,6 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// viewTarget 本窗当前要显示的东西（原子槽内容：分发处 Store → 帧内 Load）。
-type viewTarget struct {
-	plugin string
-	viewID string
-	title  string // 视图标题（插件文案）；窗标题固定，标题行显示它
-}
-
 // viewFieldState 一个表单字段的控件状态（按字段 Key 索引，切视图时整体丢弃）。
 type viewFieldState struct {
 	ed widget.Editor
@@ -46,11 +39,18 @@ type viewFieldState struct {
 }
 
 // pluginViewState 面板次窗的自持帧状态（runSecondary 创建、仅该窗 goroutine 读写）。
+//
+// 一个窗钉住一个 (plugin, view)（D351）：换视图 = 另开一个窗，所以这里没有「目标切换」
+// 这回事，也就不需要跨线程的原子目标槽。
 type pluginViewState struct {
 	u      *UI // 动作要回源（Act），构造时绑
-	target *viewTarget
+	plugin string
+	viewID string
+	title  string // 视图标题（插件文案）；窗标题与标题行都用它
+
 	node   port.UINode
 	err    error
+	loaded bool // 首帧只取一次；之后由 reload/动作更新
 
 	list   widget.List
 	fields map[string]*viewFieldState
@@ -58,80 +58,74 @@ type pluginViewState struct {
 	inval  func()
 }
 
-// newPluginViewState 构造面板窗帧状态；inval 用来在动作完成后请求重绘。
-func newPluginViewState(u *UI, inval func()) *pluginViewState {
-	return &pluginViewState{
+// newPluginViewState 构造面板窗帧状态；标题在这里解析一次（不随帧变化）。
+func newPluginViewState(u *UI, plugin, viewID string, inval func()) *pluginViewState {
+	st := &pluginViewState{
 		u:      u,
+		plugin: plugin,
+		viewID: viewID,
+		title:  viewID,
 		list:   widget.List{List: layout.List{Axis: layout.Vertical}},
 		fields: make(map[string]*viewFieldState, 8),
 		clicks: make(map[string]*widget.Clickable, 8),
 		inval:  inval,
 	}
-}
-
-// showPluginView 打开（或原地换成）一个插件面板。窗单实例：再开另一个就是换内容，
-// 与查看原文窗同一套语义。
-func (u *UI) showPluginView(ev port.OpenViewEvent) {
-	title := ev.ViewID
-	if u.opts.Views != nil {
+	if u != nil && u.opts.Views != nil {
 		for _, v := range u.opts.Views.Views() {
-			if v.Plugin == ev.Plugin && v.ID == ev.ViewID {
-				title = v.Title
+			if v.Plugin == plugin && v.ID == viewID && v.Title != "" {
+				st.title = v.Title
 				break
 			}
 		}
 	}
-	u.viewTarget.Store(&viewTarget{plugin: ev.Plugin, viewID: ev.ViewID, title: title})
-	u.wins.openWin(winView)
-	u.wins.invalidateKind(winView)
+	return st
 }
 
-// closePluginView 关掉某个插件的面板窗。只有窗里看的正是它才关：用户在同时看别的插件的
-// 面板时停用了 A，不该顺手把 B 的窗也关掉。
+// showPluginView 打开一个插件面板。同一 (plugin, view) 已开 = 聚焦并重取一帧；
+// 不同视图各自一个窗（D351）。
+func (u *UI) showPluginView(ev port.OpenViewEvent) {
+	u.wins.openView(ev.Plugin, ev.ViewID)
+}
+
+// closePluginView 关掉某个插件的全部面板窗（停用插件时发）。按插件关而不是只关「当前
+// 那个」：那个插件可能同时开着几个视图，关掉一半等于留下死掉的界面。
 func (u *UI) closePluginView(plugin string) {
-	t := u.viewTarget.Load()
-	if t == nil || t.plugin != plugin {
-		return
-	}
-	u.viewTarget.Store(nil)
-	u.wins.closeWin(winView)
+	u.wins.closeViewsOf(plugin)
 }
 
-// sync 目标变化时取一次帧（帧内只经原子快照，跨线程不共享可变态）。
-func (st *pluginViewState) sync(u *UI) {
-	t := u.viewTarget.Load()
-	if t == st.target {
+// sync 首帧取一次（之后的刷新由 reload 触发）。
+func (st *pluginViewState) sync() {
+	if st.loaded {
 		return
 	}
-	st.target = t
-	// 换了视图就把字段与按钮状态全丢掉：Key 相同但语义不同是插件自己的自由，跨视图
-	// 复用控件只会把上一条记忆的输入带进下一条。
+	st.reload()
+}
+
+// reload 重新问插件要一帧。丢掉字段与按钮状态：插件可能换了一整棵树（Key 相同但语义
+// 不同是它的自由），拿上一帧的控件去接新值只会把输入带错地方。
+func (st *pluginViewState) reload() {
+	st.loaded = true
 	st.fields = make(map[string]*viewFieldState, 8)
 	st.clicks = make(map[string]*widget.Clickable, 8)
 	st.list = widget.List{List: layout.List{Axis: layout.Vertical}}
 	st.node, st.err = port.UINode{}, nil
-	if t == nil {
+	if st.u == nil || st.u.opts.Views == nil {
 		st.err = errors.New(i18n.T("ui.win.ph.view"))
 		return
 	}
-	if u.opts.Views == nil {
-		st.err = errors.New(i18n.T("ui.win.ph.view"))
-		return
-	}
-	n, err := u.opts.Views.Render(context.Background(), t.plugin, t.viewID)
+	n, err := st.u.opts.Views.Render(context.Background(), st.plugin, st.viewID)
 	st.node, st.err = n, err
 }
 
 // act 交回一次操作并换上新帧。同步调用：契约要求 Render/Act 便宜（读插件自己的内存），
 // 异步只会把「点了没反应」变成「点了过一会儿才有反应」。
 func (st *pluginViewState) act(u *UI, actionID string) {
-	t := st.target
-	if t == nil || u.opts.Views == nil {
+	if u.opts.Views == nil {
 		return
 	}
 	n, err := u.opts.Views.Act(context.Background(), port.UIViewAction{
-		Plugin:   t.plugin,
-		ViewID:   t.viewID,
+		Plugin:   st.plugin,
+		ViewID:   st.viewID,
 		ActionID: actionID,
 		Values:   st.values(),
 	})
@@ -230,7 +224,7 @@ func (st *pluginViewState) click(id string) *widget.Clickable {
 
 // viewFrame 面板窗单帧：窗体面铺满 + 标题行 + 可滚动的组件树。
 func viewFrame(gtx layout.Context, th *material.Theme, u *UI, st *pluginViewState) layout.Dimensions {
-	st.sync(u)
+	st.sync()
 	pp := paperOf()
 	return layout.Stack{}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
@@ -256,12 +250,7 @@ func viewFrame(gtx layout.Context, th *material.Theme, u *UI, st *pluginViewStat
 
 // header 标题行：视图标题 + 所属插件（面板可能来自哪个插件，用户得看得见）。
 func (st *pluginViewState) header(gtx layout.Context, th *material.Theme) layout.Dimensions {
-	title := i18n.T("ui.win.title.view")
-	sub := ""
-	if t := st.target; t != nil {
-		title = t.title
-		sub = t.plugin
-	}
+	title, sub := st.title, st.plugin
 	return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			l := material.Label(th, paperBodySp(th), title)
