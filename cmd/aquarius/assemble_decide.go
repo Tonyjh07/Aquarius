@@ -13,6 +13,7 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/decide"
 	"github.com/Tonyjh07/Aquarius/internal/adapter/decorate"
+	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/logging"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
@@ -23,16 +24,22 @@ const warmupTimeout = 3 * time.Minute
 
 // openAudit 打开审计文件（幂等）。必须在确认链装配之前调用：决策模型的判定要落在
 // 同一条 audit.log 里，晚于确认链装配也写得进去，但「先有日志再有判定」这条顺序更好查。
-func (w *wiring) openAudit() error {
-	if w.audit != nil {
-		return nil
+//
+// 开不出来不拦启动：审计是旁路记录，写失败本来就静默（§8），把「文件不可写」升级成
+// 「进不去」与那条口径正好相反。留下的 nil 由 Audit 的 nil 接收者方法兜住，同时记一行
+// 日志与一条界面提示——丢的是事后可查性，这件事得让用户看见，不能悄悄降级。
+func (w *wiring) openAudit() {
+	if w.auditTried {
+		return
 	}
+	w.auditTried = true
 	audit, err := decorate.NewAudit(filepath.Join(w.profileDir, "audit.log"), 0)
 	if err != nil {
-		return err
+		w.noteText(logging.LevelWarn, logging.Boot, "log.boot.audit_unavailable",
+			"log.act.audit_off", i18n.Tf("log.boot.audit_unavailable", "err", err.Error()))
+		return
 	}
 	w.audit = audit
-	return nil
 }
 
 // buildDecider 按 decide 段建客户端。不挡启动：没配全、密钥解析不出、地址写错，

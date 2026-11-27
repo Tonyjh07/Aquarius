@@ -60,6 +60,17 @@ func fatal(stderr io.Writer, format string, args ...any) int {
 	return 1
 }
 
+// abort 启动失败的三处留痕：运行日志、stderr、消息框。
+//
+// 只给 stderr 是不够的——终端里滚动几屏就没了，双击那侧 stderr 干脆不可达；只弹框也不够，
+// 用户点了「确定」以后什么都没留下。日志是唯一事后可查的那份，所以凡是进到装配阶段的
+// 致命错误都从这里出去；日志还没开就先排队（noteText 的既有行为）。
+func (w *wiring) abort(format string, args ...any) int {
+	msg := fmt.Sprintf(format, args...)
+	w.noteText(logging.LevelError, logging.Boot, "log.boot.aborted", "log.act.boot_aborted", msg)
+	return fatal(w.stderr, "%s", msg)
+}
+
 // resolveProfile 解析当前 profile 名（D110①/修订②）：--profile flag > 根 config.json
 // 指针，两者仅决定「读哪个 profile」。指针不存在 = 首次运行，写指针指向 default；
 // 旧单文件 config 经 parsePointerFile 显式报 ErrLegacyConfig（D95 同规则，不做自动迁移）。
@@ -297,6 +308,8 @@ type wiring struct {
 	exchange *exchange.Exchange
 	runner   *toolrun.Runner
 	audit    *decorate.Audit
+	// auditTried 开过一次就不再试（也用来避免两处 openAudit 各报一遍同一个错）。
+	auditTried bool
 	// plugins1 Tier-1 注册表（装配期建，关停时 Close）；启停状态另存 config plugins 段。
 	// 外部插件的工厂从 pluginext.go 的 externalFactories 来，本结构不持有。
 	plugins1 *tierone.Registry
@@ -375,13 +388,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		if errors.Is(err, errFirstRun) {
 			return 0 // 首跑已写模板并打印指引（原契约：生成配置后重跑）
 		}
-		return fatal(stderr, "%v", err)
+		return w.abort("%v", err)
 	}
 
 	// 运行日志（D276/§7.9）：profile 已定、目录已建，从这里起所有运行期事件都写入运行日志。
 	// 开不出文件不拦启动——Open 自己降级到 stderr 并记一条 warn。
 	if err := w.openLog(f.logLevel, f.logFmt); err != nil {
-		return fatal(stderr, "%v", err) // 级别/形态写错是用户能改的错，按启动失败报
+		return w.abort("%v", err) // 级别/形态写错是用户能改的错，按启动失败报
 	}
 	defer w.log.Close()
 
@@ -396,12 +409,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	if err := w.assembleStores(ctx); err != nil {
-		return fatal(stderr, "%v", err)
+		return w.abort("%v", err)
 	}
 	w.assembleAudio(ctx)
 	defer w.closeAudio()
 	if err := w.buildLLMs(); err != nil {
-		return fatal(stderr, "%v", err)
+		return w.abort("%v", err)
 	}
 	w.newUI(w.stdin, w.stdout) // D114：bootstrap 恢复控制台后可能已重绑（脱离→AllocConsole）
 	defer func() {
@@ -411,17 +424,16 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintln(w.stdout)
 	}()
 	w.buildPresenter()
-	// 审计要先于确认链就位：决策模型的判定落在同一条 audit.log（D290）。
-	if err := w.openAudit(); err != nil {
-		return fatal(stderr, "%v", err)
-	}
+	// 审计要先于确认链就位：决策模型的判定落在同一条 audit.log（D290）。开不出来只降级，
+	// 不拦启动——审计是旁路记录，进不去比少记几行严重得多。
+	w.openAudit()
 	defer w.audit.Close()
 	// 模型辅助决策（D290）：只在模型发起的那条链上，`off` / 没配全时原样透传。
 	w.buildDecider()
 	// 逐次确认（§5.11 Confirmer 矩阵）与提问通道（D184）：默认都走前端交互面。
 	tc := toolChannelsFor(w.ui, w.unattended.Get, w.wrapDecide)
 	if err := w.assembleTools(ctx, tc.toolConfirmer, tc.toolAsker); err != nil {
-		return fatal(stderr, "%v", err)
+		return w.abort("%v", err)
 	}
 	// 任务管理器在观察者之后关（defer 后进先出）：先停报告，再等收尾写完，之后不再动 jobs 目录（§5.8）。
 	defer w.jobMgr.Close()
@@ -438,7 +450,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	defer w.delegateWatch.Close()
 	gen, err := w.stackDecorators(ctx)
 	if err != nil {
-		return fatal(stderr, "%v", err)
+		return w.abort("%v", err)
 	}
 	auditedRunner := decorate.AuditTool(w.runner, w.audit)
 	ids := systemIDGen{}
@@ -456,7 +468,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	w.sampling.Store(w.cfg.Model.samplingTables())
 	clockMode, err := w.cfg.clockMode() // D317：词表外启动报错
 	if err != nil {
-		return fatal(stderr, "%v", err)
+		return w.abort("%v", err)
 	}
 	agent, err := app.New(
 		app.Deps{
@@ -485,7 +497,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		},
 	)
 	if err != nil {
-		return fatal(stderr, "%v", err)
+		return w.abort("%v", err)
 	}
 	w.agentPtr.Store(agent)                  // TUI 状态行回调读取（atomic，避免与构造竞争）
 	w.runner.Add(agent.ContextCompactTool()) // 装配期注册（agent 依赖 runner，反向补注册）
@@ -496,7 +508,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// 服务端文件解析（D315）：purpose 空 = 未接入；词表/区间错启动即报。
 	filesUp, filesPurpose, filesTTL, ferr := w.filesUploader2(ctx)
 	if ferr != nil {
-		return fatal(stderr, "%v", ferr)
+		return w.abort("%v", ferr)
 	}
 	w.sess, err = app.NewSession(ctx, w.sessionDeps(agent, ids, sessPersona, tc.confirmer,
 		filesUp, filesPurpose, filesTTL, version))
@@ -504,7 +516,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		if ctx.Err() != nil {
 			return 0 // 启动期 Ctrl+C：ctx 早于主循环创建，按取消干净收尾（不报错退出）
 		}
-		return fatal(stderr, "%v", err)
+		return w.abort("%v", err)
 	}
 	if ctx.Err() != nil {
 		return 0

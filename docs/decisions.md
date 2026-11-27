@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-11-27 @ 4f6ca98 -->
+<!-- docs-sync: 2026-11-27 @ be0f356 -->
 
 > **权威文档之一**：决策节于 2026-09 独立成篇，与 [contracts.md](contracts.md) 同级同权威
 > （该节 2026-10 从总设计文档删除，不再占节号）。编号**跨文件不变**
@@ -359,6 +359,7 @@
 | [D346](#d346) | 插件面板落地（`ViewProvider` → `port.PluginViews` 防腐转换、`/plugin view` 唯一入口、窗单实例、停用即关窗、动作带全量表单值、TUI 只读、`Kind` 零值 = 纯容器）；`provides` 词表加 `view` | 已完成 |
 | [D347](#d347) | 插件设置页落地（`SettingsSectionProvider` → `port.PluginSettings` 防腐转换、设置窗「插件」页、按分区保存、值现取、未知控件回落文本）；`provides` 词表加 `settings`；样例插件把窗口/注入/去重与衰减规则全部参数化，存 `<DataDir>/settings.json` | 已完成 |
 | [D348](#d348) | 字体集合加**符号回退面**（`SymbolFontCandidates`）：折叠三角 `▸`/`▾` 在雅黑、黑体、宋体与 Segoe UI 里都没有字形，原先靠 Gio 扫描系统字体库兜底，受限进程里回落失效就成方框；改为平台层显式给符号字体路径、全部追加到集合末尾，缓存键含符号表 | 已完成 |
+| [D349](#d349) | 审计开不出来**不拦启动**（降级为 nil 句柄 + 一行 warn，`Audit` 方法对 nil 安全）；启动期致命错误统一经 `wiring.abort` 三处留痕（运行日志 / stderr / 控制台不可见时的消息框），双击后不再「窗口一闪、什么都不剩」 | 已完成 |
 
 ## 记录
 
@@ -3737,3 +3738,41 @@
   `platform/dark_other.go` 给路径，`theme_font.go` 的 `sharedFaces` 接符号表并新增
   `loadSymbolFaces`（逐个解析、缺失跳过），六个 `newTheme` 调用点同步。测试一组：符号面
   全部追加、换符号表不串缓存。
+
+<a id="d349"></a>
+
+### D349 · 审计打不开只降级；启动失败三处留痕
+
+- **背景**：`profile/audit.log` 打不开时（同名目录占住、权限不足、沙箱里写到用户目录被拒），
+  装配层把它当成启动失败：`openAudit` 的错误直接进 `fatal`，进程在**主窗已经建出来之后**
+  退出。用户看到的是「窗口和消息框一起出现，点掉就什么都没了」，事后连一句报因都查不到——
+  日志文件根本没开成，崩溃报告只接 panic。
+
+  而这与审计自己的口径是反的：写侧「任何写失败静默，审计不得打断对话」（§8），到了打开这一步
+  却升级成「进不去」。
+
+- **决策**：
+  1. **开不出来就降级**：`openAudit` 不再返回错误，留 `nil` 句柄 + 一行 warn（带 err 原文），
+     启动继续。丢掉的是事后可查性，这件事得让用户看见，所以是 warn 而不是 debug。
+  2. **`Audit` 的方法对 nil 接收者安全**（`record` / `Close` 提前返回）：装配层不必在每个调用点
+     判空，审计的「旁路」身份在类型层面成立。
+  3. **只试一次**：`auditTried` 记账。`stackDecorators` 会补开一次，同一次启动不该报两遍同一个
+     错，也不该在下一个装配点上反复撞同一堵墙。
+  4. **启动失败三处留痕**：`wiring.abort` 先写运行日志（还没开成时按既有 `noteText` 排队），
+     再走 `fatal`——stderr 给终端、控制台不可见时补消息框。终端里滚几屏就没了、双击那侧
+     stderr 不可达、弹框点掉即消失，三者单独任何一个都不够。
+
+- **否决的路线**：
+  - **保留 fatal**：审计丢几行不该等于进不去；真要「审计不可用就拒绝启动」，那也该是用户显式
+    选择的严格模式，不能是默认行为。
+  - **只在弹框里多写一句「详见日志」**：日志根本没开成时这句话是空头支票；顺序反过来
+    （先记日志、再决定怎么呈现）才成立。
+  - **把启动失败也塞进崩溃报告目录**：`crash-*.txt` 的语义是「程序自己崩了」（退出码 2），
+    混进配置错误会让那份目录失去区分度。
+
+- **状态**：已完成。`cmd/aquarius/assemble_decide.go`（`openAudit` 降级）、`main.go`
+  （`wiring.abort` + `auditTried`，十处启动失败改走它）、`internal/adapter/decorate/audit.go`
+  （nil 接收者安全）、i18n 四条（`log.boot.audit_unavailable` / `log.boot.aborted` /
+  `log.act.audit_off` / `log.act.boot_aborted`）。测试：`audit_open_test.go` 两组
+  （同名目录占住 audit.log → 只有一条 warn、补开不重复；正常路径幂等）、
+  `decorate/audit_nil_test.go` 一组（nil 句柄的 Close/Policy/Decide/record）。

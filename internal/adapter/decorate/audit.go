@@ -104,8 +104,12 @@ func (a *Audit) open() error {
 	return nil
 }
 
-// Close 关闭底层文件（幂等）。
+// Close 关闭底层文件（幂等）。nil 接收者安全：审计开不出来时装配层留的就是 nil，
+// 调用方不必每处判空。
 func (a *Audit) Close() error {
+	if a == nil {
+		return nil
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.f == nil {
@@ -117,7 +121,13 @@ func (a *Audit) Close() error {
 }
 
 // record 追加一行；失败静默返回错误供测试断言，调用方不处理。
+//
+// nil 接收者 = 审计没能打开（路径不可写、权限不足）：这里吞掉整条记录。审计是旁路，
+// 丢掉的是事后可查性，不该反过来打断对话，更不该让调用方到处判空。
 func (a *Audit) record(line auditLine) error {
+	if a == nil {
+		return errAuditClosed
+	}
 	data, err := json.Marshal(line)
 	if err != nil {
 		return err

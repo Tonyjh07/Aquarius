@@ -202,4 +202,9 @@ var zhLogTexts = map[string]string{
 	"log.plugin.memory_search_failed": "插件记忆投影检索失败：{err}",
 	"log.plugin.tools_list_failed":    "插件 {name} 的工具清单拉取失败：{err}",
 	"log.plugin.prompts_list_failed":  "插件 {name} 的提示词清单拉取失败：{err}",
+	// ── 启动与审计（审计开不出来只降级，不拦启动）
+	"log.boot.audit_unavailable": "审计文件打不开，本次不记审计：{err}",
+	"log.boot.aborted":           "启动失败",
+	"log.act.audit_off":          "只丢事后可查，对话照常",
+	"log.act.boot_aborted":       "已退出",
 }

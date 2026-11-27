@@ -198,4 +198,9 @@ var enLogTexts = map[string]string{
 	"log.plugin.memory_search_failed": "searching the plugin memory projection failed: {err}",
 	"log.plugin.tools_list_failed":    "failed to fetch the tool list of plugin {name}: {err}",
 	"log.plugin.prompts_list_failed":  "failed to fetch the prompt list of plugin {name}: {err}",
+	// ── Startup and audit (an unavailable audit file degrades, it does not block boot)
+	"log.boot.audit_unavailable": "the audit file cannot be opened; this run records no audit: {err}",
+	"log.boot.aborted":           "startup aborted",
+	"log.act.audit_off":          "only the audit trail is lost; the session goes on",
+	"log.act.boot_aborted":       "exiting",
 }

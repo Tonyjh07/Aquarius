@@ -998,9 +998,8 @@ func (w *wiring) listModels(ctx context.Context) ([]port.ModelInfo, error) {
 // 重试在内、降级在外。审计句柄存 wiring（run 据此登记退出时关闭）。
 func (w *wiring) stackDecorators(ctx context.Context) (port.LLM, error) {
 	// 审计通常在确认链之前就打开了（决策模型的判定要落同一条日志），这里只补开。
-	if err := w.openAudit(); err != nil {
-		return nil, err
-	}
+	// 补开失败时 w.audit 仍为 nil：Audit 的方法对 nil 安全，这条链照常装（只是不记审计）。
+	w.openAudit()
 	audit := w.audit
 	maxCtx := w.maxContextBudget()
 	// fit 闭包工厂：逐 provider 用各自 tokenizer 计数（fallback client 可配不同
