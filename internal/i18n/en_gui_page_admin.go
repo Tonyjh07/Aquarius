@@ -5,7 +5,7 @@ var enGuiPageAdminTexts = map[string]string{
 
 	// 工具与 MCP 页
 	"ui.page.tools.section_builtin": "Built-in tools (toggles apply immediately, no restart)",
-	"ui.page.tools.section_mcp":     "MCP and plugins (from config / plugin directory)",
+	"ui.page.tools.section_mcp":     "MCP",
 	"ui.page.tools.section_policy":  "Allow policy for external agents",
 	"ui.page.tools.section_dir":     "Directory-wide allowances (from always-allow in the confirm bubble)",
 	"ui.page.tools.dir_rule":        "{tool}: no longer asked in this directory",

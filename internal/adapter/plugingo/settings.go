@@ -40,11 +40,12 @@ func (s *Settings) Sections() []port.PluginSettingsSection {
 			})
 		}
 		out = append(out, port.PluginSettingsSection{
-			Plugin: s.name,
-			ID:     sec.ID,
-			Title:  sec.Title,
-			Desc:   sec.Desc,
-			Rows:   rows,
+			Plugin:    s.name,
+			ID:        sec.ID,
+			Title:     sec.Title,
+			Desc:      sec.Desc,
+			Rows:      rows,
+			Placement: pluginPlacement(sec.Placement),
 		})
 	}
 	return out
@@ -55,8 +56,17 @@ func (s *Settings) Apply(ctx context.Context, section string, values map[string]
 	return s.p.ApplySettings(toV1Session(ctx), v1.SettingsPatch{SectionID: section, Values: values})
 }
 
-// pluginKind 控件种类归一。
+// pluginPlacement 分区位置的词表归一。
 //
+// 未知值按内联处理：认不出的位置至少要能显示出来，把整段藏起来会让用户以为参数丢了。
+func pluginPlacement(p v1.SettingsPlacement) string {
+	if string(p) == port.PluginPlacementPage {
+		return port.PluginPlacementPage
+	}
+	return port.PluginPlacementInline
+}
+
+// pluginKind 控件种类归一。
 // 未知种类回落到 text 而不是丢弃：插件可能用上新版契约里的控件（或拼错），旧宿主至少
 // 还能把当前值显示成一行文本——直接让那行消失，用户会以为参数不见了。
 func pluginKind(k v1.FieldKind) string {

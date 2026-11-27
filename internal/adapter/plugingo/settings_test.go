@@ -25,6 +25,7 @@ func (f *fakeSettings) Sections() []v1.SettingsSection {
 			},
 		},
 		{ID: "quiet", Title: "安静"},
+		{ID: "decay", Title: "衰减", Placement: v1.SettingsPage},
 	}
 }
 
@@ -36,8 +37,8 @@ func (f *fakeSettings) ApplySettings(_ context.Context, patch v1.SettingsPatch) 
 func TestSettingsSectionsConvert(t *testing.T) {
 	s := NewSettings("memory", &fakeSettings{})
 	secs := s.Sections()
-	if len(secs) != 2 {
-		t.Fatalf("分区数 = %d, want 2", len(secs))
+	if len(secs) != 3 {
+		t.Fatalf("分区数 = %d, want 3", len(secs))
 	}
 	if secs[0].Plugin != "memory" || secs[0].ID != "recall" || secs[0].Title != "回忆" {
 		t.Fatalf("分区没带上插件名：%+v", secs[0])
@@ -58,6 +59,13 @@ func TestSettingsSectionsConvert(t *testing.T) {
 	}
 	if len(secs[1].Rows) != 0 {
 		t.Fatalf("空分区不该凭空长出行：%+v", secs[1].Rows)
+	}
+	// 放置位置原样过来；缺省（空串）就是内联，不另立第三种值。
+	if secs[0].Placement != port.PluginPlacementInline {
+		t.Fatalf("缺省应内联，得到 %q", secs[0].Placement)
+	}
+	if secs[2].Placement != port.PluginPlacementPage {
+		t.Fatalf("独立页声明丢了：%+v", secs[2])
 	}
 }
 

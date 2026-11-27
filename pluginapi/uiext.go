@@ -122,6 +122,23 @@ type SettingsSectionProvider interface {
 	ApplySettings(ctx context.Context, patch SettingsPatch) error
 }
 
+// SettingsPlacement 设置分区放在哪里。
+//
+// 缺省（""）与 SettingsInline 等价：内联在「插件」页，与插件清单同一屏。
+// SettingsPage 表示这一段参数多、需要大段说明或需要独占视野——宿主会把它放进只属于
+// 这个插件的一页里，入口仍在插件清单上。
+//
+// 为什么不按行数自动判定：多少行算「多」是插件自己的语义（有些行一个数字就够，有些
+// 一行背后要读三段说明），宿主数不出这件事。宿主只给缺省，插件有权覆盖。
+type SettingsPlacement string
+
+const (
+	// SettingsInline 内联在插件页（缺省）。
+	SettingsInline SettingsPlacement = ""
+	// SettingsPage 独占一页，从插件清单进入。
+	SettingsPage SettingsPlacement = "page"
+)
+
 // SettingsSection 一个设置分区：标题、说明与若干行。
 // 兼容承诺：改字段会破坏设置窗渲染与插件声明。
 type SettingsSection struct {
@@ -129,6 +146,8 @@ type SettingsSection struct {
 	Title string
 	Desc  string
 	Rows  []SettingsRow
+	// Placement 这一段放在哪（缺省内联）。只影响呈现位置，不影响提交语义。
+	Placement SettingsPlacement
 }
 
 // SettingsRow 一行设置：标签 + 当前值 + 字段种类。

@@ -5,7 +5,7 @@ var zhGuiPageAdminTexts = map[string]string{
 
 	// 工具与 MCP 页
 	"ui.page.tools.section_builtin":        "内置工具（开关即时生效，无需重启）",
-	"ui.page.tools.section_mcp":            "MCP 与插件（来源 config / 插件目录）",
+	"ui.page.tools.section_mcp":            "MCP",
 	"ui.page.tools.section_policy":         "外部代理的放行",
 	"ui.page.tools.section_dir":            "目录级放宽（在确认框里点了「以后都允许」）",
 	"ui.page.tools.dir_rule":               "{tool}：这个目录内不再询问",

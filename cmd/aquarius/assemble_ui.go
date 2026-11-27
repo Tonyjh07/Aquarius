@@ -164,6 +164,7 @@ func (w *wiring) newUI(stdin io.Reader, stdout io.Writer) {
 			Views: pluginViews{reg: w.pluginRegistry}, // D346：/plugin view 打开的面板（拉模式取帧）
 			// D347：插件自己声明的参数（设置窗「插件」页的分区表与提交）。
 			PluginSettings: pluginSettings{reg: w.pluginRegistry},
+			PluginAdmin:    tierOneAdmin{w: w},
 			Status: func() uigui.Status {
 				if agent := w.agentPtr.Load(); agent != nil {
 					st := uigui.Status{

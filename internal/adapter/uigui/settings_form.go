@@ -374,9 +374,10 @@ func newSettingsForm(u *UI) *settingsForm {
 	f.syncSkillsSnapshot()     // 开窗即取一次（帧首同款；动作后再取）
 	f.skillSource.SingleLine = true
 	f.skillDirInput.SingleLine = true
-	// 插件页（D347）：开窗现取一次分区表；未接线时页面显示一行说明。
+	// 插件页（D347）：开窗现取一次分区表与插件清单；未接线时页面显示一行说明。
 	f.plugins = u.opts.PluginSettings
 	f.plug.wired = f.plugins != nil
+	f.plug.admin = u.opts.PluginAdmin
 	f.reloadPluginSettings()
 	if u.opts.Characters != nil { // §5.17：角色卡清单（nil = 只读占位）
 		f.charWired = true

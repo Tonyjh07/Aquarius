@@ -87,6 +87,9 @@ type Options struct {
 	// PluginSettings 插件设置供给面（D347）：设置窗「插件」页的分区表与提交回调。
 	// nil = 该页只显示一行说明（没有插件贡献设置）。
 	PluginSettings port.PluginSettings
+	// PluginAdmin 插件清单与启停（D347）：插件页上半部的开关。nil = 只渲染参数、
+	// 不列清单（没有开关入口）。
+	PluginAdmin PluginAdmin
 	// PosFile 窗口位置记忆文件（§15.1）；空 = 不记忆。
 	PosFile string
 	// Interrupt 初始中断行为（装配根一般经 SetInterrupt 每轮注入，留 nil 即可）。

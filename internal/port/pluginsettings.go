@@ -36,14 +36,22 @@ type PluginSettingRow struct {
 // PluginSettingsSection 一个插件贡献的设置分区。
 //
 // Plugin 是插件名（回传时用来定位实例），ID 是插件自己的分区标识（只在那个插件里有意义）。
-// Desc 是分区说明，可为空。
+// Desc 是分区说明，可为空。Placement 决定这一段画在哪（内联在插件页 / 独占一页），
+// 只影响呈现位置，不影响保存语义。
 type PluginSettingsSection struct {
-	Plugin string
-	ID     string
-	Title  string
-	Desc   string
-	Rows   []PluginSettingRow
+	Plugin    string
+	ID        string
+	Title     string
+	Desc      string
+	Rows      []PluginSettingRow
+	Placement string
 }
+
+// 设置分区的放置位置。取值与 pluginapi.SettingsPlacement 对齐（空串 = 内联）。
+const (
+	PluginPlacementInline = ""     // 内联在插件页（缺省）
+	PluginPlacementPage   = "page" // 独占一页，从插件清单进入
+)
 
 // PluginSettings 插件设置面（装配根聚合，设置窗消费）。
 //

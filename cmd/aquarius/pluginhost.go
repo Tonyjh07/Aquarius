@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/plugingo"
+	"github.com/Tonyjh07/Aquarius/internal/adapter/uigui"
 	"github.com/Tonyjh07/Aquarius/internal/app"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/logging"
@@ -168,7 +169,10 @@ func (w *wiring) closeTierOne() {
 // 接口，由 pluginAdminAll 合并）。启停立即生效、不重启——状态机与工具源都在进程内。
 type tierOneAdmin struct{ w *wiring }
 
-var _ app.PluginAdmin = tierOneAdmin{}
+var (
+	_ app.PluginAdmin   = tierOneAdmin{}
+	_ uigui.PluginAdmin = tierOneAdmin{}
+)
 
 // Plugins 注册表快照 → app 投影。Source 用 binary 表示「编译进二进制」：它没有配置文件
 // 可发现，也就不该显示成 config 或 plugins。
@@ -193,6 +197,38 @@ func (a tierOneAdmin) Plugins() []app.PluginInfo {
 		out = append(out, pi)
 	}
 	return out
+}
+
+// Snapshot 设置窗插件页的清单（uigui.PluginAdmin）。与 Plugins 是同一份快照的两种投影：
+// app 那边给命令面用（Source/Transport 字段），界面这边只关心名字、状态与开关。
+func (a tierOneAdmin) Snapshot() []uigui.PluginState {
+	reg := a.w.pluginRegistry()
+	if reg == nil {
+		return nil
+	}
+	recs := reg.List()
+	out := make([]uigui.PluginState, 0, len(recs))
+	for _, r := range recs {
+		st := uigui.PluginState{
+			Name:     r.Name,
+			State:    r.State.String(),
+			Enabled:  r.State == tierone.StateActive,
+			Provides: append([]string(nil), r.Provides...),
+		}
+		if r.Err != nil {
+			st.Err = r.Err.Error()
+		}
+		out = append(out, st)
+	}
+	return out
+}
+
+// SetEnabled 设置窗的开关（用户动作 → 写回 config，重启后保持）。
+func (a tierOneAdmin) SetEnabled(name string, on bool) error {
+	if a.w == nil || a.w.pluginRegistry() == nil {
+		return errors.New(i18n.T("plugin.t1.unwired"))
+	}
+	return a.w.setTierOne(context.Background(), name, on, true)
 }
 
 // Enable 启用并把工具源挂进 Runner（§7 第 3 条：工具源在 Active 之后挂）。

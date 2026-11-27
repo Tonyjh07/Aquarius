@@ -234,11 +234,19 @@ var enGuiSettingsTexts = map[string]string{
 	"ui.settings.tool.revoke_trust":      "Revoke trust",
 	"ui.settings.tool.grant_prefix":      "Grant {cap}",
 	"ui.settings.tool.revoke_prefix":     "Revoke {cap}",
-	// ── Plugins page (D347): the row table comes from plugins; the host only
-	// renders controls and hands values back.
-	"ui.page.plugins.note":    "These parameters belong to the plugins. Each section saves on its own, so only the rows you see are submitted.",
-	"ui.page.plugins.unwired": "Plugin settings are not wired up; there is nothing to configure.",
-	"ui.page.plugins.empty":   "No enabled plugin exposes adjustable parameters.",
-	"ui.page.plugins.save":    "Save",
-	"ui.page.plugins.saved":   "Saved",
+	// ── Plugins page (D347): the host lists plugins, the plugin declares its rows.
+	"ui.page.plugins.note":           "Plugins are switched on and off here. Their parameters belong to the plugin; each section saves on its own.",
+	"ui.page.plugins.unwired":        "Plugin settings are not wired up; there is nothing to configure.",
+	"ui.page.plugins.empty":          "No plugin parameters to configure.",
+	"ui.page.plugins.save":           "Save",
+	"ui.page.plugins.saved":          "Saved",
+	"ui.page.plugins.list_head":      "Installed plugins",
+	"ui.page.plugins.toggled":        "Plugin {name} switched",
+	"ui.page.plugins.open":           "Settings…",
+	"ui.page.plugins.back":           "Back to plugins",
+	"ui.page.plugins.focus":          "Settings for {name}",
+	"ui.page.plugins.state.active":   "Running",
+	"ui.page.plugins.state.stopped":  "Disabled",
+	"ui.page.plugins.state.draining": "Stopping",
+	"ui.page.plugins.state.pending":  "Not started",
 }
