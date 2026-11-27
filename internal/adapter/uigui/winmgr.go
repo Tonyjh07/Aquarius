@@ -447,7 +447,10 @@ func (u *UI) runSecondary(w *app.Window, key winKey, ctl *winHandle, title strin
 	}
 	var raw *rawViewState
 	if k == winRaw {
-		raw = newRawViewState() // D99：查看原文帧状态（仅本窗 goroutine 读写）
+		// D99：查看原文帧状态（仅本窗 goroutine 读写）。D353 起带「复制 Markdown」，
+		// 注入本窗重绘：次窗事件驱动，不请一次帧，「已复制」就永远挂在那儿。
+		raw = newRawViewState()
+		raw.inval = w.Invalidate
 	}
 	var vw *pluginViewState
 	if k == winView {

@@ -7,7 +7,11 @@ package uigui
 
 import (
 	"image"
+	"io"
+	"strings"
+	"time"
 
+	"gioui.org/io/clipboard"
 	"gioui.org/layout"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
@@ -18,6 +22,9 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
+
+// copiedFlash 「已复制」在按钮上停留的时长：够看清，又不会让人以为按钮变了个功能。
+const copiedFlash = 2 * time.Second
 
 // rawContent 查看原文窗的一次内容快照（D99）：title = 窗内标题行（含节点 ID 前缀），
 // text = 原始文本（block.text；thinking/chip 步扩展后为思考原文/工具 JSON）。
@@ -31,6 +38,17 @@ type rawViewState struct {
 	ed      widget.Editor // ReadOnly：可选中复制、不可改
 	list    widget.List
 	applied *rawContent // 本窗已呈现的内容快照（指针比较，变化才 SetText）
+
+	// copyBtn 标题行左上角的「复制 Markdown」（D353）。与主窗气泡右键的「复制」
+	// 语义分开：那个给的是渲染后的可选文本，这里给原始 markdown 源码。
+	copyBtn widget.Clickable
+	// copiedAt 上次复制的时间；窗内 2 秒显示「已复制」，靠一次定时重绘回落。
+	copiedAt time.Time
+	// inval 本窗重绘请求（runSecondary 注入 w.Invalidate；nil = 无窗环境，不排定时器）。
+	inval func()
+	// writeClip 帧内写剪贴板。nil = 走 gio（剪贴板写入只能在帧内）；测试注入以断言
+	// 交出去的**内容**，那是这一项唯一会错的地方。
+	writeClip func(gtx layout.Context, text string)
 }
 
 // newRawViewState 构造 winRaw 帧状态。
@@ -49,6 +67,38 @@ func (st *rawViewState) sync(u *UI) {
 	st.applied = c
 	st.ed.ReadOnly = true
 	st.ed.SetText(c.text)
+}
+
+// copyMarkdown 把当前原文写进剪贴板（D353）。
+//
+// 交出去的是 raw 的 text 本身，不是编辑器里的可见文本：两者在这一窗里恰好同源，但
+// 编辑器以后若加了换行/软折行处理，复制仍应给源码——markdown 粘贴出去要能重新渲染。
+func (st *rawViewState) copyMarkdown(gtx layout.Context) {
+	c := st.applied
+	if c == nil || strings.TrimSpace(c.text) == "" {
+		return
+	}
+	if st.writeClip != nil {
+		st.writeClip(gtx, c.text)
+	} else {
+		gtx.Execute(clipboard.WriteCmd{
+			Type: "application/text",
+			Data: io.NopCloser(strings.NewReader(c.text)),
+		})
+	}
+	st.copiedAt = gtx.Now
+	if st.inval != nil {
+		// 2 秒后请一次重绘，把按钮文案换回来（次窗是事件驱动，没有帧就没有时间流逝）。
+		time.AfterFunc(copiedFlash, st.inval)
+	}
+}
+
+// copyLabel 按钮当前文案：刚复制过 2 秒内显示「已复制」。
+func (st *rawViewState) copyLabel(gtx layout.Context) string {
+	if !st.copiedAt.IsZero() && gtx.Now.Sub(st.copiedAt) < copiedFlash {
+		return i18n.T("ui.rawview.copied")
+	}
+	return i18n.T("ui.rawview.copy_md")
 }
 
 // showTextView 把一份长文本铺进查看原文窗（§7.1）。内容由内核经 TextViewEvent
@@ -77,14 +127,27 @@ func rawViewFrame(gtx layout.Context, th *material.Theme, u *UI, st *rawViewStat
 			return layout.UniformInset(unit.Dp(16)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						title := i18n.T("ui.chat.none_selected")
-						if c := st.applied; c != nil {
-							title = c.title
+						hasText := st.applied != nil && strings.TrimSpace(st.applied.text) != ""
+						if st.copyBtn.Clicked(gtx) {
+							st.copyMarkdown(gtx)
 						}
-						l := material.Label(th, paperBodySp(th), title)
-						l.Color = pp.text2
-						l.MaxLines, l.Truncator = 1, "…"
-						return l.Layout(gtx)
+						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+							// 左上角：复制整份原文（markdown 源码）。与气泡右键的复制区分开，
+							// 按钮文字直说「Markdown」，不靠用户记得两条路径的差别。
+							layout.Rigid(paperButton(th, &st.copyBtn, st.copyLabel(gtx),
+								paperBtnSecondary, hasText)),
+							layout.Rigid(layout.Spacer{Width: unit.Dp(12)}.Layout),
+							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+								title := i18n.T("ui.chat.none_selected")
+								if c := st.applied; c != nil {
+									title = c.title
+								}
+								l := material.Label(th, paperBodySp(th), title)
+								l.Color = pp.text2
+								l.MaxLines, l.Truncator = 1, "…"
+								return l.Layout(gtx)
+							}),
+						)
 					}),
 					layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
