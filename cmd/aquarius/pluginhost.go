@@ -40,6 +40,10 @@ func (w *wiring) pluginWorkDir(name string) (string, error) {
 	return dir, os.MkdirAll(dir, 0o755)
 }
 
+// pluginRegistry 现取 Tier-1 注册表。UI 与 TUI 都在插件宿主之前构造，交给它们的
+// 只能是这个函数：把 w.plugins1 的值拷进 Options 会拷到 nil（面板与设置页永远为空）。
+func (w *wiring) pluginRegistry() *tierone.Registry { return w.plugins1 }
+
 // assembleTierOne 造 Tier-1 注册表并跑启动校验（§7 第 2 条）。禁用状态的插件不产生副作用：
 // 这里只校验清单，实例在 enable 时才造。
 func (w *wiring) assembleTierOne(confirmer port.Confirmer, builtin []port.Tool) {

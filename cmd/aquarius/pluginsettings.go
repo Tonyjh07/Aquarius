@@ -21,20 +21,32 @@ import (
 )
 
 // pluginSettings 已启用插件的设置面（装配根交给设置窗）。
-type pluginSettings struct{ reg *tierone.Registry }
+//
+// reg 同 pluginViews：UI 建得比插件宿主早，构造那一刻注册表还是 nil，所以存取用的
+// 函数而不是注册表本身——否则设置窗永远是「没有已启用的插件提供可调参数」。
+type pluginSettings struct{ reg func() *tierone.Registry }
 
 var _ port.PluginSettings = pluginSettings{}
+
+// registry 现取注册表；未接线（闭包本身为 nil）时返回 nil。
+func (s pluginSettings) registry() *tierone.Registry {
+	if s.reg == nil {
+		return nil
+	}
+	return s.reg()
+}
 
 // Sections 当前可调的设置分区。只含 Active 且实现了 SettingsSectionProvider 的插件。
 //
 // 不取 Guard：与 Views() 同级，只是一次内存里的声明读取。
 func (s pluginSettings) Sections() []port.PluginSettingsSection {
-	if s.reg == nil {
+	reg := s.registry()
+	if reg == nil {
 		return nil
 	}
 	var out []port.PluginSettingsSection
-	for _, rec := range s.reg.List() {
-		inst, _, ok := s.reg.Active(rec.Name)
+	for _, rec := range reg.List() {
+		inst, _, ok := reg.Active(rec.Name)
 		if !ok {
 			continue
 		}
@@ -49,10 +61,11 @@ func (s pluginSettings) Sections() []port.PluginSettingsSection {
 
 // Apply 把某个分区的一次提交交给插件。
 func (s pluginSettings) Apply(ctx context.Context, plugin, section string, values map[string]string) error {
-	if s.reg == nil {
+	reg := s.registry()
+	if reg == nil {
 		return errors.New(i18n.T("plugin.unwired"))
 	}
-	inst, guard, ok := s.reg.Active(plugin)
+	inst, guard, ok := reg.Active(plugin)
 	if !ok {
 		return errors.New(i18n.Tf("plugin.t1.view_inactive", "name", plugin))
 	}

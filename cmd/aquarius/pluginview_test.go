@@ -46,7 +46,7 @@ func TestPluginViewsFollowsEnableState(t *testing.T) {
 		Factories: []v1.Factory{viewPlug{}},
 		NewHost:   func(v1.Manifest) v1.Host { return nil },
 	})
-	pv := pluginViews{reg: reg}
+	pv := pluginViews{reg: func() *tierone.Registry { return reg }}
 
 	if got := pv.Views(); len(got) != 0 {
 		t.Fatalf("未启用时不该有面板：%+v", got)

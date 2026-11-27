@@ -20,7 +20,19 @@ import (
 )
 
 // pluginViews 已启用插件的面板面（装配根交给两个前端）。
-type pluginViews struct{ reg *tierone.Registry }
+//
+// reg 是**取注册表的函数**，不是注册表本身：UI 在端口装配之后、插件宿主之前建，
+// 构造那一刻 w.plugins1 还是 nil，值拷贝会把整个面板面钉死成空列表。与角色页的
+// 现取写法同一个理由（`newCharactersView` 拿的也是闭包）。
+type pluginViews struct{ reg func() *tierone.Registry }
+
+// registry 现取注册表；未接线（闭包本身为 nil）时返回 nil。
+func (v pluginViews) registry() *tierone.Registry {
+	if v.reg == nil {
+		return nil
+	}
+	return v.reg()
+}
 
 var _ port.PluginViews = pluginViews{}
 
@@ -29,12 +41,13 @@ var _ port.PluginViews = pluginViews{}
 // 这里不取 Guard：只是一次内存里的声明读取，与启用命令表时的 Commands() 同级。真取前者
 // 就要在遍历里持有多个许可，而这条路径是界面开窗时调的——把停用挡在「读一个列表」后面不值。
 func (v pluginViews) Views() []port.UIViewInfo {
-	if v.reg == nil {
+	reg := v.registry()
+	if reg == nil {
 		return nil
 	}
 	var out []port.UIViewInfo
-	for _, rec := range v.reg.List() {
-		inst, _, ok := v.reg.Active(rec.Name)
+	for _, rec := range reg.List() {
+		inst, _, ok := reg.Active(rec.Name)
 		if !ok {
 			continue
 		}
@@ -69,10 +82,11 @@ func (v pluginViews) Act(ctx context.Context, act port.UIViewAction) (port.UINod
 
 // viewProvider 取插件实例的面板面，并记在途（leave 必须调）。
 func (v pluginViews) viewProvider(plugin string) (v1.ViewProvider, func(), error) {
-	if v.reg == nil {
+	reg := v.registry()
+	if reg == nil {
 		return nil, nil, errors.New(i18n.T("plugin.unwired"))
 	}
-	inst, guard, ok := v.reg.Active(plugin)
+	inst, guard, ok := reg.Active(plugin)
 	if !ok {
 		return nil, nil, errors.New(i18n.Tf("plugin.t1.view_inactive", "name", plugin))
 	}
