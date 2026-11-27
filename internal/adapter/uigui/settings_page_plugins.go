@@ -9,9 +9,10 @@ package uigui
 //   - **参数**由插件声明（PluginSettings / SettingsSectionProvider）：键、区间、留空语义、
 //     保存口径全归插件。内核只把每一行渲染成控件、把值原样回传、把插件的报错显示出来。
 //
-// 参数分两种摆法：缺省内联在本页，与清单同屏；插件声明为独立页的，本页只留一个「设置」
-// 入口，点进去这一页只显示那一个插件。理由：参数多、说明长的插件不该把清单挤到屏外，
-// 也不该在左栏给每个插件加一个导航项——左栏是内核的页，不是插件的。
+// 参数分两种摆法：缺省内联在本页，与清单同屏；插件只要有**一段**声明为独立页，整个插件
+// 的参数都搬到那一页（本页只留一个「设置」入口），点进去这一页只显示那一个插件。理由：
+// 参数多、说明长的插件不该把清单挤到屏外，也不该在左栏给每个插件加一个导航项——左栏是
+// 内核的页，不是插件的；而同一插件的参数被劈成两半，用户永远记不住哪个在哪儿。
 //
 // 因此没有全局「保存并应用」：底栏保存是全量内核 patch，与插件参数没有对应关系。
 // 保存按**分区**走（每个分区底部一个按钮），只提交这一段的键——插件可以只认自己认识的
@@ -75,21 +76,45 @@ type pluginSettingsState struct {
 	dirty atomic.Bool
 }
 
-// plugSectionsOf 本页要显示的分区下标。plugin 为空 = 清单模式（只要内联的），
-// 非空 = 独立页模式（这个插件的全部）。
+// plugSectionsOf 本页要显示的分区下标。plugin 为空 = 清单模式（只有内联插件），
+// 非空 = 独立页模式（这个插件的全部分区）。
+//
+// 一个插件只要**有一段**声明为独立页，它的其余分区也一起搬过去：同一插件的参数被劈成
+// 一半内联、一半在别的页最糟——用户永远记不住哪个在哪儿（D350）。放置位置因此实际是
+// 插件级属性，per-section 声明只是「这个插件需要一页」的表达方式。
 func (f *settingsForm) plugSectionsOf(plugin string) []int {
+	if plugin != "" {
+		var out []int
+		for si, sec := range f.plug.snap {
+			if sec.Plugin == plugin {
+				out = append(out, si)
+			}
+		}
+		return out
+	}
+	paged := f.plugPagedPlugins()
 	var out []int
 	for si, sec := range f.plug.snap {
-		if plugin == "" {
-			if sec.Placement == port.PluginPlacementPage {
-				continue
-			}
-		} else if sec.Plugin != plugin {
+		if paged[sec.Plugin] {
 			continue
 		}
 		out = append(out, si)
 	}
 	return out
+}
+
+// plugPagedPlugins 有独立页的插件集合（只要有一段声明为 page 就算）。
+func (f *settingsForm) plugPagedPlugins() map[string]bool {
+	var m map[string]bool
+	for _, sec := range f.plug.snap {
+		if sec.Placement == port.PluginPlacementPage {
+			if m == nil {
+				m = make(map[string]bool, 1)
+			}
+			m[sec.Plugin] = true
+		}
+	}
+	return m
 }
 
 // plugHasPageSections 这个插件是否声明了独立页分区（决定清单行要不要给「设置」入口）。
@@ -149,7 +174,9 @@ func (pluginsPage) Rows(f *settingsForm) []rowDesc {
 		return []rowDesc{{kind: rowPlugNote}, {kind: rowPlugEmpty}}
 	}
 	out := []rowDesc{{kind: rowPlugNote}}
-	if st.admin != nil {
+	// 独立页模式下清单让位：这一页的意义就是给这一组参数腾视野，列在头上只会把参数推下去。
+	// 返回条是唯一的出口，措辞也才对得上「只看」。
+	if st.admin != nil && st.focus == "" {
 		out = append(out, rowDesc{kind: rowPlugListHead})
 		if len(st.list) == 0 {
 			out = append(out, rowDesc{kind: rowPlugListEmpty})
