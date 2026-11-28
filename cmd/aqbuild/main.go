@@ -10,6 +10,7 @@
 //
 //	go run ./cmd/aqbuild -plugin ../aq-memory-plugin
 //	go run ./cmd/aqbuild -plugin ../aq-memory-plugin -host . -o /tmp/aquarius-mem.exe -v
+//	go run ./cmd/aqbuild -plugin ../aq-sidecar -bundle bin/sidecar.exe
 //
 // 产物与中间文件全部落在插件仓库或缓存目录，宿主 `git status` 不变。
 package main
@@ -33,15 +34,30 @@ import (
 var stdout io.Writer = os.Stdout
 
 type options struct {
-	plugin  string // 插件仓库根
-	hook    string // 注入实现文件（相对插件根）
-	host    string // 宿主仓库根
-	target  string // 被替换的中性接入口（相对宿主根）
-	pkg     string // 要构建的包（相对宿主根）
-	tag     string // 互斥开关
-	out     string // 产物路径
-	work    string // 工作区（modfile / go.sum 副本 / overlay.json）
-	verbose bool   // 打每条 go 命令
+	plugin  string   // 插件仓库根
+	hook    string   // 注入实现文件（相对插件根）
+	host    string   // 宿主仓库根
+	target  string   // 被替换的中性接入口（相对宿主根）
+	pkg     string   // 要构建的包（相对宿主根）
+	tag     string   // 互斥开关
+	out     string   // 产物路径
+	work    string   // 工作区（modfile / go.sum 副本 / overlay.json）
+	bundles []string // 随产物一起放的外部程序（相对插件根），可重复
+	verbose bool     // 打每条 go 命令
+}
+
+// bundleFlag 可重复的 -bundle：插件带一个外部程序是常态，多个（主程序 + 助手工具）也不稀奇，
+// 逗号分隔会把「路径里有逗号」变成陷阱，所以按出现次数收集。
+type bundleFlag []string
+
+func (b *bundleFlag) String() string { return strings.Join(*b, ",") }
+
+func (b *bundleFlag) Set(v string) error {
+	if strings.TrimSpace(v) == "" {
+		return errors.New("路径为空")
+	}
+	*b = append(*b, v)
+	return nil
 }
 
 func main() {
@@ -65,6 +81,9 @@ func run(args []string) error {
 		return err
 	}
 	fmt.Fprintf(stdout, "构建完成：%s\n", out)
+	if n := len(abs.bundleAbs); n > 0 {
+		fmt.Fprintf(stdout, "已随产物放入 %d 个外部程序\n", n)
+	}
 	return nil
 }
 
@@ -79,6 +98,7 @@ func parse(args []string) (options, error) {
 	fs.StringVar(&o.tag, "tag", "tier1sample", "互斥开关（与注入文件的构建约束成对）")
 	fs.StringVar(&o.out, "o", "", "产物路径（缺省：插件目录下的 <宿主模块名>-with-plugin）")
 	fs.StringVar(&o.work, "work", "", "工作区目录（缺省：系统缓存目录下 aquarius/aqbuild/<宿主>-<插件>-<hash>）")
+	fs.Var((*bundleFlag)(&o.bundles), "bundle", "随产物一起放的外部程序（相对 -plugin，可重复）")
 	fs.BoolVar(&o.verbose, "v", false, "打印每条 go 命令")
 	if err := fs.Parse(args); err != nil {
 		return o, err
@@ -104,6 +124,7 @@ type resolved struct {
 	workDir   string
 	pluginMod string
 	hostMod   string
+	bundleAbs []string // 绝对路径，顺序同 -bundle
 }
 
 func (o options) resolve() (resolved, error) {
@@ -137,6 +158,9 @@ func (o options) resolve() (resolved, error) {
 	if r.outFile, err = filepath.Abs(r.outFile); err != nil {
 		return r, err
 	}
+	if r.bundleAbs, err = r.resolveBundles(); err != nil {
+		return r, err
+	}
 	r.workDir = o.work
 	if r.workDir == "" {
 		cache, cerr := os.UserCacheDir()
@@ -152,7 +176,48 @@ func (o options) resolve() (resolved, error) {
 	return r, nil
 }
 
-// build 四步：建工作区 → 改依赖视图 → 写 overlay → 构建。
+// resolveBundles 把 -bundle 的路径落成绝对路径并做齐前置检查。
+//
+// 相对路径按插件根解析：调用者通常在宿主根里跑 `go run ./cmd/aqbuild -plugin ../x`，
+// 而外部程序属于插件仓库，按 CWD 解析会让人写出 `-bundle ../x/bin/sidecar.exe` 这种
+// 绕一圈的说法。同名碰撞在构建前就报——拷到最后一步才发现会留下半套产物。
+func (r resolved) resolveBundles() ([]string, error) {
+	if len(r.bundles) == 0 {
+		return nil, nil
+	}
+	outBase := filepath.Base(r.outFile)
+	seen := make(map[string]string, len(r.bundles))
+	out := make([]string, 0, len(r.bundles))
+	for _, b := range r.bundles {
+		p := b
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(r.pluginDir, p)
+		}
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			return nil, fmt.Errorf("外部程序路径 %s：%w", b, err)
+		}
+		info, err := os.Stat(abs)
+		if err != nil {
+			return nil, fmt.Errorf("外部程序 %s：%w（相对路径按插件根解析）", b, err)
+		}
+		if info.IsDir() {
+			return nil, fmt.Errorf("外部程序 %s 是目录，应给文件", abs)
+		}
+		base := filepath.Base(abs)
+		if strings.EqualFold(base, outBase) {
+			return nil, fmt.Errorf("外部程序 %s 与产物同名，拷过去会覆盖它", base)
+		}
+		if prev, dup := seen[base]; dup {
+			return nil, fmt.Errorf("两个外部程序同名 %s：%s 与 %s（会互相覆盖）", base, prev, abs)
+		}
+		seen[base] = abs
+		out = append(out, abs)
+	}
+	return out, nil
+}
+
+// build 四步：建工作区 → 改依赖视图 → 写 overlay → 构建（+ 拷外部程序）。
 func (r resolved) build() (string, error) {
 	if err := os.MkdirAll(r.workDir, 0o755); err != nil {
 		return "", fmt.Errorf("建工作区：%w", err)
@@ -196,7 +261,29 @@ func (r resolved) build() (string, error) {
 	if err := r.runGo(r.hostDir, sum...); err != nil {
 		return "", err
 	}
-	return r.outFile, nil
+	return r.outFile, r.copyBundles()
+}
+
+// copyBundles 把外部程序拷到产物旁边。
+//
+// 位置而不是别处：插件靠「产物自己所在目录」找它的外部程序，这是唯一不需要配置、
+// 也不依赖运行目录的定位方式；用户拿到的是「一个目录 + 几个文件」，不是散落两处的 exe。
+// 先建临时文件再改名：拷贝中途失败不会留下一个看着能跑的半截 exe。
+func (r resolved) copyBundles() error {
+	if len(r.bundleAbs) == 0 {
+		return nil
+	}
+	dir := filepath.Dir(r.outFile)
+	for _, src := range r.bundleAbs {
+		dst := filepath.Join(dir, filepath.Base(src))
+		if err := copyFileAtomic(src, dst); err != nil {
+			return fmt.Errorf("拷外部程序 %s → %s：%w", filepath.Base(src), dst, err)
+		}
+		if r.verbose {
+			fmt.Fprintf(stdout, "  bundle %s\n", dst)
+		}
+	}
+	return nil
 }
 
 // modReplace `go mod edit -json` 里 replace 的形状（只取本工具要用的字段）。
@@ -366,7 +453,35 @@ func copyFile(src, dst string) error {
 	return out.Close()
 }
 
-// shortHash 工作区目录名的去重后缀：同一对宿主/插件换参数重建时落同一个目录。
+// copyFileAtomic 同目录内先写临时文件再改名：改名是原子的，中途失败不会留下一个
+// 看起来能跑的半截可执行文件；直接清空目标再写，反过来的风险是「旧的好文件也没了」。
+func copyFileAtomic(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	tmp, err := os.CreateTemp(filepath.Dir(dst), "."+filepath.Base(dst)+".tmp*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	if _, err := io.Copy(tmp, in); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	if err := os.Rename(tmpName, dst); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	return nil
+}
+
 // shortHash 工作区名字的短指纹：同一对宿主/插件重复构建命中同一个目录，换一边就换目录。
 func shortHash(s string) string {
 	sum := sha256.Sum256([]byte(s))
