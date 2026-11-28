@@ -26,7 +26,7 @@ func (a *Agent) consume(ctx context.Context, stream port.Stream, buf *turnBuffer
 			return nil, err // 半截工具调用不带出（未完成调用不能进树）
 		}
 		buf.add(d) // Reasoning → 思考缓冲（D42），其余 → 当前轮正文/调用（D3）
-		_ = a.ui.Emit(ctx, port.DeltaEvent{MessageID: mid, Delta: d})
+		_ = a.ui.Emit(ctx, port.DeltaEvent{MessageID: mid, Delta: d, Summary: buf.summary})
 	}
 	return buf.takeCalls(), nil
 }
@@ -51,6 +51,9 @@ type turnBuffer struct {
 	// retryURLs 建议改走服务端阅读的地址（D310）：web_fetch 只抓到壳子时由工具填进来，
 	// 下一次请求构造时消费一次即清——不留在缓冲里，否则每轮都会把请求切成服务端形态。
 	retryURLs []string
+	// summary 该缓冲的流是压缩/摘要生成（非回答）：Emit 时带给 DeltaEvent.Summary，
+	// 前端标注「正在生成摘要」。只有 generateSummary 置位。
+	summary bool
 	// turnStart 本 Turn 的起点（D317）：时钟段的「已跑多久」从它起算；cutSegment 换缓冲时
 	// 由调用方重置（新段 = 新的一段计时）。
 	turnStart time.Time

@@ -89,6 +89,7 @@ var enAgentTexts = map[string]string{
 	"compact.covered":         "That node is already covered by a summary: a new summary would sit above the old one, the waterline would stay there and it would never enter the context (to summarize again, insert the summary before a node that comes after the old summary)",
 	"compact.root_no_place":   "there is no place to insert before the conversation root",
 	"compact.err_insert":      "insert summary",
+	"compact.generating":      "Generating summary…",
 	"compact.retry_notice":    "The summary output did not match the template; retrying with a reminder",
 	"compact.auto_done":       "Context is ≈{est} tokens, past the auto-compaction threshold {at}; a summary was generated",
 	"compact.auto_failed":     "Auto-compaction failed ({err}); fell back to trimming the oldest messages",

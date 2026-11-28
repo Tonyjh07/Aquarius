@@ -57,6 +57,7 @@ func (a *Agent) generateSummary(ctx context.Context, id conversation.MessageID, 
 			})
 		}
 		buf := newTurnBuffer(id)
+		buf.summary = true // 流式增量标 Summary，前端区别于回答
 		stream, err := a.llm.Generate(ctx, port.GenerateRequest{
 			Model:    a.modelName(),
 			Messages: msgs,

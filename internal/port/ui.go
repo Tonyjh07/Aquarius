@@ -16,6 +16,9 @@ type Event any
 type DeltaEvent struct {
 	MessageID conversation.MessageID
 	Delta     Delta
+	// Summary 该增量属于压缩/摘要的生成流（不是回答）：前端借此把草稿标注成
+	// 「正在生成摘要」，避免与普通回答流混淆。
+	Summary bool
 }
 
 // ToolCallEvent 模型发起工具调用。

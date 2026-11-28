@@ -92,6 +92,7 @@ var zhAgentTexts = map[string]string{
 	"compact.covered":         "该节点之下已被摘要覆盖：新摘要会落在旧摘要之上，水位仍停在旧摘要，不会进入上下文。要重新总结，请把摘要插到旧摘要之后的节点之前",
 	"compact.root_no_place":   "会话根节点之前无处可插",
 	"compact.err_insert":      "插入摘要",
+	"compact.generating":      "正在生成摘要…",
 	"compact.retry_notice":    "摘要输出未匹配模板，正在带提醒重试",
 	"compact.auto_done":       "上下文 ≈{est} tokens 达自动压缩阈值 {at}，已生成摘要",
 	"compact.auto_failed":     "自动压缩失败（{err}），已回退最旧裁剪",

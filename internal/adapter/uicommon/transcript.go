@@ -38,6 +38,9 @@ type Transcript struct {
 	Drafting bool               // 草稿是否在流式中（区分空草稿与流过又清空的草稿）
 	Think    strings.Builder    // 进行中的思维链（D34：实时可见，落块只经 FlushThink 出口）
 	Usage    conversation.Usage // 前端累计值（/usage 走节点汇总不受影响）
+	// summaryNoticed 本段摘要流是否已发过「正在生成摘要」标注（每次流开始只发一条；
+	// 任何非摘要增量把它复位，/compact 重试的第二段会再发一次）。
+	summaryNoticed bool
 	// Flushed 待调和的草稿正文段块序（D95 Turn 粒度）：工具事件先于 CommittedEvent
 	// 到达——工具边界把流式草稿落为正文块（正文先于工具行/chip，第 2 轮文本重新
 	// 流式）；提交（每 Turn 一次）时就地回填权威文本。元素是前端落块时回报的块句柄。
@@ -88,6 +91,7 @@ func (t *Transcript) TakeDraftSegment() string {
 // Reset 转写重开（D75：/switch、/new）：丢弃草稿、思维链与待调和段，用量归零。
 // 前端的块列表、滚动与折叠态由 Clear 出口自理。
 func (t *Transcript) Reset() {
+	t.summaryNoticed = false
 	t.ResetDraft()
 	t.Think.Reset()
 	t.Flushed = t.Flushed[:0]
@@ -223,6 +227,18 @@ func (t *Transcript) Dispatch(ev port.Event, s *Sink) {
 	t.flushThink(s) // 思维链阶段结束：落为暗块，后续正文/工具/提交照常
 	switch e := ev.(type) {
 	case port.DeltaEvent:
+		if e.Summary && e.Delta.Text != "" {
+			// 摘要生成流（/compact 与 /summary 共用）：首条增量发标注，用户看得见
+			// 这段流不是回答。摘要落盘是 system 节点，提交后草稿被权威文本替换。
+			if !t.summaryNoticed {
+				t.summaryNoticed = true
+				if s.Notice != nil {
+					s.Notice(i18n.T("compact.generating"), true)
+				}
+			}
+		} else {
+			t.summaryNoticed = false
+		}
 		if e.Delta.Server != nil {
 			// 服务端读链接（D310）：正文不进客户端，用户只能看到「读了哪一页」。
 			t.flushSegment(s)

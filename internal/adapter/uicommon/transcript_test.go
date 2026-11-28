@@ -326,3 +326,24 @@ func imgsEqual(img any, want ...string) bool {
 	}
 	return true
 }
+
+// TestDispatchSummaryNotice 摘要生成流标注：首条摘要增量发一次「正在生成摘要」，
+// 同一段流不重复发；摘要流结束后再来普通增量，下一段摘要流再发一次。
+func TestDispatchSummaryNotice(t *testing.T) {
+	r := &recorder{}
+	tr := &Transcript{}
+	s := r.sink(tr)
+	sum := port.DeltaEvent{Delta: port.Delta{Text: "a"}, Summary: true}
+	tr.Dispatch(sum, s)
+	tr.Dispatch(sum, s)
+	tr.Dispatch(port.DeltaEvent{Delta: port.Delta{Text: "answer"}}, s)
+	tr.Dispatch(sum, s)
+	if len(r.notices) != 2 {
+		t.Fatalf("notices = %d, want 2（每段摘要流一条）: %+v", len(r.notices), r.notices)
+	}
+	for _, n := range r.notices {
+		if n.text != i18n.T("compact.generating") || !n.attention {
+			t.Fatalf("notice = %+v", n)
+		}
+	}
+}
