@@ -1,6 +1,6 @@
 package main
 
-// pluginhost.go Tier-1 插件在装配根的接线（plugin-design.md §5/§7）：私有目录、Host 与
+// pluginhost.go Tier-1 插件在装配根的接线（plugin-guide.md §5/§10）：私有目录、Host 与
 // 注册表。转换与状态机在 adapter/plugingo 与 plugin/tierone，这里只回答「目录在哪、
 // 语言是哪一种、谁来接」——与别的适配器一样，接线在 cmd。
 
@@ -355,7 +355,7 @@ func (w *wiring) setTierOne(ctx context.Context, name string, on, persist bool) 
 		if err := w.plugins1.SetEnabled(ctx, name, false); err != nil {
 			return err
 		}
-		// 面板跟着走（plugin-design.md §6）：留着上一帧等于让用户对着一个已经死掉的
+		// 面板跟着走（plugin-guide.md §6）：留着上一帧等于让用户对着一个已经死掉的
 		// 插件的界面点按钮。关窗失败不影响停用——那是界面层的事，记不记都在日志里。
 		if w.ui != nil {
 			_ = w.ui.Emit(ctx, port.CloseViewEvent{Plugin: name})

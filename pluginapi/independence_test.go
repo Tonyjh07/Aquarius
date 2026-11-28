@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// independence_test 稳定契约的独立性自查（plugin-design.md §2 方向规则的 v1 侧）：
+// independence_test 稳定契约的独立性自查（plugin-design.md §1 方向规则的 v1 侧）：
 // 本包不得 import internal/…（与内核类型解耦），不得 import 三方模块（零依赖契约，
 // 插件作者 go get 本包时不应拖进任何传递依赖）。内核侧的对应规则（internal 不 import
 // v1 之外还受 layerPluginAPI 依赖层约束）由 internal/arch 的 arch 测试守着。

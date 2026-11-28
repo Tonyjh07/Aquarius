@@ -1,6 +1,6 @@
 package pluginapi
 
-// uienv.go 界面环境的只读面（D352 / plugin-design.md §6）。
+// uienv.go 界面环境的只读面（D352 / plugin-guide.md §6）。
 //
 // 这是给「插件自己 import GUI 库开窗口」那条路留的信息面：插件要知道自己站在什么前端、
 // 深浅色、缩放比、以及宿主的语义色，才能画出一个跟宿主不打架的窗。宿主在这里只交出

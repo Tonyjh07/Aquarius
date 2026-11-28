@@ -9,7 +9,7 @@ import (
 	v1 "github.com/Tonyjh07/Aquarius/pluginapi"
 )
 
-// host.go 把内核服务包成 v1 Host（plugin-design.md §5）。首发八项，每项都只是转发—
+// host.go 把内核服务包成 v1 Host（plugin-guide.md §5）。首发八项，每项都只是转发—
 // 这里刻意不放任何策略：确认档、密钥解析、去重语义都在各自的内核实现里，插件面只拿
 // 「能做这件事的句柄」。
 //

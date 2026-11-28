@@ -1,6 +1,6 @@
 package uigui
 
-// pluginview.go 插件面板次窗（D346，plugin-design.md §6）。
+// pluginview.go 插件面板次窗（D346，plugin-guide.md §6）。
 //
 // 拉模式落地：插件不推送界面，本窗只在**三处**去问插件要当前帧——打开时、每次动作之后、
 // 目标换了之后。其余帧都画缓存里的那一棵，所以拖动窗口、滚动、输入表单文字都不会碰到插件。

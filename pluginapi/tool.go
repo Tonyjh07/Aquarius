@@ -2,7 +2,7 @@ package pluginapi
 
 import "context"
 
-// tool.go 工具供给面（plugin-design.md §4）：插件声明工具、执行工具。
+// tool.go 工具供给面（plugin-guide.md §4）：插件声明工具、执行工具。
 // 确认、超时与结果裁剪仍由内核的 ToolRunner 包在外面——插件拿到的永远是「已经裁决过」
 // 的调用，因此不要在 Execute 里再问用户。
 

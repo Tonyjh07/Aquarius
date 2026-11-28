@@ -7,7 +7,7 @@ import (
 	v1 "github.com/Tonyjh07/Aquarius/pluginapi"
 )
 
-// convert_speech.go 语音两侧的转换（plugin-design.md §3.1）：PCM 与原时间戳原样搬，
+// convert_speech.go 语音两侧的转换（plugin-design.md §1.2）：PCM 与原时间戳原样搬，
 // 音色与风格是配置项，不进模型上下文、不进会话树——这里也不需要它们进任何状态。
 
 // toV1SpeechRequest 合成请求。

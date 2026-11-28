@@ -10,7 +10,7 @@ import (
 	v1 "github.com/Tonyjh07/Aquarius/pluginapi"
 )
 
-// convert_llm.go 模型面的转换（plugin-design.md §3.1）：请求出去（内核 → 插件）、
+// convert_llm.go 模型面的转换（plugin-design.md §1.2）：请求出去（内核 → 插件）、
 // 增量回来（插件 → 内核），加模型清单与探测结论。
 //
 // 请求方向要格外小心三件：图片字节已由内核解析完（不是路径）；`ReasoningSignature` 与

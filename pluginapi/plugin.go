@@ -2,7 +2,7 @@ package pluginapi
 
 import "context"
 
-// plugin.go 生命周期（plugin-design.md §7）：工厂 + 实例。
+// plugin.go 生命周期（plugin-guide.md §7）：工厂 + 实例。
 //
 // 形态选了工厂而不是单例：每次启用造一个新实例，插件不必满足「初始化可重入」，
 // 代价是作者要理解全局状态随实例丢弃——这正是启停给用户的预期。

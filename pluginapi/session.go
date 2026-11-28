@@ -2,7 +2,7 @@ package pluginapi
 
 import "context"
 
-// session.go 会话身份的传递方式（plugin-design.md §5「会话身份」）。
+// session.go 会话身份的传递方式（plugin-guide.md §5「会话身份」）。
 //
 // 身份不进值类型，走 ctx：`ToolCall`、`CommandSpec`、`ViewAction` 都是一次调用的形状，
 // 往里加会话字段等于给每个面各开一个来源，迟早有两处不一致。ctx 只有一个来源，

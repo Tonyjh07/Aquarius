@@ -1,6 +1,6 @@
 package uicommon
 
-// plainview.go 组件树的文本渲染（plugin-design.md §6「降级有定义」）。
+// plainview.go 组件树的文本渲染（plugin-guide.md §6）。
 //
 // 一套数据两个消费者：GUI 用 Gio 画，没有次窗的前端（TUI）把同一棵树染成对齐文本。
 // 这里是**纯函数**，不碰终端、不碰状态——两个前端与测试都能直接调。

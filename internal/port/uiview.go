@@ -78,7 +78,7 @@ type UIViewAction struct {
 
 // PluginViews 面板供给面：列出所有在用的面板、取当前帧、交回动作。
 //
-// 拉模式（plugin-design.md §6）：内核要画就来取一次，插件不推送。Render 的实现要便宜——
+// 拉模式（plugin-guide.md §6）：内核要画就来取一次，插件不推送。Render 的实现要便宜——
 // 渲染器可能每帧问一次，但**只有动作后与打开时**才会真的调到插件，见 uigui 的帧状态。
 type PluginViews interface {
 	// Views 当前可打开的面板（只含已启用的插件）。顺序稳定：插件登记序 + 视图声明序。

@@ -1,4 +1,4 @@
-// Command aqbuild 构建一个「带某个 Tier-1 插件」的宿主二进制（plugin-design.md §7
+// Command aqbuild 构建一个「带某个 Tier-1 插件」的宿主二进制（plugin-guide.md §10
 // 「插件怎么进到二进制里」）。
 //
 // 它只认路径、包名与 tag，不认识任何具体插件：插件作者在自己仓库里跑它，得到一份可执行

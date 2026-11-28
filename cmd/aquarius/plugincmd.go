@@ -171,7 +171,7 @@ func v1SessionCtx(ctx context.Context) context.Context {
 	return ctx
 }
 
-// tierOneCommandInfo 声明 → 端口形状。文案是插件自己的（不进内核 i18n 表，plugin-design §6）。
+// tierOneCommandInfo 声明 → 端口形状。文案是插件自己的（不进内核 i18n 表，plugin-guide.md §4）。
 func tierOneCommandInfo(spec v1.CommandSpec, name string) port.CommandInfo {
 	params := make([]port.CommandParam, 0, len(spec.Params))
 	for _, p := range spec.Params {

@@ -1,5 +1,5 @@
 # 开发指南
-<!-- docs-sync: 2026-11-28 @ 97702f8 -->
+<!-- docs-sync: 2026-11-28 @ d106c4f -->
 
 > 本文汇编自 [AGENTS.md](../AGENTS.md)（规则原文以其为准）与 [contracts.md](contracts.md)；
 > 测试策略与门禁以本文为准。面向：后续贡献者与 AI 编码代理。
@@ -117,13 +117,13 @@ internal/adapter  llm(含 llm/tokenizer) / repl / storejson / memoryfs / toolbui
                   + M5：uigui(Gio 悬浮球 GUI) / uigui/platform(平台能力：纯 Go、不依赖 gio，
                         Windows 实测实现 + 非 Windows 降级实现，D111)
                   （一个适配器一个目录）
-pluginapi/v1      对外稳定契约（独立 go.mod、只增不改；规格见 plugin-design.md）
+pluginapi         对外稳定契约（独立 go.mod、只增不改；作者面 plugin-guide.md，内核侧 plugin-design.md）
 
 接口由消费方定义；错误 `fmt.Errorf("...: %w")` 包装；值对象具名类型；
 导出符号写注释；命名与 [overview.md](overview.md) 的统一语言一致（Revise/Carry/Fresh/Head/Part/Job）。
 
-**port 侧重构核对清单**（pluginapi/v1 防腐，plugin-design.md §11）：改了某个 port 类型的
-字段 → 先开 [plugin-design.md](plugin-design.md) §3.1 的防腐映射点列表找到对位的 v1 类型 →
+**port 侧重构核对清单**（pluginapi 防腐，plugin-design.md §5）：改了某个 port 类型的
+字段 → 先开 [plugin-design.md](plugin-design.md) §1.2 的防腐映射点列表找到对位的 v1 类型 →
 逐点核对语义有没有变 → 有语义变化（不只是搬运）就补决策记录；新增 v1 类型先在映射点
 列表补行再写代码。
 

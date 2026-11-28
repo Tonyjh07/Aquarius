@@ -2,7 +2,7 @@ package pluginapi
 
 import "context"
 
-// modality.go 语音两端口（plugin-design.md §4）：转写与合成，外加分段器形态。
+// modality.go 语音两端口（plugin-guide.md §4）：转写与合成，外加分段器形态。
 // 模型只见转写文本；音频字节始终走附件库，不在参数里传路径。
 
 // Transcriber 语音转写（ASR）。lang 是语种提示（"auto" / "zh" / "en"），

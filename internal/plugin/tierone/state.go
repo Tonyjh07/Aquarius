@@ -1,5 +1,5 @@
 // Package tierone Tier-1 插件的宿主侧：清单校验、实例状态机与注册表
-// （plugin-design.md §7）。
+// （plugin-guide.md §7）。
 //
 // 本包只认 pluginapi 与标准库（外加 i18n 文案表）：内核怎么把 port 接口接到插件上是
 // adapter/plugingo 的事，本包不 import 任何适配器——Host 由装配根通过 NewHost 注入。

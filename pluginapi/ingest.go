@@ -2,7 +2,7 @@ package pluginapi
 
 import "context"
 
-// ingest.go 摄取与输出两个面（plugin-design.md §4）：输入侧决定「这段原始输入变成什么」，
+// ingest.go 摄取与输出两个面（plugin-guide.md §4）：输入侧决定「这段原始输入变成什么」，
 // 输出侧决定「已提交的消息副本镜像到哪」。
 
 // Ingestor 输入摄取：OCR、音频直输这类降级链扩展点。多个摄取器按注册顺序询问，

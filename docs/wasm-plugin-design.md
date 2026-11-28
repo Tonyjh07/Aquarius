@@ -1,9 +1,10 @@
 # Tier-3 WASM 插件（运行期装载）设计规格
-<!-- docs-sync: 2026-11-28 @ 97702f8 -->
+<!-- docs-sync: 2026-11-28 @ d106c4f -->
 
 > 定位：第三种插件形态——**进程内 wasm 沙箱、运行期从目录装载、不用重编宿主**。只提供工具面。
 > 三级模型的总形状见 [contracts.md](contracts.md) §6.2；
-> Tier-1 的完整契约见 [plugin-design.md](plugin-design.md)；本文不重复也不改动 Tier-1 契约的结论。
+> Tier-1 的完整契约见 [plugin-guide.md](plugin-guide.md)（作者面）与
+> [plugin-design.md](plugin-design.md)（内核侧）；本文不重复也不改动它们的结论。
 > 决策动机与否决见 [decisions.md](decisions.md) 的 D344。
 
 ## 1. 定位与范围

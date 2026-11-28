@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// interfaces_test 接口面自查（plugin-design.md §4/§5/§7）：三件事——
+// interfaces_test 接口面自查（plugin-guide.md §4/§5/§7）：三件事——
 // 每个面都能被一个实现同时满足（编译期锁形状）、词表常量不撞值、哨兵错误可 errors.Is。
 // 这里不测行为：行为在宿主与插件的测试里，本包只承诺类型。
 

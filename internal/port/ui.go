@@ -71,7 +71,7 @@ type TextViewEvent struct {
 	Text  string
 }
 
-// OpenViewEvent 打开一个插件面板（plugin-design.md §6：用户从命令或菜单打开为次窗）。
+// OpenViewEvent 打开一个插件面板（plugin-guide.md §6：用户从命令或菜单打开为次窗）。
 //
 // 事件里只有「打开哪个」，没有内容：内容由前端拿 PluginViews 现取（拉模式）。所以有次窗的
 // 前端（GUI）开窗渲染组件树，没有的前端（TUI）就地渲染成文本——同一条事件两种消费。

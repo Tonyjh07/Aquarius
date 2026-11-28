@@ -1,5 +1,5 @@
 # 已决决策记录（ADR）
-<!-- docs-sync: 2026-11-28 @ 97702f8 -->
+<!-- docs-sync: 2026-11-28 @ d106c4f -->
 
 > **权威文档之一**：决策节于 2026-09 独立成篇，与 [contracts.md](contracts.md) 同级同权威
 > （该节 2026-10 从总设计文档删除，不再占节号）。编号**跨文件不变**
@@ -337,7 +337,7 @@
 | [D324](#d324) | 右键菜单规范化：气泡/图节点菜单按频率分层（高频顶层，编辑变体与查看类进「更多」子菜单，图侧节点操作与删除进「节点」「危险」子菜单）；logo 菜单重排（置顶/无人值守相邻成组）；右键命中改在按下消费帧解析并按块序找回（修「刚发的消息右键没反应」）；托盘菜单不动 | 已完成（v0.9.0） |
 | [D325](#d325) | Markdown 表格渲染：单独启用 goldmark 的 GFM Table 扩展（D65 的否决修订——表格不再按原文段落呈现），网格渲染（表头加粗 + 横竖细线、列宽按内容权重、单元格各自可选、复制按单元格逐行）；GFM 其余扩展维持否决 | 已完成（v0.9.0） |
 | [D326](#d326) | Turn 过程折叠：最终回答定稿后，本轮的过程块（思考块、工具 chip、答完的确认条）在渲染层折成一行摘要「工作 x 秒，调用了 x 个工具 · n 次权限确认」（点击展开铺回原块）；中途正文段与未答完的确认条穿透、原位不动；数据不动块序，键数恒定取子块之和，纯思考组不折叠 | 已完成（v0.9.0） |
-| [D327](#d327) | Tier-1 插件契约（pluginapi/v1）定型：独立类型层不暴露 `internal/port`、Host 消费面首发六项、UI 扩展面随 v1 开放（D143 收窄为「装载关、贡献开」）、生命周期工厂化并支持运行时启停、capabilities 降为展示语义；规格唯一住址在 plugin-design.md | 生效 |
+| [D327](#d327) | Tier-1 插件契约（pluginapi/v1）定型：独立类型层不暴露 `internal/port`、Host 消费面首发六项、UI 扩展面随 v1 开放（D143 收窄为「装载关、贡献开」）、生命周期工厂化并支持运行时启停、capabilities 降为展示语义；作者面规格住 plugin-guide.md，内核侧住 plugin-design.md | 生效 |
 | [D328](#d328) | MCP 风险按发现源分档（只定默认值）：声明未写 `risk` 时按来源取默认——config 来源 safe、plugins 目录来源 confirm；显式声明照旧生效，来源不覆盖显式声明 | 生效 |
 | [D329](#d329) | 无 chip 承载的权限确认合成一条折叠条：同一次运行内的连续确认收拾成一条，收起只报「N 次权限确认 · 允许 x · 拒绝 y」，点开才逐条铺问答；条内问句限长，应答就地写回 | 生效 |
 | [D330](#d330) | 确认态只吃 y/N：命令、附件、空闲唤醒转存后本轮结束执行，不当成「拒绝」送回工具链 | 生效 |
@@ -2973,8 +2973,8 @@
 
 ### D327 · Tier-1 插件契约（pluginapi/v1）定型
 
-- **决策**：Tier-1 的完整契约按 [plugin-design.md](plugin-design.md) 落地（接口面、UI 扩展面、宿主
-  服务、生命周期、版本纪律、能力边界都在那里，本文不重复规格）。本条记的是各处的方向性裁定：
+- **决策**：Tier-1 的完整契约落地（接口面、UI 扩展面、宿主服务、生命周期、版本纪律、能力边界
+  见 [plugin-guide.md](plugin-guide.md)，内核侧接入见 [plugin-design.md](plugin-design.md)，本文不重复规格）。本条记的是各处的方向性裁定：
   1. **v1 类型独立重述，不暴露 `internal/port` 类型**——防腐边界只在 `adapter/plugingo` 一处，
      v1 按对外语义冻结字段（如 `Usage.InputTokens` 就是总输入口径）。
   2. **Host 消费面首发六项**（Logger / Secrets / Blobs / WorkDir / Confirm / Notify）——每项都要
@@ -3287,7 +3287,7 @@
      布局一改就断，等于用未成文的内部布局做迁移接口。
 
 - **状态**：已完成（`pluginapi/memory.go` 与 `value.go` 删去文档值类型；`interfaces_test.go`
-  锁形状与「迁移素材是可选扩展」；plugin-design.md §3.1/§4/§5/§12、contracts
+  锁形状与「迁移素材是可选扩展」；plugin-design.md §1.2/§6 与 plugin-guide.md §4.5/§5、contracts
   §4.4/§5.4/§7.1 同步）。`plugingo` 转换层与内核装配（工具退出、只读、独占）在 P3 第 2/3 步接。
 
 <a id="d338"></a>
@@ -3315,7 +3315,7 @@
      删掉，与 D337 的「完全拥有」冲突。
 
 - **状态**：已完成（`pluginapi/session.go` 与 `session_test.go`（含「派生 ctx 不丢会话」）；
-  plugin-design.md §3.1/§4/§5 同步）。宿主侧注入点随 P3 第 3 步落地。
+  plugin-design.md §1.2 与 plugin-guide.md §4/§5 同步）。宿主侧注入点随 P3 第 3 步落地。
 
 <a id="d339"></a>
 
@@ -3349,7 +3349,7 @@
 
 - **状态**：已完成。`pluginapi/host.go`（Confirm 签名）、`adapter/plugingo/*`（转换 + Host +
   供给面适配器，配 `convert_test.go` / `host_test.go`）、`plugin/tierone/*`（状态机、清单
-  校验、独占记忆、Draining，配 `registry_test.go`）；plugin-design.md §5/§7/§11 同步。
+  校验、独占记忆、Draining，配 `registry_test.go`）；plugin-guide.md §5/§7 与 plugin-design.md §5 同步。
   装进 main 与 `/plugin` 操作面随 P3 第 3 步（还差内核侧记忆装配与工具注册表接线）。
 
 <a id="d340"></a>
@@ -3399,8 +3399,8 @@
 - **状态**：已完成（`pluginapi/tool.go` 的 `Tools(ctx)` 与 `ValidToolName`；
   `port.ToolSet` 与 `toolrun` 的 `AddSet`/`RemoveSet`/合并/按 ctx 查找；`plugingo` 的
   `ToolSet` 适配器与工具名校验；`tierone` 去掉空工具拒载；配 `set_test.go` /
-  `toolset_test.go` / `tool_test.go` / 改写 `TestEmptyToolListAllowed`；plugin-design.md
-  §3.1/§4/§7/§12 同步）。样例插件的导航语义与计数规则随其 design.md 重写。
+  `toolset_test.go` / `tool_test.go` / 改写 `TestEmptyToolListAllowed`；plugin-design.md §1.2/§6
+  与 plugin-guide.md §4/§7 同步）。样例插件的导航语义与计数规则随其 design.md 重写。
 
 <a id="d341"></a>
 
@@ -3440,7 +3440,8 @@
 
 - **状态**：已完成（`pluginapi/host.go` 的两项方法与注释、`Manifest.Locales` 注释改写；
   `plugingo` 的 `HostOptions.DataDir` / `WorkDir` / `Locale` 与三个转发方法、
-  `TestHostPathsAndLocaleArePassThrough`；两处 fakeHost；plugin-design.md §4/§5/§12/§13 同步）。
+  `TestHostPathsAndLocaleArePassThrough`；两处 fakeHost；plugin-guide.md §4/§5 与
+  plugin-design.md §6/§7 同步）。
   宿主侧接线已落（`cmd/aquarius/pluginhost.go`）：`DataDir` 取 `<profile>/plugin-data/<name>`，
   `WorkDir` 取 `<profile>/plugin-tmp/<name>` 并在每个实例新建前清空（崩溃退出没有关机钩子，
   启动时清才不依赖退出路径），`Locale` 取启动时生效的界面语言（wiring 里那份只读副本，与
@@ -3542,7 +3543,7 @@
 
 - **状态**：上游侧已完成（`cmd/aquarius/pluginext.go`、`assembleTierOne` 从接入口取工厂、
   `pluginext_test.go`、`cmd/aqbuild` 构建器与其 testdata 微型宿主/插件、
-  plugin-design.md §7「插件怎么进到二进制里」/§12/§13）。
+  plugin-design.md §4「构建期注入的机制」/§6/§7 与 plugin-guide.md §10）。
 
 <a id="d344"></a>
 
@@ -3601,7 +3602,7 @@
 
 - **背景**：样例插件（`aq-memory-plugin`）落到工具面时发现的，属于写契约时看不见、写到实现
   才暴露的那类缺口。设计口径是「主路径（模型能调工具）只回一句引导，降级通道（`Caps.Tools`
-  为假）注入标题」（plugin-design.md §5.2 第 6 条）。但 `MemoryRequest` 里只有
+  为假）注入标题」。但 `MemoryRequest` 里只有
   `BudgetTokens`——插件拿不到「这一轮有没有工具面」这个信号，也就无从判断自己走的是哪条路。
 
 - **当前处置（插件侧）**：永远在预算内带标题（每层 8 条、自身上限 600 token，与宿主软预算
@@ -3658,7 +3659,7 @@
 - **一处需要写进契约的语义**：`Node.Kind` 零值 = 纯容器（不产生像素与文本行，只渲染
   `Children`），`Children` 与任何 `Kind` 都可共存。插件要「表格与按钮并成一棵树」时没有
   别的表达方式，而借 `list` 充当容器会多出一行空列表。已写进 `pluginapi/uiext.go` 注释与
-  plugin-design.md §6。
+  plugin-guide.md §6。
 
 - **状态**：已完成。宿主侧 `port/uiview.go`、`plugingo/view.go`、`cmd/aquarius/pluginview.go`
   （聚合）、`/plugin view` 子命令、`uicommon/plainview.go`（文本渲染）、`uigui/pluginview.go`
@@ -3919,7 +3920,7 @@
   转换）、`plugingo/host.go`（`HostOptions.Environ` + `hostExt` 实现，存函数不存值）、
   `pluginhost.go` 接线。测试：六色格式与字段来源、无主题快照不得报浅色、两种前端词表、
   Host 扩展「给了才有」与「现问而非冻结」、转换逐字段保真、接口形状（无 channel/func）。
-  `docs/plugin-design.md` §10 的能力边界补了自持窗口的代价。
+  `docs/plugin-guide.md` §11 的能力边界补了自持窗口的代价。
 
 <a id="d353"></a>
 
@@ -3969,7 +3970,7 @@
   2. `aqbuild -bundle <相对插件根>` 把外部程序拷到产物旁边（可重复）。位置定在产物目录：
      插件靠「自己这个 exe 在哪」定位那个程序，不需要配置、不依赖运行目录；用户拿到的是一个
      目录加几个文件。构建前挡三类错：文件不在、给的是目录、与产物或彼此同名。
-  3. 四条硬要求（写进 `plugin-design.md` §7，不是建议）：子进程 **stdin EOF 自保**；
+  3. 四条硬要求（写进 `plugin-guide.md` §10.3，不是建议）：子进程 **stdin EOF 自保**；
      子进程的 stdout/stderr **接进 `Host.Logger()`**；`Secrets` / `Blobs` / `Confirm`
      **不透传**，要用由插件代取代转；握手与错误码**不外包**。
 
@@ -3995,6 +3996,6 @@
 
 - **状态**：已完成。`cmd/aqbuild`：`-bundle`（可重复的自定义 flag）、`resolveBundles`
   （相对插件根解析 + 三类前置检查）、`copyBundles` 与 `copyFileAtomic`（临时文件再改名）、
-  摘要多一行。`docs/plugin-design.md` §7 新增「插件自带外部进程」一节、参数表与执行顺序
-  （四步改五步）同步、§10 能力边界登记这条路。测试：拷贝落到产物旁边且产物仍可运行、相对
+  摘要多一行。`docs/plugin-guide.md` §10.3 新增「自带外部进程」一节、§10.1 参数表与执行顺序
+  （四步改五步）同步、§11 能力边界登记这条路。测试：拷贝落到产物旁边且产物仍可运行、相对
   路径按插件根解析、三类坏参数各自报错、两个同名外部程序报错。

@@ -13,7 +13,7 @@ import (
 	v1 "github.com/Tonyjh07/Aquarius/pluginapi"
 )
 
-// 每个转换面配一条断言（plugin-design.md §11 第 2 条）。测的是语义：值原样搬过去、
+// 每个转换面配一条断言（plugin-design.md §5 第 2 条）。测的是语义：值原样搬过去、
 // 该丢的丢了、默认值没被悄悄填上。
 
 func TestRequestConversion(t *testing.T) {

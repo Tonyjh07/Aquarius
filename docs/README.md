@@ -1,5 +1,5 @@
 # 文档地图与分工
-<!-- docs-sync: 2026-11-26 @ f3dcf69 -->
+<!-- docs-sync: 2026-11-28 @ d106c4f -->
 
 > 一页说清每篇文档**写给谁、管什么、谁是权威**。改文档之前先在这里找该篇的位置——
 > 位置不清的文档会同时变成手册、历史档案和待办清单，最后没人读完。
@@ -24,6 +24,18 @@
 
 根目录 [README.md](../README.md) 同属用户面：功能清单 + 构建 + 文档索引，不承载设计与决策。
 
+## 插件开发者面
+
+读者 = 给 Aquarius 写插件的人。假定会写 Go，但不要求读过内核源码，也不关心内核里的做法。
+同一条纪律：**不得出现** `D<n>` / `§<n>` / 里程碑这类内部编号。
+
+| 文档 | 管什么 | 权威性 |
+|---|---|---|
+| [plugin-guide.md](plugin-guide.md) | 写一个进程内 Go 插件：形态选型、最小骨架、清单、九个供给面、Host、界面贡献、生命周期、版本纪律、打包与分发、能力边界 | **插件作者面的事实唯一处**（接口语义、能依赖什么、要守什么约定）；内核怎么接、类型怎么转换不在这里 |
+
+这组目前只有一篇。Tier-3（WASM）的 ABI 与沙箱边界仍写在
+[wasm-plugin-design.md](wasm-plugin-design.md)，那篇是给实现者看的规格，作者面文档待补。
+
 ## 贡献者面
 
 读者 = 改代码的人与 AI 编码代理。可以用内部编号，但**编号只能做索引或溯源、不能代替说明**——
@@ -41,7 +53,7 @@
 | [development.md](development.md) | 门禁、测试手段、工程准则与边界、How-to | 开发流程的唯一处 |
 | [relation-map-design.md](relation-map-design.md) | 会话树关系图的形态规格（通道分配、行为契约） | uigui 实现规格；可被测试断言的部分以本文为准 |
 | [gui-design.md](gui-design.md) | GUI 壳内实现规格：悬浮球形态、输入栏与转写、主题令牌、多窗、缩放、气泡菜单 | uigui 实现规格；`§15.x` 引用指本文 |
-| [plugin-design.md](plugin-design.md) | Tier-1 插件（`pluginapi/v1`）实现规格：接口面、UI 扩展面、宿主服务、生命周期、版本纪律 | plugingo 实现规格；三级模型总形状在 contracts §6.2 |
+| [plugin-design.md](plugin-design.md) | Tier-1 插件的内核侧实现规格：v1 与内核类型的边界（防腐映射）、内核侧装配与记忆接管、界面事件在宿主侧的落地、构建期注入的机制、验收 | 内核侧的唯一规格；作者面在 [plugin-guide.md](plugin-guide.md) |
 | [wasm-plugin-design.md](wasm-plugin-design.md) | Tier-3 WASM 插件实现规格：ABI v1、沙箱边界、发现与启停、能力边界 | 运行期装载插件的唯一规格；本文只覆盖工具面 |
 | [AGENTS.md](../AGENTS.md) | 硬性规则、文档纪律、常用命令、提交要求、本机环境该记什么 | **规则的唯一处**（development.md 是汇编，冲突以本文为准） |
 | [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md) | 第三方组件的版本与许可证 | 再分发合规依据 |
@@ -56,6 +68,9 @@
 - **契约 vs 实现规格**：内核规格（领域模型、端口、应用层、权限与安全、并发）在
   [contracts.md](contracts.md)；单个适配器的形态规格（GUI 窗口与输入栏、关系图通道分配）各自成篇，
   与 contracts 同级但只管那一个适配器。
+- **插件作者面 vs 插件内核侧**：插件怎么写、接口是什么语义、能依赖什么，在
+  [plugin-guide.md](plugin-guide.md)；宿主怎么把插件接进来（防腐映射、装配顺序、构建期注入、
+  验收）在 [plugin-design.md](plugin-design.md)。作者面不复述内核做法，内核侧不复述接口语义。
 - **契约 vs 决策**：contracts 回答「现在什么是真的」，decisions 回答「为什么这么定、否决了什么」。
   contracts 不写演化史；decisions 不重复规格结论。
 - **档案 vs 规划**：做过的进 roadmap，没做的进 plan，两者不混写。
@@ -83,8 +98,8 @@
 中文按 STC（简明技术性中文）写：词表、句长与四个场景的细则由 STC 规则给出
 （见 [AGENTS.md](../AGENTS.md) 末尾的 STC 段）。本仓只登记项目例外与术语，见
 [stc/terms.aquarius.yaml](stc/terms.aquarius.yaml)；2026-11-05 那轮逐篇审阅的过程报告已归档
-（[archive/review.md](archive/review.md)），当下的例外以词表为准。两条规则不随 STC 变：用户面文档不出现决策编号与节号；
-文档分工与「一个事实一处权威」按本文的地图。
+（[archive/review.md](archive/review.md)），当下的例外以词表为准。两条规则不随 STC 变：用户面与
+插件开发者面的文档不出现决策编号与节号；文档分工与「一个事实一处权威」按本文的地图。
 
 **存量分层**：STC 约束新写的和本次改动的文字；2026-11-04 引入之前的历史段落不追着改——
 改到哪一段，顺手把那一段按 STC 重写（改到即改写），不单独发起纯风格清扫。

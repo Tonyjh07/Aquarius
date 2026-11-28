@@ -2,7 +2,7 @@ package pluginapi
 
 import "context"
 
-// secrets.go 密钥供给面（plugin-design.md §4）：方向与 Host.Secrets() 相反——
+// secrets.go 密钥供给面（plugin-guide.md §4）：方向与 Host.Secrets() 相反——
 // 这里是内核调插件取密钥（keychain 类实现），那边是插件请内核解析。
 //
 // 一个名字一次解析，不提供列举：能列出来的密钥清单本身就是一份泄密面。

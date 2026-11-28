@@ -2,7 +2,7 @@ package pluginapi
 
 import "context"
 
-// command.go 命令供给面（plugin-design.md §4）：插件注册斜杠命令。
+// command.go 命令供给面（plugin-guide.md §4）：插件注册斜杠命令。
 // /help、分派与补全归内核；插件只声明「叫什么、吃什么参数、返回什么文本」。
 
 // CommandProvider 命令供给面。命令名与内置命令、其他插件撞名时宿主在启动校验期拒载。

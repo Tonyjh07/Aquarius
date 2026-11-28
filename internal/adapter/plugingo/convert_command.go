@@ -5,7 +5,7 @@ import (
 	v1 "github.com/Tonyjh07/Aquarius/pluginapi"
 )
 
-// convert_command.go 命令面的转换（plugin-design.md §3.1）：命令声明进 /help 与补全浮层，
+// convert_command.go 命令面的转换（plugin-design.md §1.2）：命令声明进 /help 与补全浮层，
 // 执行仍走内核分派。名字给主名 + 别名（首名为主名），两端同一规则。
 
 // toV1CommandSpec 内核命令清单条目 → 插件看到的形状（面板展示用）。

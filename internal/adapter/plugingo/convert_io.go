@@ -8,7 +8,7 @@ import (
 	v1 "github.com/Tonyjh07/Aquarius/pluginapi"
 )
 
-// convert_io.go 摄取与输出两个面的转换（plugin-design.md §3.1）：输入侧把原始输入交给
+// convert_io.go 摄取与输出两个面的转换（plugin-design.md §1.2）：输入侧把原始输入交给
 // 插件，输出侧把已提交消息的正文副本交给插件。
 //
 // 分片按**正文投影**重述：`Kind=tool` 不进 v1——工具往返是内核协作面，对外播报与摄取

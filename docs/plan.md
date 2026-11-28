@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-26 @ 830e85d -->
+<!-- docs-sync: 2026-11-28 @ d106c4f -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -30,10 +30,10 @@
   取默认（D328，`Decl.ToolRisk()` + `TestToolRiskBySource`）。
 - **P2 · pluginapi/v1 契约**（M）· 骨架已完成：独立 go.mod 模块（`pluginapi/`，零依赖、
   只许标准库，`independence_test.go` 守独立性）、manifest 与稳定值类型层（value.go，
-  每个导出类型带兼容承诺句）、防腐映射点列表（plugin-design.md §3.1）。接口面（九个供给
+  每个导出类型带兼容承诺句）、防腐映射点列表（plugin-design.md §1.2）。接口面（九个供给
   接口 + 可选扩展 + Host + 生命周期 + UI 声明面）已随 P3 第 1 步落盘，`interfaces_test.go`
   用一次性实现锁住形状；契约在 P3 收尾时完整冻结。
-- **P3 · plugingo 装载器 + 首个 Tier-1 插件**（M~L，关键路径）：按 plugin-design.md §7/§11/§12
+- **P3 · plugingo 装载器 + 首个 Tier-1 插件**（M~L，关键路径）：按 plugin-design.md §4/§5/§6 与 plugin-guide.md §4–§7
   实现。第 1 步（接口面）与第 2 步（`adapter/plugingo` 转换层 + Host 包装 + 供给面适配器、
   `plugin/tierone` 状态机与清单校验 + 独占记忆 + Draining）已落，第 3 步的大半也已落：
   注册表构造与 Host 接线（私有目录、当前语言、名字占用判定）、`/plugin` 并入 Tier-1
@@ -45,15 +45,15 @@
 
   外部插件怎么进二进制已经定了（D343）：上游只留 `cmd/aquarius/pluginext.go` 一个中性
   接入口，构建期用 `-overlay` 换文件 + `-modfile` 换依赖视图注入，上游产物零痕迹。
-  第 4 步的施工顺序：① `cmd/aqbuild` 构建器（已完成：参数见 plugin-design.md §7「构建器参数」，
+  第 4 步的施工顺序：① `cmd/aqbuild` 构建器（已完成：参数见 plugin-guide.md §10.1，
   testdata 微型宿主/插件跑通端到端——含相对 replace 改写、宿主零改动两条断言）；② 样例插件的
   `store/` 与单测（已完成：独立仓库 `aq-memory-plugin` 的 `store` 包，落盘形状与四条实现口径
   记在其 design.md §9）；③ 工具面 + `Recall`（已完成：`memplug` 包，窗口/命名/同轮稳定三条口径
   与一处契约缺口 D345 记在其 design.md §10）；④ 命令面 + 面板 + 迁移（命令面与迁移已完成：
   插件侧 `/mem` 六个子命令与首次启用的内置记忆搬迁，宿主侧 Tier-1 命令并入会话动态命令表、
-  与 MCP prompts 合流，口径见 plugin-design.md「命令面」一节与插件 design.md §11；面板已完成：
+  与 MCP prompts 合流，口径见 plugin-guide.md §4.4 与插件 design.md §11；面板已完成：
   `/plugin view` 打开次窗（GUI 组件树渲染、TUI 渲染成只读文本），四条落地口径与「零 Kind =
-  纯容器」的契约语义见 plugin-design.md §6「面板的落地口径」与 D346）。
+  纯容器」的契约语义见 plugin-guide.md §6.2 与 D346）。
 
   **样例插件定为间隔重复记忆插件**（独立仓库，设计稿见该仓库
   design.md；`Memory`（含首次启用的内置记忆迁移）+ `ToolProvider` + 面板形态），验收标准

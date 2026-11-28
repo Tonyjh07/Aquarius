@@ -10,7 +10,7 @@ import (
 	v1 "github.com/Tonyjh07/Aquarius/pluginapi"
 )
 
-// providers.go 供给面插件 → 内核端口的适配器（plugin-design.md §4）。
+// providers.go 供给面插件 → 内核端口的适配器（plugin-guide.md §4）。
 //
 // 这些适配器是内核对插件的唯一调用面：内核只认 port 接口，插件的实现藏在构造器后面。
 // 每个入口都做同一件容易被忘的事——把会话身份从内核的 ctx 键搬到 v1 的键

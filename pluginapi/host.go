@@ -5,7 +5,7 @@ import (
 	"io"
 )
 
-// host.go Host：插件可用的全部内核服务（plugin-design.md §5）。
+// host.go Host：插件可用的全部内核服务（plugin-guide.md §5）。
 //
 // 刻意少给：每个方法都是内核要长期背的兼容债。首发八项，往后只加独立接口
 // （插件对 Host 句柄做 type assertion），不扩本接口——扩了会破坏所有实现方。

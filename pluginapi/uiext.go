@@ -2,7 +2,7 @@ package pluginapi
 
 import "context"
 
-// uiext.go UI 扩展面（plugin-design.md §6）：插件交声明，不交像素。
+// uiext.go UI 扩展面（plugin-guide.md §6）：插件交声明，不交像素。
 //
 // 本文件不出现任何 GUI 类型，也没有回调式绘制：插件产出一棵语义组件树，界面层各渲染各的
 // （图形界面按 Gio 渲染，文本界面降级成对齐文本）。同一份数据两个消费者，将来换界面技术栈

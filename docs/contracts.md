@@ -1,5 +1,5 @@
 # 内核契约
-<!-- docs-sync: 2026-11-28 @ 97702f8 -->
+<!-- docs-sync: 2026-11-28 @ d106c4f -->
 
 > 内核（`internal/domain`、`internal/port`、`internal/plugin`、`internal/app`）的当前规格：
 > 领域不变量、端口接口、插件宿主职责、Turn 循环与装配、权限与安全模型、取消与并发语义。
@@ -313,7 +313,7 @@
   （随会话文件夹就近存放，D23）。用户可直接用编辑器改，`/memory` 即用系统编辑器打开（D24），下次读取即生效。
 - `memory_*` 工具只操作**全局 + 当前会话**两份，按文档名寻址（`memories.md` / `<id>.memory.md`）。
 - 无 embedding、无自动遗忘、无冲突消解；检索 = 关键词匹配。**这是内置实现的形状**：插件要
-  接管记忆走 `pluginapi.Memory` 的完全替代（plugin-design.md §4），接管期间 `memory_*` 四工具
+  接管记忆走 `pluginapi.Memory` 的完全替代（plugin-guide.md §4.5），接管期间 `memory_*` 四工具
   与 `/memory` 退出、内置记忆转只读并只作一次性迁移素材（`LegacyMemoryHost`）。
 
 ## 5. 端口设计（`internal/port`）
@@ -392,7 +392,7 @@ port 以接口与 DTO 为主，允许无状态纯函数助手（如 `ResolveJobI
 端口方法面 = 索引（供 system prompt 注入）、读、写、删、关键词检索五件；后端的差异止于此，
 上层不认「记忆存在哪」（`memory_*` 工具只见全局 + 当前会话两份，§4.4）。**这五件不端给插件**：
 插件面 `pluginapi.Memory` 只有一个 `Recall` 注入方法，存哪、怎么组织、怎么管理全归插件
-（plugin-design.md §4）。
+（plugin-guide.md §4.5）。
 
 注入面单独一个端口 `MemorySource`：`Recall(ctx, 会话 ID, 软预算)` 返回一块 markdown 与段细目，
 Agent 只认这个端口。内置回答者是 `memoryfs.Source`（上面五件拼成的内置形状），记忆插件接管后由装配根
@@ -1475,9 +1475,11 @@ type Decision struct {
 **双稳定级规则**：`internal/port` 可随内核重构；`pluginapi/v1` 只增不改，breaking change 走 `v2` 并存期。
 两者类型独立，由 `plugingo`/`mcpgate` 做防腐转换——外部插件永远编译不到内核类型上。
 
-Tier-1 的接口面、UI 扩展面、宿主服务（Host）与生命周期规格见 [plugin-design.md](plugin-design.md)（D327）；
-Tier-3 的 ABI、沙箱边界与启停规格见 [wasm-plugin-design.md](wasm-plugin-design.md)（D344）。
-本节保留三级模型的形状结论，规格细节不在这两处重复。
+Tier-1 的作者面（接口语义、Host 能力、界面词汇、生命周期义务、打包分发）见
+[plugin-guide.md](plugin-guide.md)（D327）；内核侧接入（防腐转换、装配与接管、构建期注入）
+见 [plugin-design.md](plugin-design.md)。Tier-3 的 ABI、沙箱边界与启停规格见
+[wasm-plugin-design.md](wasm-plugin-design.md)（D344）。
+本节保留三级模型的形状结论，规格细节不在别处重复。
 
 ### 6.3 MCP ⇄ Aquarius 映射（mcpgate 职责）
 

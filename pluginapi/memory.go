@@ -2,7 +2,7 @@ package pluginapi
 
 import "context"
 
-// memory.go 记忆供给面（plugin-design.md §4）：完全替代内置文档记忆。
+// memory.go 记忆供给面（plugin-guide.md §4）：完全替代内置文档记忆。
 //
 // 这里没有「文档增删查」的方法集——那是内置实现的形状，不是契约。插件接管记忆之后，
 // 记忆存在哪（文件、SQLite、远端服务）、怎么组织（文档、图层、向量、图）、怎么管理

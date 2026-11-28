@@ -9,7 +9,7 @@ import (
 	v1 "github.com/Tonyjh07/Aquarius/pluginapi"
 )
 
-// convert_tool.go 工具面与确认链的转换（plugin-design.md §3.1）。
+// convert_tool.go 工具面与确认链的转换（plugin-design.md §1.2）。
 //
 // 方向上只有一条准则：插件拿到的是**已经裁决过**的调用（确认、超时、裁剪都由内核
 // ToolRunner 包在外面），所以这里的入参不带确认信息，出参也不带「是否允许」。

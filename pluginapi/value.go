@@ -2,10 +2,10 @@ package pluginapi
 
 import "time"
 
-// value.go 稳定值类型层（plugin-design.md §3）：语义等价、字段冻结的公共词汇。
+// value.go 稳定值类型层（plugin-design.md §1.1）：语义等价、字段冻结的公共词汇。
 // 三条规则——按对外语义定义（不照抄内核内部语义）；内部实现细节不进；透传不解读的
 // 字段一律 []byte 并写明「原样保真、逐轮回传」义务。每个导出类型注释带一条兼容承诺句
-// （改这个类型破坏谁的二进制）。防腐映射点列表在 docs/plugin-design.md §3.1，
+// （改这个类型破坏谁的二进制）。防腐映射点列表在 docs/plugin-design.md §1.2，
 // plugingo 转换器照单核对。
 
 // ---------- 防腐通用词汇 ----------
@@ -194,7 +194,7 @@ type ConfirmAnswer struct {
 	Persist bool
 }
 
-// 记忆的值类型不在这里：记忆没有「文档」这一层词汇（plugin-design.md §4），
+// 记忆的值类型不在这里：记忆没有「文档」这一层词汇（plugin-guide.md §4），
 // 只有 MemoryRequest / MemoryContext / LegacyMemorySnapshot 三件，见 memory.go。
 
 // ---------- 语音 ----------
