@@ -62,6 +62,7 @@ var enCmdAdminTexts = map[string]string{
 	"cmd.secrets.warn.store_unreadable":  "Warning: secret store {path} cannot be read (copied from another machine, different account, or damaged file); ignored. This run uses same-name environment variables only. The original file is untouched, nothing was rewritten.",
 	"cmd.secrets.where.env":              "same-name environment variables",
 	"cmd.secrets.where.both":             "the secret store and same-name environment variables",
+	"cmd.secrets.where.plugin":           "the secret store, environment variables and the secret plugin",
 	"cmd.secrets.err.missing":            "Secret {name} not found: neither {where} has that name (store file {path})",
 	"cmd.secrets.err.store_unwired":      "provider {name}: secret store not wired, cannot save a plaintext key",
 	"cmd.secrets.err.store_failed":       "provider {name}: writing to the secret store failed",

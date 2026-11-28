@@ -62,6 +62,7 @@ var zhCmdAdminTexts = map[string]string{
 	"cmd.secrets.warn.store_unreadable":  "警告：本机密钥库 {path} 读不出（换机拷来、账户不同或文件损坏），已忽略；本次启动只用同名环境变量取密钥。原文件仍在，未做任何改写。",
 	"cmd.secrets.where.env":              "同名环境变量",
 	"cmd.secrets.where.both":             "本机密钥库与同名环境变量",
+	"cmd.secrets.where.plugin":           "本机密钥库、同名环境变量与密钥插件",
 	"cmd.secrets.err.missing":            "密钥 {name} 取不到：{where} 都没有这个名字（库文件 {path}）",
 	"cmd.secrets.err.store_unwired":      "provider {name}：本机密钥库不可用，无法保存明文密钥",
 	"cmd.secrets.err.store_failed":       "provider {name}：写入本机密钥库失败",

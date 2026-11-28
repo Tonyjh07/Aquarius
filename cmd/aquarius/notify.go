@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
@@ -16,8 +18,11 @@ import (
 // outputsPresenter 输出扇出装饰器（D28/D14）：包住实际 UI，Emit 透传后对
 // 已提交的 assistant 回答逐个调 OutputAdapter.Deliver——失败只记日志、不打断
 // 主流程（§5.7/§7.2）。app 与 UI 适配器均不感知输出器。
+// outs 可运行期增删（插件输出器按名挂载，D356）：Deliver 在前端 goroutine、
+// 启停在设置窗 goroutine，互斥保护。
 type outputsPresenter struct {
 	inner port.Presenter
+	mu    sync.Mutex
 	outs  []port.OutputAdapter
 	log   func(error) // 记日志（nil = 丢弃）
 }
@@ -26,7 +31,10 @@ func (p *outputsPresenter) Emit(ctx context.Context, ev port.Event) error {
 	if err := p.inner.Emit(ctx, ev); err != nil {
 		return err
 	}
-	if len(p.outs) == 0 {
+	p.mu.Lock()
+	outs := p.outs
+	p.mu.Unlock()
+	if len(outs) == 0 {
 		return nil
 	}
 	ce, ok := ev.(port.CommittedEvent)
@@ -34,12 +42,33 @@ func (p *outputsPresenter) Emit(ctx context.Context, ev port.Event) error {
 		return nil
 	}
 	req := port.OutputRequest{Message: ce.Message, Parts: ce.Message.Content}
-	for _, out := range p.outs {
+	for _, out := range outs {
 		if err := out.Deliver(ctx, req); err != nil && p.log != nil {
 			p.log(fmt.Errorf("%s: %w", i18n.Tf("cmd.asm.err.output_deliver", "name", out.Name()), err))
 		}
 	}
 	return nil
+}
+
+// AddOutput 挂一个输出器（重复名先摘后挂）。
+func (p *outputsPresenter) AddOutput(out port.OutputAdapter) {
+	p.RemoveOutput(out.Name())
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.outs = append(p.outs, out)
+}
+
+// RemoveOutput 按名摘除；返回是否摘到了。
+func (p *outputsPresenter) RemoveOutput(name string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for i, out := range p.outs {
+		if out.Name() == name {
+			p.outs = slices.Delete(p.outs, i, i+1)
+			return true
+		}
+	}
+	return false
 }
 
 // notifySenderImpl 装配用发送器入口（测试可替换，避免 e2e 真弹系统通知）。

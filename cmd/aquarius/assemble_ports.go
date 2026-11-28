@@ -325,6 +325,7 @@ func (w *wiring) buildLLMs() error {
 	// 而不是在启动这里 fatal。
 	if w.primary == nil {
 		w.client = unconfiguredLLM{}
+		w.llmRoute = newLLMRoute(w.client)
 		return nil
 	}
 	w.logServerCaps(w.primary)
@@ -341,9 +342,14 @@ func (w *wiring) buildLLMs() error {
 		client, primaryCounter = unconfiguredLLM{err: err}, nil
 	}
 	w.client = client
+	// D356：primary 链最内层换成插件路由层——请求模型名命中插件模型走插件（照样吃
+	// 截断/审计/重试），没命中回落内置裸客户端；Models 并集让 /model 选得到插件模型。
+	// 插件启停只换 llmRoute 内里，装饰器链与降级链不重建。
+	w.llmRoute = newLLMRoute(client)
+	w.client = w.llmRoute
 	// 降级链条目（D173）：Model 空 = 透传 req.Model（primary——agent 每轮注入当前
 	// 模型，热切换不失效）；降级目标 = 该项声明的模型，省略时取该 provider 的 models[0]。
-	w.fallbackEntries = []decorate.FallbackEntry{{Name: w.primary.Name, LLM: client}}
+	w.fallbackEntries = []decorate.FallbackEntry{{Name: w.primary.Name, LLM: w.llmRoute}}
 	w.fallbackCounters = make(map[string]port.TokenCounter, 1+len(w.cfg.Model.Fallback))
 	if primaryCounter != nil {
 		w.fallbackCounters[w.primary.Name] = primaryCounter
@@ -423,6 +429,10 @@ func (w *wiring) buildPresenter() {
 // 配错（借的条目不存在、密钥取不到、本地模型读不到）只让该能力不可用——启动时已提示，
 // 不阻断对话。
 func (w *wiring) assembleAudio(ctx context.Context) {
+	// D356：语音两槽位先立容器——内置选型建出来后填进去，插件接管只换槽位内里，
+	// 消费者（ingestmic / outputtts / 语音键）只见容器。
+	w.asrRoute = newTranscribeRoute(nil)
+	w.ttsRoute = newSynthesizeRoute(nil)
 	// D316：deepseek 识别单段上限 120 秒——录音硬顶联动降到同一根线，整段模式最长也
 	// 只能录到那里；其他后端保持 240 秒（VAD 关时的启动警告在 bootstrap_profile）。
 	recMax := time.Duration(0)
@@ -437,7 +447,8 @@ func (w *wiring) assembleAudio(ctx context.Context) {
 			w.note(logging.LevelWarn, logging.Audio, "log.audio.asr_unavailable",
 				"log.act.voice_input_off", "why", why)
 		} else {
-			w.asr = c
+			w.asrRoute.setBuiltin(c)
+			w.asr = w.asrRoute
 		}
 	}
 
@@ -446,7 +457,8 @@ func (w *wiring) assembleAudio(ctx context.Context) {
 			w.note(logging.LevelWarn, logging.Audio, "log.audio.tts_unavailable",
 				"log.act.voice_off", "why", why)
 		} else {
-			w.ttsSynth = c
+			w.ttsRoute.setBuiltin(c)
+			w.ttsSynth = w.ttsRoute
 		}
 	}
 

@@ -250,6 +250,11 @@ type wiring struct {
 	dir         string // 数据根 <data>
 	profileName string
 	profileDir  string
+	// 插件供给面的消费侧容器（D356）：装配期插入既有链路，插件启停换内里。
+	llmRoute *llmRoute        // primary 链最内层：按请求模型名路由到插件模型
+	ingRoute *ingestRoute     // SessionDeps.Ingestors 尾位：插件摄取器集合
+	asrRoute *transcribeRoute // 识别槽位（w.asr 的真身或替身）
+	ttsRoute *synthesizeRoute // 合成槽位（w.ttsSynth 的真身或替身）
 	// wipePending 设置窗「删除数据目录」标记（datadiradmin.go）：退出链最后一步消费。
 	wipePending atomic.Bool
 	sandboxDir  string
@@ -597,7 +602,7 @@ func (w *wiring) sessionDeps(agent *app.Agent, ids port.IDGen, sessPersona *app.
 		SkillAdmin:  skillsAdminApp{w: w},
 		WatchCancel: watchCancel{w: w},
 		Log:         w.logFrom,
-		Ingestors:   []port.Ingestor{ingestfile.New(w.blobs), ingestclip.New(w.blobs), w.mic},
+		Ingestors:   []port.Ingestor{ingestfile.New(w.blobs), ingestclip.New(w.blobs), w.mic, w.pluginIngest()}, // 尾位 = 插件摄取器集合（内置优先，D356）
 		UI:          w.presenter,
 		Wake:        w.uiWake,
 		Memories:    memoryOpener{w: w},

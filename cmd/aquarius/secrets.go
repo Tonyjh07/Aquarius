@@ -24,7 +24,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// secretChain port.Secrets 的装配实现：库优先、环境变量兜底。
+// secretChain port.Secrets 的装配实现：库优先、环境变量兜底、密钥插件再兜底（D356）。
 type secretChain struct {
 	bin   *secretbin.Store // nil = 本机库未接线（只剩环境变量这一档）
 	env   port.Secrets     // 同名环境变量（envSecrets）
@@ -32,11 +32,26 @@ type secretChain struct {
 	// warned 库解不开只警告一次：启动期每个 provider 都会探一次密钥，逐个都打会把
 	// 一行警告刷成一屏（同一份坏文件，说一遍就够）。
 	warned atomic.Bool
+	// extra 密钥插件的兜底档（D356：bin → env → 插件；SetExtra 随插件启停换内里，
+	// 持有本链的消费者全局生效）。nil = 没有插件兜底。
+	extra atomic.Pointer[extraSecrets]
 }
+
+// extraSecrets atomic.Pointer 需要具体指针类型，接口值包一层。
+type extraSecrets struct{ s port.Secrets }
 
 var _ port.Secrets = (*secretChain)(nil)
 
-// Get 按名取用：先库、后同名环境变量；两处都没有时报因点名两处（不回显值）。
+// SetExtra 换插件兜底档（nil = 摘除）。
+func (c *secretChain) SetExtra(s port.Secrets) {
+	if s == nil {
+		c.extra.Store(nil)
+		return
+	}
+	c.extra.Store(&extraSecrets{s})
+}
+
+// Get 按名取用：先库、后同名环境变量、再密钥插件；三处都没有时报因点名（不回显值）。
 func (c *secretChain) Get(ctx context.Context, name string) (string, error) {
 	if c.bin != nil {
 		v, err := c.bin.Get(ctx, name)
@@ -57,8 +72,15 @@ func (c *secretChain) Get(ctx context.Context, name string) (string, error) {
 			return v, nil
 		}
 	}
+	if e := c.extra.Load(); e != nil {
+		if v, err := e.s.Get(ctx, name); err == nil {
+			return v, nil
+		}
+	}
 	where := i18n.T("cmd.secrets.where.env")
-	if c.bin != nil {
+	if c.extra.Load() != nil {
+		where = i18n.T("cmd.secrets.where.plugin")
+	} else if c.bin != nil {
 		where = i18n.T("cmd.secrets.where.both")
 	}
 	return "", errors.New(i18n.Tf("cmd.secrets.err.missing",
