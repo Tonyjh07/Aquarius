@@ -139,7 +139,7 @@ func (w *wiring) detachPluginPorts(name string) {
 			w.pluginTTSOut = false
 		}
 	}
-	if w.secretExtraOwner == name {
+	if w.secretExtraOwner == name && w.secrets != nil {
 		w.secretExtraOwner = ""
 		w.secrets.SetExtra(nil)
 	}

@@ -27,15 +27,17 @@ import (
 // 走插件；否则回落内置主链。命中与否对上层不可见——截断/审计/重试照常包在外面，
 // 降级链也照常工作（插件 Generate 报瞬时错误同样落到下一条降级链）。
 type llmRoute struct {
-	mu     sync.RWMutex
-	inner  port.LLM            // 内置主链裸客户端（未命中模型名时回落）
-	byMdl  map[string]port.LLM // 模型名 → 插件适配器（并集路由表）
-	owners map[string][]string // 插件名 → 它注册过的模型名（摘除用）
-	order  []string            // 插件启用序（Models 并集的稳定顺序）
+	mu       sync.RWMutex
+	inner    port.LLM            // 内置主链裸客户端（未命中模型名时回落）
+	byMdl    map[string]port.LLM // 模型名 → 插件适配器（并集路由表）
+	owners   map[string][]string // 插件名 → 它注册过的模型名（摘除用）
+	adapters map[string]port.LLM // 插件名 → 适配器（Models 并集遍历用）
+	order    []string            // 插件启用序（Models 并集的稳定顺序）
 }
 
 func newLLMRoute(inner port.LLM) *llmRoute {
-	return &llmRoute{inner: inner, byMdl: map[string]port.LLM{}, owners: map[string][]string{}}
+	return &llmRoute{inner: inner, byMdl: map[string]port.LLM{},
+		owners: map[string][]string{}, adapters: map[string]port.LLM{}}
 }
 
 var _ port.LLM = (*llmRoute)(nil)
@@ -50,6 +52,7 @@ func (r *llmRoute) attach(plugin string, l port.LLM, models []string) {
 		r.byMdl[m] = l
 	}
 	r.owners[plugin] = models
+	r.adapters[plugin] = l
 	r.order = append(r.order, plugin)
 }
 
@@ -63,6 +66,7 @@ func (r *llmRoute) detachLocked(plugin string) {
 		delete(r.byMdl, m)
 	}
 	delete(r.owners, plugin)
+	delete(r.adapters, plugin)
 	if i := slices.Index(r.order, plugin); i >= 0 {
 		r.order = slices.Delete(r.order, i, i+1)
 	}
@@ -98,7 +102,7 @@ func (r *llmRoute) Models(ctx context.Context) ([]port.ModelInfo, error) {
 		seen[m.Name] = true
 	}
 	for _, p := range r.order {
-		l := r.ownersModel(p)
+		l := r.adapters[p]
 		if l == nil {
 			continue
 		}
@@ -114,14 +118,6 @@ func (r *llmRoute) Models(ctx context.Context) ([]port.ModelInfo, error) {
 		}
 	}
 	return out, nil
-}
-
-// ownersModel 取插件适配器（调用方持读锁；order 遍历中 re-lock 会死锁，故经 map 直取）。
-func (r *llmRoute) ownersModel(plugin string) port.LLM {
-	if models := r.owners[plugin]; len(models) > 0 {
-		return r.byMdl[models[0]]
-	}
-	return nil
 }
 
 // ---------- ingestRoute：插件摄取器集合（内置优先，排尾位） ----------
