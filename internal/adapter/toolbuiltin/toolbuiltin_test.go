@@ -430,6 +430,12 @@ func TestThinkNoOp(t *testing.T) {
 	if err != nil || !res.OK {
 		t.Fatalf("think = %+v, %v", res, err)
 	}
+	// 空白内容（含缺 thought 键）报失败，不入树。
+	for _, args := range []string{`{"thought":"  "}`, `{}`} {
+		if res, err := th.Execute(context.Background(), call(args)); err == nil || res.OK {
+			t.Fatalf("空白 thought 应报错, args=%s res=%+v err=%v", args, res, err)
+		}
+	}
 }
 
 // TestBadJSONArgs 非法参数统一报 JSON 错误。
