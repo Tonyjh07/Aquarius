@@ -71,6 +71,7 @@ const (
 	rowNotify
 	rowTTS
 	rowBackupKeep // D254：会话树保留的备份代数（「常规」页存储区）
+	rowDataWipe   // 删除整个数据目录（输入确认词 + 退出时删；见 settings_datadir.go）
 	rowMaxTurns
 	rowMaxCtx
 	rowCompact

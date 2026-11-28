@@ -250,6 +250,8 @@ type wiring struct {
 	dir         string // 数据根 <data>
 	profileName string
 	profileDir  string
+	// wipePending 设置窗「删除数据目录」标记（datadiradmin.go）：退出链最后一步消费。
+	wipePending atomic.Bool
 	sandboxDir  string
 	cfgPath     string
 	cfg         *fileConfig
@@ -384,6 +386,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// 顺序骨架：profile 解析 → 端口装配 → UI → 工具/装饰器 → Agent/插件宿主/Session
 	// → 主循环；各段实现见 bootstrap_profile.go / assemble_ports.go / assemble_ui.go。
 	w := &wiring{stdin: stdin, stdout: stdout, stderr: stderr}
+	// 注册为第一个 defer（后进先出 = 最后跑）：设置窗标记的「退出时删数据目录」
+	//（datadiradmin.go）必须等日志句柄、密钥库全部关完才动目录。
+	defer w.runPendingWipe()
 	if err := w.bootstrap(f.data, f.profile, f.model, f.baseURL); err != nil {
 		if errors.Is(err, errFirstRun) {
 			return 0 // 首跑已写模板并打印指引（原契约：生成配置后重跑）

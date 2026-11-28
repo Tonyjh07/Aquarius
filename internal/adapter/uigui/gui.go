@@ -161,6 +161,9 @@ type Options struct {
 	// （列出 / 新增覆盖 / 删除任意名字；本地小文件 IO，不走工具页那套异步通道）；
 	// nil = 该页只读占位。
 	Secrets SecretsAdmin
+	// DataDir 数据目录删除入口（常规页存储区末行，settings_datadir.go）：装配根标记
+	// 「退出时删整个数据根」，真删除在进程退出前。nil = 按钮禁用。
+	DataDir DataDirAdmin
 	// Skills 技能管理面（D202/D203）：设置窗「技能」页数据面 + 异步动作（安装/更新/
 	// 卸载/重扫/技能目录增删）；nil = 该页只读占位。
 	Skills SkillsAdmin

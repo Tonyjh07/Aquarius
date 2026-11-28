@@ -115,6 +115,17 @@ type settingsForm struct {
 	importStatus string
 	importErr    bool
 
+	// 数据目录删除（常规页存储区末行）：动作面见 settings_datadir.go。armed = 已点
+	// 「删除」进展开态；确认词是字面量 DELETE（settings_datadir.go），不进文案表。
+	dataDir    DataDirAdmin     // nil = 按钮禁用（未接线）
+	wipeArm    widget.Clickable // 初始态的「删除…」（点击展开确认区）
+	wipeGo     widget.Clickable // 展开态的「确认删除」
+	wipeCancel widget.Clickable // 展开态的「取消」
+	wipeInput  widget.Editor    // 确认词输入档（单行）
+	wipeArmed  bool
+	wipeStatus string // 反馈文案（不匹配 / 已确认 / 失败）
+	wipeErr    bool
+
 	// 核心档控件（模型名/思考/档位/外观；provider 编辑走 provs）。
 	model    widget.Editor
 	hotkey   widget.Editor
@@ -345,6 +356,7 @@ func newSettingsFormState() *settingsForm {
 	f.secretName.SingleLine = true
 	f.secretValue.SingleLine = true
 	f.secretValue.Mask = '•'
+	f.wipeInput.SingleLine = true // 确认词单行档（Enter 无提交语义，执行走按钮）
 	return f
 }
 
@@ -370,6 +382,7 @@ func newSettingsForm(u *UI) *settingsForm {
 	// 字段档不在这里预填：展开是用户的动作，展开那一刻才把草稿对齐回快照。
 	f.secrets = u.opts.Secrets // S9-6b：密钥库管理面（nil = 只读占位）
 	f.syncSecretsSnapshot()    // 开窗即取一次（帧首同款；动作后再取）
+	f.dataDir = u.opts.DataDir // 数据目录删除入口（nil = 按钮禁用；动作面见 settings_datadir.go）
 	f.skills = u.opts.Skills   // D202/D203：技能管理面（nil = 只读占位）
 	f.syncSkillsSnapshot()     // 开窗即取一次（帧首同款；动作后再取）
 	f.skillSource.SingleLine = true

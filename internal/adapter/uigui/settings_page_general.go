@@ -31,7 +31,7 @@ func (generalPage) Rows(f *settingsForm) []rowDesc {
 		{kind: rowLang}, {kind: rowPlaceholder}, {kind: rowHotkey}, {kind: rowTheme}, {kind: rowScale},
 		{kind: rowFontSize}, {kind: rowWinSize},
 		sec(i18n.T("ui.page.general.section.output")), {kind: rowNotify}, {kind: rowTTS},
-		sec(i18n.T("ui.page.general.section.storage")), {kind: rowBackupKeep},
+		sec(i18n.T("ui.page.general.section.storage")), {kind: rowBackupKeep}, {kind: rowDataWipe},
 	}
 }
 
@@ -140,6 +140,8 @@ func (generalPage) Body(gtx layout.Context, th *material.Theme, f *settingsForm,
 		return fieldRow(gtx, th, i18n.T("ui.page.general.backup_keep_label"),
 			editorBox(th, &f.backupKeep, i18n.Tf("ui.page.general.backup_keep_hint",
 				"min", port.SettingsBackupKeepMin, "max", port.SettingsBackupKeepMax))), true
+	case rowDataWipe:
+		return f.dataWipeRow(gtx, th), true
 	}
 	return layout.Dimensions{}, false
 }
@@ -156,6 +158,19 @@ func (generalPage) Events(gtx layout.Context, u *UI, f *settingsForm) {
 	}
 	for f.welcomeOpen.Clicked(gtx) {
 		u.OpenWelcome() // D141：入口在设置窗（两个菜单都不带此项）
+	}
+	// 删除数据目录：arm 展开确认区；展开态里确认成功 = 标记待删后按菜单退出收尾
+	// （真删除在进程退出前，settings_datadir.go 有口径）。
+	for f.wipeArm.Clicked(gtx) {
+		u.dataWipeAction(f, "arm")
+	}
+	for f.wipeGo.Clicked(gtx) {
+		if u.dataWipeAction(f, "confirm") {
+			u.exitViaShell()
+		}
+	}
+	for f.wipeCancel.Clicked(gtx) {
+		u.dataWipeAction(f, "cancel")
 	}
 	f.openPicker(gtx, i18n.T("ui.page.general.perm_label"), &f.perm)
 	f.openPicker(gtx, i18n.T("ui.page.general.lang_label"), &f.uiLang)
