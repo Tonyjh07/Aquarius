@@ -201,23 +201,31 @@ cmd/linuxgate/       开发工具：非 Windows 门禁（WSL 内跑 linux 目标
 cmd/ci/              开发工具：本机门禁编排（fast / default / full 三档，pre-push hook）
 cmd/docsync/         开发工具：维护文档头「更新日期 + 代码基线」标记
 assets/              源图标 icon.png 与生成物 icon/（README、Windows 资源嵌入共用）
-pluginapi/v1/        对外稳定契约（Tier-1 插件唯一依赖；D29 后移出 M4，目录见"待建"）
+pluginapi/v1/        对外稳定契约（Tier-1 插件唯一依赖；独立 go.mod，D29）
 internal/domain/     conversation（会话树/Part/Revise）、tool（Spec/Call/Result）、perm（权限矩阵）
-internal/port/       llm/tool/store/memory/blob/modality/ingest/job/ui/misc
+internal/port/       全部端口契约（逐个端口的权威说明见 docs/contracts.md §5；此行不逐个罗列，
+                     罗列过的清单已经落后于现实两次）
 internal/app/        agent（Turn 循环）、prompt（装配/水位）、session（命令/摄取分派）、
                      est（token 计数链）、plugins/model/compact_prompt（M4 命令面与压缩提示词）
-internal/plugin/     config/session（声明与宿主契约）、host（发现合并/grant/生命周期，§6.4）
+internal/plugin/     Tier-2 MCP 宿主：config/session（声明与宿主契约）、host（发现合并/grant/
+                     生命周期，§6.4）。Tier-1 在 internal/plugin/tierone/（注册表与状态机）与
+                     internal/adapter/plugingo/（宿主适配）
 internal/i18n/       界面文案：zh.go / en.go 两张表 + 取词口（叶子包，D275）
 internal/adapter/    llm（含 llm/tokenizer 精确计数）、toolbuiltin（memory_*/file_*/think/sleep/
                      term_exec/job_*）、toolrun、storejson、memoryfs、repl、blobfs、jobproc、
                      ingestfile、ingestclip、notify、atomicfile、decorate（横切装饰器）、
-                     mcpgate（MCP client → port 投影，D30）、uitui（bubbletea TUI，D33）、
-                     uigui（Gio 悬浮球 GUI，D43/§15）、screencap、asrchat/asrwhisper/asropenai/
-                     asrfunasr、mimotts/vitstts/gptsovitstts、starlarkrun（run_code 脚本解释器，D319）、
+                     mcpgate（MCP client → port 投影，D30）、acpgate（ACP 外部代理网关，D244）、
+                     plugingo（Tier-1 Go 插件宿主）、uitui（bubbletea TUI，D33）、
+                     uigui（Gio 悬浮球 GUI，D43/§15）、uicommon（多前端共用的输入切分/命令分派）、
+                     screencap、asrchat/asrwhisper/asropenai/asrfunasr/asrdeepseek、
+                     mimotts/vitstts/gptsovitstts/ttsdeepseek、starlarkrun（run_code 脚本解释器，D319）、
                      zhconv（繁转简，内嵌 OpenCC 词典）、
-                     outputtts、micwin、ingestmic、audioplay、secretbin、probe、skillfs、
-                     webbrave/webchain/webdeepseek/webfetchlocal
-待建：                pluginapi/v1、plugingo（后移出 M4，D29）
+                     outputtts、micwin、ingestmic、audioplay、vadsilero（Silero VAD，D295）、
+                     secretbin、probe、skillfs、decide（决策客户端，D281/D290）、
+                     exchange（会话导出/导入，D242/D249）、characterfs（角色卡，D243/D247）、
+                     filesapi（DeepSeek Files API，D315）、pathres（路径真实落点解析，
+                     toolrun 与 acpgate 共用的权限判据）、webbrave/webchain/webdeepseek/webfetchlocal
+internal/inhistory/  GUI/TUI 共用的磁盘输入历史（叶子共用件，只被 adapter 与 cmd 引用）
 ```
 
 <!-- stc:start -->

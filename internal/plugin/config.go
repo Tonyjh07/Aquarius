@@ -1,5 +1,6 @@
-// Package plugin 插件宿主（§6.4，M4）：发现、校验、授权（grant）、
-// 生命周期与可观测。M4 只落 Tier-2（MCP server）；Tier-1 后移见 D29。
+// Package plugin Tier-2 插件宿主（§6.4）：MCP server 的发现、校验、授权（grant）、
+// 生命周期与可观测。Tier-1（进程内 Go 插件）不在此包：注册表与状态机在
+// internal/plugin/tierone/，宿主适配在 internal/adapter/plugingo/。
 //
 // 依赖方向：adapter/mcpgate ← plugin（宿主编排协议适配器）；本包只依赖 domain/port/标准库。
 package plugin
