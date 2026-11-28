@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-28 @ d6dd43f -->
+<!-- docs-sync: 2026-11-28 @ e3c8b45 -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -65,13 +65,13 @@
   design.md；`Memory`（含首次启用的内置记忆迁移）+ `ToolProvider` + 面板形态），验收标准
   （覆盖供给面、Host 消费面、管理面、生命周期四层）不变，另加两条记忆契约义务（接管期间
   `memory_*` 与 `/memory` 退出、内置记忆只读；两个 `provides: memory` 同时启用被拒）。
-- **P4 · 杂项收口**（S，随做随删）：regexp2 `MatchTimeout` 与计数路径 ctx 检查（安全）；
-  `think` 参数非空校验；压缩摘要流的 UI 标注；`/usage` 文案修正；三协议兼容回归
-  （DeepSeek 当 anthropic 协议的第二家真后端跑集成用例）。
+- **P4 · 杂项收口**（S）· 已完成：tokenizer 预切分正则加 `MatchTimeout` 且计数路径
+  全程响应取消（报错回落通用估算）；`think` 空白参数运行时报失败；压缩/摘要生成流在
+  转写里标注「正在生成摘要」（`DeltaEvent.Summary`）；`/usage` 与事实卡措辞改「最近实测」；
+  DeepSeek anthropic 端点的真后端兼容回归用例（`anthropic_live_test.go`，环境变量给 key
+  才跑）。
 - **收口**：稳定声明复核 → 全门禁 → 发布说明（引 stability.md，写 1.0 的承诺与不承诺）→
   winres 1.0.0.0。
-
-P4 可穿插；关键路径在 P3。
 
 ---
 
