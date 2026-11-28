@@ -150,6 +150,8 @@ func (r *Registry) enable(ctx context.Context, e *entry) error {
 	if e.state == StateActive {
 		return nil
 	}
+	// Draining 不需要单独的守卫：disable 全程持有注册表锁，并发 enable 会排队到停用
+	// 完成之后执行——语义自然就是「稍后再试」，没有与收尾赛跑的窗口。这条由测试锁住。
 	if e.validateErr != nil {
 		return e.validateErr
 	}
