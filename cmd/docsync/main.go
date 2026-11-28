@@ -332,13 +332,13 @@ func (e histEntry) rev() string {
 	if e.parent == "" {
 		return e.short
 	}
-	return e.parent
+	return shortHash([]byte(e.parent))
 }
 
 // loadHistory 一次读完 docs/ 与 README.md 的提交历史：路径 → 从新到旧的记录。
 // 逐篇各起一次 git log 在 Windows 上要好几秒，所以这里合并成一次。
 func loadHistory(root string) (map[string][]histEntry, error) {
-	out, err := exec.Command("git", "-C", root, "log", "--format=%x1e%H%x1f%p%x1f%h%x1f%ad",
+	out, err := exec.Command("git", "-C", root, "log", "--format=%x1e%H%x1f%P%x1f%ad",
 		"--date=short", "--name-only", "--", "docs", "README.md").Output()
 	if err != nil {
 		return nil, fmt.Errorf("读文档历史失败: %w", err)
@@ -350,15 +350,16 @@ func loadHistory(root string) (map[string][]histEntry, error) {
 			continue
 		}
 		lines := strings.Split(rec, "\n")
-		head := strings.SplitN(lines[0], "\x1f", 4)
-		if len(head) != 4 {
+		head := strings.SplitN(lines[0], "\x1f", 3)
+		if len(head) != 3 {
 			continue
 		}
-		sha, short, day := head[0], head[2], strings.TrimSpace(head[3])
+		sha, day := head[0], strings.TrimSpace(head[2])
 		parent := ""
 		if ps := strings.Fields(head[1]); len(ps) > 0 {
 			parent = ps[0] // 合并提交取首父
 		}
+		short := shortHash([]byte(sha))
 		for _, line := range lines[1:] {
 			rel := filepath.ToSlash(strings.TrimSpace(line))
 			if rel == "" {
