@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/uicommon"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
 )
@@ -19,7 +20,7 @@ func (m *model) commit(msg conversation.Message) {
 	// 轮次已收尾：没有工具再等权限答复了。取消时 Confirm 随 ctx 结束返回，
 	// 界面若还把确认态挂着，输入栏会一直停在「请回答」上却无钮可点。
 	m.dropConfirms()
-	m.usage = addUsage(m.usage, msg.Usage)
+	m.Usage = m.Usage.Add(msg.Usage)
 	text := partsText(msg.Content)
 	switch msg.Role {
 	case conversation.RoleAssistant:
@@ -31,9 +32,17 @@ func (m *model) commit(msg conversation.Message) {
 				b.id = msg.ID
 			}
 		}
-		m.resetDraft()
-		segs := nodeSegments(msg.Content)
-		if len(segs) == 0 && len(m.flushedDrafts) == 0 {
+		m.ResetDraft()
+		// D136：末个待调和段的索引在配对前捕获——「Turn 以工具收场（有助手正文、无
+		// 追加余段）」时 stamped 恒 false，挂点落在末个已落块上（外部审查 2026-10-13）。
+		lastFlushed := -1
+		if n := len(m.Flushed); n > 0 {
+			lastFlushed = m.Flushed[n-1]
+		}
+		// D95 Turn 粒度调和：切段与 FIFO 配对在共用状态机（uicommon），段序/图片/
+		// 盖章留在 GUI。
+		handles, backfill, extra := m.ReconcileDrafts(msg.Content, guiSegOpts())
+		if len(handles) == 0 && len(backfill) == 0 && len(extra) == 0 {
 			// 空内容的取消/错误也要有反馈（首个 token 前取消是最常见场景）；
 			// 纯工具/思考轮（chip/思考卡已实时入块）走 D89 锚点回填节点 ID。
 			// 空 Outcome 不打标记（D107 补：旧版 Revise 产的修订节点零值——标记会渲染成 `[]`）。
@@ -45,30 +54,18 @@ func (m *model) commit(msg conversation.Message) {
 			return
 		}
 		// flushed 草稿段就地回填（FIFO；权威文本以节点为准），并盖段序（D107④）。
-		consumed := 0
-		// D136：末个 flushed 段的索引在清空前捕获——「Turn 以工具收场（有助手正文、无
-		// 追加余段）」时 stamped 恒 false，而下面那条回填分支原来判的是**已清空的**
-		// flushedDrafts ⇒ 恒假 ⇒ 该 Turn 的挂点丢失、分叉条不出现（外部审查 2026-10-13）。
-		lastFlushed := -1
-		if n := len(m.flushedDrafts); n > 0 {
-			lastFlushed = m.flushedDrafts[n-1]
+		for i, seg := range backfill {
+			blk := &m.blocks[handles[i]]
+			blk.text = seg.Text
+			blk.imgs = segImages(seg) // D207：段内图片随段调和
+			blk.part = seg.Start
 		}
-		for _, idx := range m.flushedDrafts {
-			if consumed >= len(segs) {
-				break
-			}
-			m.blocks[idx].text = segs[consumed].text
-			m.blocks[idx].imgs = segs[consumed].imgs // D207：段内图片随段调和
-			m.blocks[idx].part = segs[consumed].start
-			consumed++
-		}
-		m.flushedDrafts = m.flushedDrafts[:0]
 		// 余段（收场轮的正文，通常仍在草稿）追加渲染；最后一段盖节点 ID
 		// ——分叉条（D81）每 Turn 一个挂点，挂在回答气泡下。
 		stamped := false
-		for i := consumed; i < len(segs); i++ {
-			blk := block{kind: blockAssistant, text: segs[i].text, part: segs[i].start, imgs: segs[i].imgs}
-			if msg.Outcome != "" && msg.Outcome != conversation.OutcomeDone && i == len(segs)-1 {
+		for i, seg := range extra {
+			blk := block{kind: blockAssistant, text: seg.Text, part: seg.Start, imgs: segImages(seg)}
+			if msg.Outcome != "" && msg.Outcome != conversation.OutcomeDone && i == len(extra)-1 {
 				mark := fmt.Sprintf("[%s]", msg.Outcome)
 				if strings.TrimSpace(blk.text) == "" {
 					blk.text = mark
@@ -76,28 +73,25 @@ func (m *model) commit(msg conversation.Message) {
 					blk.text = mark + "\n" + blk.text
 				}
 			}
-			if i == len(segs)-1 {
+			if i == len(extra)-1 {
 				blk.id = msg.ID
 				stamped = true
 			}
 			m.blocks = append(m.blocks, blk)
 		}
 		// Turn 以工具收场（正文段全部经工具边界落块）：末个已落块盖 ID。
-		// D136：索引取**清空前捕获**的 lastFlushed——原实现判的是上面 [:0] 清空后的
-		// flushedDrafts，恒假 ⇒ 这类 Turn 一个挂点都没有、分叉条不出现（外部审查 2026-10-13）。
 		if !stamped && lastFlushed >= 0 && lastFlushed < len(m.blocks) {
 			m.blocks[lastFlushed].id = msg.ID
 		}
-		m.flushedDrafts = m.flushedDrafts[:0]
 	case conversation.RoleSystem:
-		m.resetDraft()
+		m.ResetDraft()
 		if strings.TrimSpace(text) != "" {
 			m.add(blockSystem, text)
 		}
 	case conversation.RoleInject:
 		// 注入节点（D166）：独立成档，不落 user 盖章、不改标题、不挂分叉条——
 		// 头部由渲染期按 kind 生成（来源 + 触发状态），正文原样可选。
-		m.resetDraft()
+		m.ResetDraft()
 		m.addInject(text, msg.Source, msg.Trigger)
 	default:
 		// user 无独立事件面：输入行已在 submit 时回显入块——但回显时节点尚不存在、
@@ -116,23 +110,36 @@ func (m *model) commit(msg conversation.Message) {
 				}
 			}
 		}
-		m.resetDraft()
+		m.ResetDraft()
 	}
 }
 
-// flushDraftSegment 工具边界把流式草稿落为正文气泡（D95 Turn 粒度）：块先不带节点
-// ID（提交调和时回填权威文本并盖章），草稿清空后第 2 轮文本重新流式。
-func (m *model) flushDraftSegment() {
-	if !m.drafting && m.draft.Len() == 0 {
-		return
+// guiSegOpts GUI 的切段参数（共用状态机）：图片由真引用承载（D207），缺 BlobRef 的
+// 分片回落文字占位。
+func guiSegOpts() uicommon.SegOpts {
+	return uicommon.SegOpts{
+		Mode: uicommon.ImageWhenUnaddressable,
+		ImageOf: func(p conversation.Part) any {
+			if r, ok := imageRefOf(p); ok {
+				return r
+			}
+			return nil
+		},
 	}
-	text := m.draft.String()
-	m.resetDraft()
-	if strings.TrimSpace(text) == "" {
-		return
+}
+
+// segImages 取段内的 GUI 图片引用（共用状态机把每次 ImageOf 的产出按序装在
+// Segment.Image 里，这里还原成 GUI 的引用类型）。
+func segImages(s uicommon.Segment) []imgRef {
+	items, ok := s.Image.([]any)
+	if !ok {
+		return nil
 	}
-	m.flushedDrafts = append(m.flushedDrafts, len(m.blocks))
-	m.blocks = append(m.blocks, block{kind: blockAssistant, text: text, part: -1}) // 段序提交调和时盖（D107④）
+	out := make([]imgRef, 0, len(items))
+	for _, it := range items {
+		out = append(out, it.(imgRef))
+	}
+	return out
 }
 
 // nodeSeg 节点正文的一段（D95 Turn 粒度 + D207 图片）：text = 段内可读文本（§4.2 占位、
@@ -143,50 +150,15 @@ type nodeSeg struct {
 	start int
 }
 
-// nodeSegments 按工具分片把节点正文切段（D95）：段 = tool 分片之间的连续
-// text/image/audio/doc 分片；thinking 不进正文（回放单独成块，D42）。
-//
-// 判空规则（D207 修订）：**有图且无字也要成段**——纯图消息原来会被 TrimSpace 判空整段
-// 丢掉，图就再也不出现。段序与 textSegments 原规则一致（仅工具边界断段）。
+// nodeSegments 按工具分片把节点正文切段（D95）：切段规则在共用状态机
+// （uicommon.Segments），这里只做形态转换（既有测试与图片规则消费）。
 func nodeSegments(parts []conversation.Part) []nodeSeg {
-	var (
-		segs  []nodeSeg
-		b     strings.Builder
-		imgs  []imgRef
-		ord   = -1
-		start = -1
-	)
-	flush := func() {
-		text := sanitizeControl(b.String())
-		if strings.TrimSpace(text) != "" || len(imgs) > 0 {
-			segs = append(segs, nodeSeg{text: text, imgs: imgs, start: start})
-		}
-		b.Reset()
-		imgs = nil
-		start = -1
+	segs := uicommon.Segments(parts, guiSegOpts())
+	out := make([]nodeSeg, len(segs))
+	for i, s := range segs {
+		out[i] = nodeSeg{text: s.Text, imgs: segImages(s), start: s.Start}
 	}
-	for _, p := range parts {
-		if p.Kind == conversation.PartTool {
-			flush()
-			continue
-		}
-		if p.Kind == conversation.PartText {
-			ord++
-			if start == -1 {
-				start = ord
-			}
-		}
-		if p.Kind == conversation.PartImage {
-			if r, ok := imageRefOf(p); ok {
-				imgs = append(imgs, r)
-				continue // 图片由真图承载，正文里不再留文字占位
-			}
-			// 缺 BlobRef 的分片没有可寻址的图：回落文字占位（见 appendPartText）。
-		}
-		appendPartText(&b, p)
-	}
-	flush()
-	return segs
+	return out
 }
 
 // imageRefOf 附件分片 → 转写区图片引用（D207）：BlobRef 齐备才算（Hash 是缓存键，

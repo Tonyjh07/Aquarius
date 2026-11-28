@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/uicommon"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -15,22 +16,28 @@ import (
 
 // blockKind 转写块种类（样式由渲染期按 kind 决定——GUI 不做入块期着色，
 // 与 uitui 的 lipgloss 入块样式不同：Gio 主题令牌在 window.go，§15.4）。
-type blockKind int
+// 基枚举与 TUI 共用（uicommon.BlockKind）；GUI 专有种从 100 起另立区间扩展，
+// 不挤进共用段——分叉行/折叠条是 GUI 的呈现形态，TUI 无对应块。
+type blockKind = uicommon.BlockKind
 
 const (
-	blockPlain     blockKind = iota // Say/命令输出/通用行
-	blockUser                       // 提交的输入
-	blockAssistant                  // committed 助手文本（渲染期 markdown，§15.3 骨架先纯文本）
-	blockTool                       // 工具调用/结果 chip（骨架先文本行）
-	blockNotice                     // notice 提示
-	blockError                      // 错误块
-	blockSystem                     // system 节点（/compact 摘要等）
-	blockThinking                   // 思考块（D42；流式实时 + 定稿折叠，§15.3）
-	blockBranch                     // 分叉行（D81）：气泡下方的 `◀ i/n ▶` 切换条
-	blockInject                     // 注入节点（D166）：暗卡片 + 来源/触发头部，正文可选
-	blockCommand                    // 命令折叠条（D265）：连续命令合成一条，默认只留一行
-	blockTurn                       // Turn 过程摘要（D326）：本轮思考+工具折成一行，点击展开铺回
-	blockConfirm                    // 权限确认折叠条（D329）：连续确认合成一条，收起只报数与成败
+	blockPlain     = uicommon.BlockPlain
+	blockUser      = uicommon.BlockUser
+	blockAssistant = uicommon.BlockAssistant
+	blockTool      = uicommon.BlockTool
+	blockNotice    = uicommon.BlockNotice
+	blockError     = uicommon.BlockError
+	blockSystem    = uicommon.BlockSystem
+	blockThinking  = uicommon.BlockThinking
+	blockInject    = uicommon.BlockInject
+)
+
+// GUI 扩展块种。
+const (
+	blockBranch  blockKind = 100 + iota // 分叉行（D81）：气泡下方的 `◀ i/n ▶` 切换条
+	blockCommand                        // 命令折叠条（D265）：连续命令合成一条，默认只留一行
+	blockTurn                           // Turn 过程摘要（D326）：本轮思考+工具折成一行，点击展开铺回
+	blockConfirm                        // 权限确认折叠条（D329）：连续确认合成一条，收起只报数与成败
 )
 
 // block 一段定稿转写（text 已剥控制序列，§9）。
@@ -104,18 +111,18 @@ type pendingConfirm struct {
 	ci int
 }
 
-// model 渲染状态机：事件面规则对齐 uitui/model.go（§15.5）——
-// Delta.Reasoning 分流进思考草稿、CommittedEvent 定稿落块、HistoryEvent 回放
-// （思考暗块先行）、Say 纯文本块。仅事件循环 goroutine 读写；
+// model 渲染状态机：事件面规则与 uitui/model.go 同一套（§15.5）——通用事件走共用
+// 转写状态机（uicommon.Transcript，本结构体内嵌持有：Draft/Drafting/Think/Usage/
+// Flushed），GUI 出口经 sink 钩子接块列表；CommittedEvent 定稿落块、HistoryEvent
+// 回放（思考卡先行）、Say 纯文本块。仅事件循环 goroutine 读写；
 // 输入编辑态在 Gio editor（window.go），不在此处。
 type model struct {
 	u *UI
 
-	blocks   []block
-	draft    strings.Builder // 流式草稿（committed 后以消息文本定稿替换）
-	drafting bool
-	think    strings.Builder // 进行中的思维链（流式实时可见，D42）
-	thinkAt  time.Time       // 首个思考增量时刻（flush → ms 定稿耗时）
+	uicommon.Transcript               // 转写语义状态机（共用）
+	sink                uicommon.Sink // 共用事件分流的 GUI 出口
+	blocks              []block
+	thinkAt             time.Time // 首个思考增量时刻（flush → ms 定稿耗时）
 
 	confirm *pendingConfirm
 	// confirmQueue 排队的后续确认：并行工具调用会同时举手要权限，界面一次只问一条，
@@ -124,8 +131,7 @@ type model struct {
 	confirmQueue []*pendingConfirm
 	// ask 进行中的提问面板（D184）：非空时输入栏画面板、按键走面板语义。
 	ask         *pendingAsk
-	confirmChip int                // 确认归属的 chip 块序（D67；-1 = 非 chip 确认，如 /rm）
-	usage       conversation.Usage // 节点权威累计（用量详情后补进 logo 菜单，§15.1）
+	confirmChip int // 确认归属的 chip 块序（D67；-1 = 非 chip 确认，如 /rm）
 	// editTarget 编辑态目标节点（D92 气泡右键「编辑」）：非空时提交 = 结构化 /edit
 	// 命令（不回显，修订结果由清屏回放呈现）；"" = 非编辑态。仅事件循环 goroutine 读写。
 	editTarget conversation.MessageID
@@ -145,12 +151,6 @@ type model struct {
 	// editDropped 编辑态已标记删除的已有附件序号（D188：提交时翻成 --drop N）。
 	editDropped map[int]bool
 
-	// flushedDrafts 待调和的草稿正文段块序（D95 Turn 粒度）：工具事件先于
-	// CommittedEvent 到达——工具边界把流式草稿落为正文气泡（重构前观感：正文先于
-	// chip，第 2 轮文本重新流式），块先不带节点 ID；提交（每 Turn 一次）时就地回填
-	// 权威文本并盖章。chip 照旧直接入块，确认问答留痕不受提交调和影响。
-	flushedDrafts []int
-
 	// pendingCmd 最近一次提交的命令行（D265）：命令结果要到 Handle 返回后才到，
 	// 中间可能被清屏（/switch、/regen 会清屏回放），那时末尾已经没有该命令的命令条了。
 	// 记着命令行，迟到的结果才能归进一条新的折叠条，而不是以纯文本行落在一轮回答后面。
@@ -159,7 +159,45 @@ type model struct {
 
 // newModel 初始状态机。
 func newModel(u *UI) *model {
-	return &model{u: u}
+	m := &model{u: u}
+	m.sink = m.newSink()
+	return m
+}
+
+// newSink 共用事件分流的 GUI 出口：块结构与样式留在 GUI（chip/折叠条/盖章），事件
+// 语义全在共用状态机。
+func (m *model) newSink() uicommon.Sink {
+	return uicommon.Sink{
+		OnThink: func(first bool) {
+			if first {
+				m.thinkAt = time.Now() // 定稿耗时的起点
+			}
+		},
+		FlushThink:   m.addThinkBlock,
+		FlushSegment: m.addDraftSegment,
+		ServerRead: func(text string) {
+			// 服务端读链接（D310）：正文不进客户端——改变了本轮上下文预期，
+			// 留在转写里当一行提示。
+			m.add(blockNotice, text)
+		},
+		ToolCall:   m.addToolCall,
+		ToolResult: m.attachToolResult,
+		Committed:  m.commit,
+		History:    m.replay,
+		Error:      m.addErr,
+		Notice: func(text string, attention bool) {
+			// D267：回执收进折叠条；改变了本轮上下文预期的才留在转写里当一行提示。
+			if attention {
+				m.add(blockNotice, text)
+			} else {
+				m.addNote(text)
+			}
+		},
+		Clear: m.clear,
+		Unhandled: func(ev port.Event) {
+			m.add(blockPlain, sanitizeControl(fmt.Sprintf("%v", ev)))
+		},
+	}
 }
 
 // say 纯文本行（启动提示）。命令结果走 attachCommandOut 先进折叠条（D265）——
@@ -292,65 +330,22 @@ func (m *model) attachCommandOut(s string) bool {
 	return true
 }
 
-// handleEvent Turn 事件 → 转写块（与 repl.Emit 同呈现语义）。
+// handleEvent Turn 事件 → 转写块（与 repl.Emit 同呈现语义）：通用事件走共用状态机
+// （uicommon.Transcript.Dispatch），GUI 出口经 sink 钩子接块列表。
 func (m *model) handleEvent(ev port.Event) {
-	if d, ok := ev.(port.DeltaEvent); ok && d.Delta.Reasoning {
-		// 思维链（D34 展示）：积累进 think 草稿实时可见；提交时节点已带
-		// PartThinking（D42），故落块只由这里与 flushThink 负责，commit 不重复渲染。
-		if m.think.Len() == 0 {
-			m.thinkAt = time.Now()
-		}
-		m.think.WriteString(sanitizeControl(d.Delta.Text))
-		return
-	}
-	m.flushThink() // 思维链阶段结束：落为暗块，后续正文/工具/提交照常
-	switch e := ev.(type) {
-	case port.DeltaEvent:
-		if e.Delta.Text == "" {
-			return // 工具调用分片、用量分片不进转写
-		}
-		m.drafting = true
-		m.draft.WriteString(sanitizeControl(e.Delta.Text)) // 模型流为不可信输入（§9）
-	case port.ToolCallEvent:
-		m.flushDraftSegment() // D95：工具边界落正文段（正文气泡先于 chip，与重构前一致）
-		m.addToolCall(e.Call)
-	case port.ToolResultEvent:
-		m.attachToolResult(e.Result)
-	case port.CommittedEvent:
-		m.commit(e.Message)
-	case port.HistoryEvent:
-		m.replay(e.Message) // 启动历史回放（D40/§7.4）：按节点角色定稿渲染
-	case port.ErrorEvent:
-		// D323：错误收进折叠条（服务端错误片段可携带注入序列，先消毒）。
-		m.addErr(sanitizeControl(e.Err.Error()))
-	case port.NoticeEvent:
-		// D267：回执收进折叠条；改变了本轮上下文预期的才留在转写里当一行提示。
-		if e.Attention {
-			m.add(blockNotice, sanitizeControl(e.Text))
-		} else {
-			m.addNote(sanitizeControl(e.Text))
-		}
-	case port.ClearEvent:
-		m.clear() // 转写重开（D75：/switch、/new）
-	default:
-		m.add(blockPlain, sanitizeControl(fmt.Sprintf("%v", ev)))
-	}
+	m.Dispatch(ev, &m.sink)
 }
 
-// clear 清屏（D75：/switch、/new）：丢弃转写块、未完成草稿与进行中的思维链，
-// 用量归零（前端累计值，/usage 走节点汇总不受影响）；转写滚动与行选态在 UI 侧
-// 一并归零——内容没了，偏移/高度失去意义，恢复跟随贴底。
+// clear 清屏（D75：/switch、/new）：丢弃转写块；草稿、思维链、待调和段与用量由共用
+// 状态机的 Reset 归零；转写滚动与行选态在 UI 侧一并归零——内容没了，偏移/高度失去
+// 意义，恢复跟随贴底。
 func (m *model) clear() {
 	if m.ask != nil {
 		m.askDismiss() // D184：清屏（/switch、/new）时提问面板一并收场（放弃全部）
 	}
 	m.dropConfirms() // 块序随清屏重排，进行中的确认已经指不准 chip，一律收掉
 	m.blocks = nil
-	m.draft.Reset()
-	m.drafting = false
-	m.think.Reset()
-	m.flushedDrafts = nil
-	m.usage = conversation.Usage{}
+	m.thinkAt = time.Time{}
 	m.u.scrollPx, m.u.contentH = 0, 0
 	m.u.followTail = true
 	// D333/D334：清屏是整体置换，不是流式增长——追及时间线与回底按钮一起归零（否则

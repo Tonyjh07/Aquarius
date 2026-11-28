@@ -40,9 +40,9 @@ func TestBubbleRectsRegistered(t *testing.T) {
 	u.m.addMsg(blockUser, "问", "u1")
 	u.m.addMsg(blockAssistant, "一\n\n二", "a1")
 	u.m.addMsg(blockNotice, "提示", "")
-	u.m.drafting = true
-	u.m.draft.Reset()
-	u.m.draft.WriteString("草稿")
+	u.m.Drafting = true
+	u.m.Draft.Reset()
+	u.m.Draft.WriteString("草稿")
 
 	q := new(input.Router)
 	bubbleFrame(q, u)
@@ -157,8 +157,8 @@ func TestBubbleRightDuringStream(t *testing.T) {
 	q.Queue(pointer.Event{Kind: pointer.Press, Position: pos, Buttons: pointer.ButtonSecondary, PointerID: 7, Source: pointer.Mouse})
 	bubbleFrame(q, u)
 	// 流式增量：内容增高，user 气泡在抬起帧的几何里已不在 pos 之下。
-	u.m.drafting = true
-	u.m.draft.WriteString("回答\n很多行\n很多行")
+	u.m.Drafting = true
+	u.m.Draft.WriteString("回答\n很多行\n很多行")
 	bubbleFrame(q, u)
 	q.Queue(pointer.Event{Kind: pointer.Release, Position: pos, PointerID: 7, Source: pointer.Mouse})
 	bubbleFrame(q, u)

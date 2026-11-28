@@ -64,9 +64,9 @@ func allText(m *model) string {
 			b.WriteByte('\n')
 		}
 	}
-	b.WriteString(m.think.String())
+	b.WriteString(m.Think.String())
 	b.WriteByte('\n')
-	b.WriteString(m.draft.String())
+	b.WriteString(m.Draft.String())
 	return b.String()
 }
 
@@ -622,8 +622,8 @@ func TestLiveMultiSegmentTurn(t *testing.T) {
 		m.blocks[0].text != "我先看看" || m.blocks[0].id != "" {
 		t.Fatalf("工具边界 blocks = %+v", m.blocks)
 	}
-	if m.draft.Len() != 0 {
-		t.Fatalf("草稿未清空: %q", m.draft.String())
+	if m.Draft.Len() != 0 {
+		t.Fatalf("草稿未清空: %q", m.Draft.String())
 	}
 	m.handleEvent(port.ToolResultEvent{Result: tool.Result{CallID: "c1", OK: true, Output: "pong"}})
 	m.handleEvent(port.DeltaEvent{Delta: port.Delta{Text: "答案"}}) // 第 2 轮重新流式
@@ -713,8 +713,8 @@ func TestEventsAndCommit(t *testing.T) {
 	m, _ := newTestModel(t)
 
 	m.handleEvent(port.DeltaEvent{Delta: port.Delta{Text: "流式中"}})
-	if !strings.Contains(m.draft.String(), "流式中") || !m.drafting {
-		t.Fatalf("draft = %q drafting=%v, want 流式草稿", m.draft.String(), m.drafting)
+	if !strings.Contains(m.Draft.String(), "流式中") || !m.Drafting {
+		t.Fatalf("draft = %q drafting=%v, want 流式草稿", m.Draft.String(), m.Drafting)
 	}
 	m.commit(conversation.Message{
 		Role:    conversation.RoleAssistant,
@@ -722,20 +722,20 @@ func TestEventsAndCommit(t *testing.T) {
 		Content: []conversation.Part{{Kind: conversation.PartText, Text: "## 标题\n\n正文 **加粗**"}},
 		Usage:   conversation.Usage{InputTokens: 10, OutputTokens: 5},
 	})
-	if m.draft.Len() != 0 || m.drafting {
-		t.Fatalf("草稿未清: %q", m.draft.String())
+	if m.Draft.Len() != 0 || m.Drafting {
+		t.Fatalf("草稿未清: %q", m.Draft.String())
 	}
 	last := m.blocks[len(m.blocks)-1]
 	if last.kind != blockAssistant || !strings.Contains(last.text, "标题") || !strings.Contains(last.text, "正文") {
 		t.Fatalf("committed 块 = %+v", last)
 	}
-	if m.usage.InputTokens != 10 || m.usage.OutputTokens != 5 {
-		t.Fatalf("usage = %+v", m.usage)
+	if m.Usage.InputTokens != 10 || m.Usage.OutputTokens != 5 {
+		t.Fatalf("usage = %+v", m.Usage)
 	}
 	// Delta 里的用量分片不重复累计（节点是权威）。
 	m.handleEvent(port.DeltaEvent{Delta: port.Delta{Usage: &conversation.Usage{InputTokens: 99}}})
-	if m.usage.InputTokens != 10 {
-		t.Fatalf("usage 双重累计: %+v", m.usage)
+	if m.Usage.InputTokens != 10 {
+		t.Fatalf("usage 双重累计: %+v", m.Usage)
 	}
 
 	m.handleEvent(port.ToolCallEvent{Call: tool.Call{ID: "c1", Name: "file_read", Args: []byte(`{"path":"a.txt"}`)}})
@@ -774,7 +774,7 @@ func TestClearEvent(t *testing.T) {
 	}})
 	m.handleEvent(port.NoticeEvent{Text: "旧提示"})
 	m.handleEvent(port.DeltaEvent{Delta: port.Delta{Text: "未完成草稿"}})
-	m.usage = conversation.Usage{InputTokens: 7, OutputTokens: 3}
+	m.Usage = conversation.Usage{InputTokens: 7, OutputTokens: 3}
 	u.scrollPx, u.contentH, u.followTail = 120, 800, false
 	u.selRows = append(u.selRows, nil)
 	if len(m.blocks) == 0 {
@@ -785,11 +785,11 @@ func TestClearEvent(t *testing.T) {
 	if len(m.blocks) != 0 {
 		t.Fatalf("清屏后 blocks = %d, want 0", len(m.blocks))
 	}
-	if m.draft.Len() != 0 || m.drafting || m.think.Len() != 0 {
-		t.Fatalf("草稿/思维链未清: draft=%q think=%q", m.draft.String(), m.think.String())
+	if m.Draft.Len() != 0 || m.Drafting || m.Think.Len() != 0 {
+		t.Fatalf("草稿/思维链未清: draft=%q think=%q", m.Draft.String(), m.Think.String())
 	}
-	if m.usage.InputTokens != 0 || m.usage.OutputTokens != 0 {
-		t.Fatalf("用量未清: %+v", m.usage)
+	if m.Usage.InputTokens != 0 || m.Usage.OutputTokens != 0 {
+		t.Fatalf("用量未清: %+v", m.Usage)
 	}
 	if u.scrollPx != 0 || u.contentH != 0 {
 		t.Fatalf("滚动状态未清: scrollPx=%d contentH=%d", u.scrollPx, u.contentH)
@@ -863,8 +863,8 @@ func TestHistoryReplay(t *testing.T) {
 			t.Fatalf("blocks[%d].text = %q, 缺 %q", i, m.blocks[i].text, want)
 		}
 	}
-	if m.usage.InputTokens != 0 || m.usage.OutputTokens != 0 {
-		t.Fatalf("回放不应累计用量: %+v", m.usage)
+	if m.Usage.InputTokens != 0 || m.Usage.OutputTokens != 0 {
+		t.Fatalf("回放不应累计用量: %+v", m.Usage)
 	}
 }
 
@@ -931,11 +931,11 @@ func TestReasoningFlow(t *testing.T) {
 
 	// 流中：实时可见于 think 草稿。
 	m.handleEvent(port.DeltaEvent{Delta: port.Delta{Text: "先想一想", Reasoning: true}})
-	if !strings.Contains(m.think.String(), "先想一想") {
-		t.Fatalf("think 草稿 = %q", m.think.String())
+	if !strings.Contains(m.Think.String(), "先想一想") {
+		t.Fatalf("think 草稿 = %q", m.Think.String())
 	}
-	if m.draft.Len() != 0 {
-		t.Fatalf("思维链不应进正文草稿: %q", m.draft.String())
+	if m.Draft.Len() != 0 {
+		t.Fatalf("思维链不应进正文草稿: %q", m.Draft.String())
 	}
 	if m.thinkAt.IsZero() {
 		t.Fatal("首个思考增量应记录时刻（定稿耗时来源）")
@@ -944,7 +944,7 @@ func TestReasoningFlow(t *testing.T) {
 	// 回拨起点 2s：正文到达落块带耗时。
 	m.thinkAt = time.Now().Add(-2 * time.Second)
 	m.handleEvent(port.DeltaEvent{Delta: port.Delta{Text: "答案"}})
-	if m.think.Len() != 0 {
+	if m.Think.Len() != 0 {
 		t.Fatal("正文到达应把思维链落块")
 	}
 	if len(m.blocks) != 1 || m.blocks[0].kind != blockThinking {
@@ -953,8 +953,8 @@ func TestReasoningFlow(t *testing.T) {
 	if got := m.blocks[0].ms; got < 1 || got > 3000 {
 		t.Fatalf("思考耗时 ms = %d, want ≈2000", got)
 	}
-	if !strings.Contains(m.draft.String(), "答案") {
-		t.Fatalf("draft = %q", m.draft.String())
+	if !strings.Contains(m.Draft.String(), "答案") {
+		t.Fatalf("draft = %q", m.Draft.String())
 	}
 }
 
@@ -1040,8 +1040,8 @@ func TestCommitSystemUsageAccumulated(t *testing.T) {
 			{Kind: conversation.PartText, Text: "压缩摘要"},
 		},
 	})
-	if m.usage.InputTokens != 100 || m.usage.OutputTokens != 50 {
-		t.Fatalf("usage = %+v, want {100 50}", m.usage)
+	if m.Usage.InputTokens != 100 || m.Usage.OutputTokens != 50 {
+		t.Fatalf("usage = %+v, want {100 50}", m.Usage)
 	}
 }
 
@@ -1051,7 +1051,7 @@ func TestSayFlushesThink(t *testing.T) {
 	m, _ := newTestModel(t)
 	m.handleEvent(port.DeltaEvent{Delta: port.Delta{Text: "推理中", Reasoning: true}})
 	m.say("命令输出")
-	if m.think.Len() != 0 {
+	if m.Think.Len() != 0 {
 		t.Fatal("say 应先落思维链")
 	}
 	if len(m.blocks) != 2 || m.blocks[0].kind != blockThinking || m.blocks[1].kind != blockPlain {
@@ -1093,8 +1093,8 @@ func TestReplayStampsPartOrdinals(t *testing.T) {
 func TestCommitStampsPartOrdinals(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestModel(t)
-	m.drafting = true
-	m.draft.WriteString("前半段")
+	m.Drafting = true
+	m.Draft.WriteString("前半段")
 	m.flushDraftSegment()
 	m.addToolCall(tool.Call{ID: "t1", Name: "think", Args: json.RawMessage(`{}`)})
 	m.commit(conversation.Message{
@@ -1128,5 +1128,23 @@ func TestReplayEmptyOutcomeNoMarker(t *testing.T) {
 	})
 	if len(m.blocks) != 1 || m.blocks[0].text != "修订过的回答" {
 		t.Fatalf("blocks = %+v, want 单块且无 [] 标记", m.blocks)
+	}
+}
+
+// D310：服务端读链接的增量经共用状态机转成提示行——GUI 此前没有对应分流，
+// 事件被静默丢弃；现在留在转写里当一行提示（正文不进客户端）。
+func TestServerReadNotice(t *testing.T) {
+	t.Parallel()
+	m, _ := newTestModel(t)
+	m.handleEvent(port.DeltaEvent{Delta: port.Delta{Text: "head"}})
+	m.handleEvent(port.DeltaEvent{Delta: port.Delta{Server: &port.ServerBlock{URL: "https://x/a"}}})
+	if m.Draft.Len() != 0 {
+		t.Fatalf("服务端增量不应进正文草稿: %q", m.Draft.String())
+	}
+	// 读链接前的正文草稿按工具边界落段（D95），提示随后。
+	if len(m.blocks) != 2 || m.blocks[0].kind != blockAssistant || m.blocks[0].text != "head" ||
+		m.blocks[1].kind != blockNotice ||
+		m.blocks[1].text != i18n.Tf("ui.notice.server_read", "url", "https://x/a") {
+		t.Fatalf("blocks = %+v, want 正文段 + 读链接提示", m.blocks)
 	}
 }

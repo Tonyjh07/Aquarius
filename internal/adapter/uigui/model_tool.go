@@ -265,26 +265,39 @@ func confirmEcho(ans port.ConfirmAnswer) string {
 
 // flushThink 把进行中的思维链落为定稿思考块（D34/§15.3：定稿带耗时毫秒）。
 func (m *model) flushThink() {
-	if m.think.Len() == 0 {
+	m.addThinkBlock(m.TakeThink())
+}
+
+// addThinkBlock 落一块定稿思考块（共用状态机的 FlushThink 出口；text = "" 时不落）。
+func (m *model) addThinkBlock(text string) {
+	if text == "" {
 		return
 	}
 	ms := 0
 	if !m.thinkAt.IsZero() {
 		ms = int(time.Since(m.thinkAt).Milliseconds())
 	}
-	b := block{kind: blockThinking, text: m.think.String(), ms: ms}
-	m.blocks = append(m.blocks, b)
-	m.think.Reset()
+	m.blocks = append(m.blocks, block{kind: blockThinking, text: text, ms: ms})
 	m.thinkAt = time.Time{}
 }
 
-// resetDraft 清流式草稿。
-func (m *model) resetDraft() {
-	m.draft.Reset()
-	m.drafting = false
+// flushDraftSegment 工具边界把流式草稿落为正文气泡（D95 Turn 粒度）。
+func (m *model) flushDraftSegment() {
+	m.addDraftSegment(m.TakeDraftSegment())
 }
 
-// add 追加定稿块。思考块缺省 ms=-1（回放无耗时；flushThink 自行填）。
+// addDraftSegment 落一块正文草稿段并记入待调和清单（共用状态机的 FlushSegment 出口）：
+// 块先不带节点 ID（提交调和时回填权威文本并盖章），raw = "" 时不落块；草稿清空后
+// 第 2 轮文本重新流式。
+func (m *model) addDraftSegment(raw string) {
+	if raw == "" {
+		return
+	}
+	m.Flushed = append(m.Flushed, len(m.blocks))
+	m.blocks = append(m.blocks, block{kind: blockAssistant, text: raw, part: -1}) // 段序提交调和时盖（D107④）
+}
+
+// add 追加定稿块。思考块缺省 ms=-1（回放无耗时；addThinkBlock 自行填）。
 func (m *model) add(kind blockKind, text string) {
 	m.addMsg(kind, text, "")
 }
@@ -322,13 +335,10 @@ func partsText(parts []conversation.Part) string {
 	return uicommon.PartsText(parts, uicommon.ImageWhenUnaddressable)
 }
 
-// appendPartText 把一个分片的呈现文本写入 b（partsText/textSegments 共用规则）。
+// appendPartText 把一个分片的呈现文本写入 b（partsText/切段共用规则）。
 func appendPartText(b *strings.Builder, p conversation.Part) {
 	uicommon.AppendPartText(b, p, uicommon.ImageWhenUnaddressable)
 }
-
-// addUsage 用量累加（分项一起加，见 conversation.Usage.Add）。
-func addUsage(a, b conversation.Usage) conversation.Usage { return a.Add(b) }
 
 // sanitizeControl 剥除转义序列与控制字符（保留 \n\t；§9 不可信数据只渲染）。
 // 实现在 internal/adapter/uicommon，四个消费方共用。

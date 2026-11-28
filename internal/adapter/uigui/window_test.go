@@ -209,9 +209,9 @@ func TestFrameItemsLive(t *testing.T) {
 	u := &UI{plat: newFakePlat()}
 	u.m = newModel(u)
 	u.m.add(blockUser, "你好")
-	u.m.think.WriteString("想")
-	u.m.drafting = true
-	u.m.draft.WriteString("答")
+	u.m.Think.WriteString("想")
+	u.m.Drafting = true
+	u.m.Draft.WriteString("答")
 
 	items := u.frameItems()
 	if len(items) != 3 {

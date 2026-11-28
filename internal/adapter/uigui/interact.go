@@ -78,13 +78,13 @@ func (u *UI) frameItems() []blockView {
 			next++
 		}
 	}
-	if u.m.think.Len() > 0 {
-		items = append(items, blockView{kind: blockThinking, text: u.m.think.String(), live: true})
+	if u.m.Think.Len() > 0 {
+		items = append(items, blockView{kind: blockThinking, text: u.m.Think.String(), live: true})
 	}
-	if u.m.drafting || u.m.draft.Len() > 0 {
+	if u.m.Drafting || u.m.Draft.Len() > 0 {
 		items = append(items, blockView{
 			kind: blockAssistant,
-			text: strings.TrimRight(u.m.draft.String(), "\n"),
+			text: strings.TrimRight(u.m.Draft.String(), "\n"),
 			live: true,
 		})
 	}
@@ -163,7 +163,7 @@ func (u *UI) statusText() string {
 	}
 	if u.generating.Load() {
 		phase := i18n.T("ui.state.generating")
-		if u.m.think.Len() > 0 {
+		if u.m.Think.Len() > 0 {
 			phase = i18n.T("ui.state.thinking")
 		}
 		parts := []string{phase}

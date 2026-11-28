@@ -12,23 +12,25 @@ import (
 
 	"github.com/Tonyjh07/Aquarius/internal/adapter/uicommon"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
+	"github.com/Tonyjh07/Aquarius/internal/domain/tool"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// 转写块种类（渲染样式在入块时定稿；宽度相关的 markdown 渲染在事件时做）。
-type blockKind int
+// 转写块种类：与 GUI 共用同一基枚举（uicommon.BlockKind）；渲染样式在入块时定稿，
+// 宽度相关的 markdown 渲染在事件时做。
+type blockKind = uicommon.BlockKind
 
 const (
-	blockPlain     blockKind = iota // Say/命令输出/通用行
-	blockUser                       // 提交的输入
-	blockAssistant                  // committed 助手文本（glamour 渲染）
-	blockTool                       // 工具调用/结果行
-	blockNotice                     // notice 提示
-	blockError                      // 错误行
-	blockSystem                     // system 节点（/compact 摘要等）
-	blockThinking                   // 思维链暗块（D34 展示；节点侧 PartThinking 入树，D42）
-	blockInject                     // 注入节点（D166）：头部来源/触发 + 正文
+	blockPlain     = uicommon.BlockPlain
+	blockUser      = uicommon.BlockUser
+	blockAssistant = uicommon.BlockAssistant
+	blockTool      = uicommon.BlockTool
+	blockNotice    = uicommon.BlockNotice
+	blockError     = uicommon.BlockError
+	blockSystem    = uicommon.BlockSystem
+	blockThinking  = uicommon.BlockThinking
+	blockInject    = uicommon.BlockInject
 )
 
 // block 一段定稿转写（text 已含样式）。
@@ -51,39 +53,80 @@ const scrollStep = 8
 const inputRuneCap = 64 << 10
 
 // model tea.Model：转写区 + 输入区 + 状态行（状态由事件驱动更新）。
+// 转写语义状态（草稿/思维链/待调和段/用量）由内嵌的共用状态机持有（uicommon），
+// 本结构体只留 TUI 自己的块列表、输入与滚动。
 type model struct {
 	u *UI
 
-	blocks   []block
-	draft    strings.Builder // 流式草稿（committed 后以消息文本定稿替换）
-	drafting bool
-	think    strings.Builder // 进行中的思维链（D34：View 实时显示，正文/事件到达落暗块）
+	uicommon.Transcript               // 转写语义状态机：Draft/Drafting/Think/Usage/Flushed
+	sink                uicommon.Sink // 共用事件分流的 TUI 出口
+
+	blocks []block
 
 	input     []rune
 	history   []string
 	histIdx   int      // -1 = 未浏览历史
 	echoed    []string // 已本地回显、还没等到 CommittedEvent 的用户行（D272 核销用）
 	confirm   *pendingConfirm
-	usage     conversation.Usage
 	width     int
 	height    int
 	scroll    int // 距尾部的行数（0 = 跟随输出）
 	glam      *glamour.TermRenderer
 	glamWidth int
-
-	// flushedDrafts 待调和的草稿正文段块序（D95 Turn 粒度）：工具事件先于
-	// CommittedEvent 到达——工具边界把流式草稿落为正文块（重构前观感：正文先于
-	// 工具行，第 2 轮文本重新流式）；提交（每 Turn 一次）时就地回填权威文本。
-	flushedDrafts []int
 }
 
 // newModel 初始模型（宽度默认 80，等 WindowSizeMsg 校正）。
 func newModel(u *UI) *model {
 	m := &model{u: u, histIdx: -1, width: 80, height: 24}
+	m.sink = m.newSink()
 	if u.opts.HistoryStore != nil {
 		m.history = u.opts.HistoryStore.Lines() // 重启后 ↑ 能翻到上次输入的句子
 	}
 	return m
+}
+
+// newSink 共用事件分流的 TUI 出口：块结构与样式留在 TUI，事件语义全在共用状态机。
+func (m *model) newSink() uicommon.Sink {
+	return uicommon.Sink{
+		OnThink:      func(bool) { m.scroll = 0 },
+		OnDraft:      func() { m.scroll = 0 },
+		FlushThink:   func(text string) { m.add(blockThinking, "[thinking] "+text) },
+		FlushSegment: m.addDraftSegment,
+		ServerRead: func(text string) {
+			// 服务端读链接（D310）：正文不进客户端，用户只能看到「读了哪一页」。
+			m.add(blockTool, text)
+		},
+		ToolCall: func(call tool.Call) {
+			m.add(blockTool, "[tool] "+call.Name+" "+preview(call.Args))
+		},
+		ToolResult: func(res tool.Result) {
+			status, detail := "ok", res.Output
+			if !res.OK {
+				status, detail = "failed", res.Err
+			}
+			m.add(blockTool, "[tool "+status+"] "+preview([]byte(detail)))
+		},
+		Committed: m.commit,
+		History:   m.replay,
+		Error:     func(text string) { m.add(blockError, "error: "+text) },
+		Notice: func(text string, attention bool) {
+			// D267：改变了本轮上下文预期的提示占警示位；操作回执按普通行呈现，
+			// 不冒充警示（信息不丢，样式让位）。
+			if attention {
+				m.add(blockNotice, "[notice] "+text)
+				return
+			}
+			m.add(blockPlain, text)
+		},
+		Clear: m.clear,
+		Unhandled: func(ev port.Event) {
+			if ov, ok := ev.(port.OpenViewEvent); ok {
+				m.showPluginView(ov)
+				return
+			}
+			m.add(blockPlain, sanitizeControl(fmt.Sprintf("%v", ev)))
+		},
+	}
 }
 
 func (m *model) Init() tea.Cmd { return nil }
@@ -335,90 +378,32 @@ func (m *model) historyNext() {
 	m.input = []rune(m.history[m.histIdx])
 }
 
-// handleEvent Turn 事件 → 转写块（与 repl.Emit 同呈现语义）。
+// handleEvent Turn 事件 → 转写块（与 repl.Emit 同呈现语义）：通用事件走共用状态机
+// （uicommon.Transcript.Dispatch），TUI 出口经 sink 钩子接块列表。
 func (m *model) handleEvent(ev port.Event) {
-	if d, ok := ev.(port.DeltaEvent); ok && d.Delta.Reasoning {
-		// 思维链（D34 展示）：积累进 think 草稿实时可见；提交时节点已带
-		// PartThinking（D42），故落块只由这里与 flushThink 负责，commit 不重复渲染。
-		m.think.WriteString(sanitizeControl(d.Delta.Text))
-		m.scroll = 0
-		return
-	}
-	m.flushThink() // 思维链阶段结束：落为暗块，后续正文/工具/提交照常
-	switch e := ev.(type) {
-	case port.DeltaEvent:
-		if e.Delta.Server != nil {
-			// 服务端读链接（D310）：正文不进客户端，用户只能看到「读了哪一页」。
-			m.queueTool(i18n.Tf("tui.notice.server_read", "url", e.Delta.Server.URL))
-			return
-		}
-		if e.Delta.Text == "" {
-			return // 工具调用分片、用量分片不进转写
-		}
-		m.drafting = true
-		m.draft.WriteString(sanitizeControl(e.Delta.Text)) // 模型流为不可信输入（§9）
-		m.scroll = 0
-	case port.ToolCallEvent:
-		m.queueTool("[tool] " + e.Call.Name + " " + preview(e.Call.Args))
-	case port.ToolResultEvent:
-		status, detail := "ok", e.Result.Output
-		if !e.Result.OK {
-			status, detail = "failed", e.Result.Err
-		}
-		m.queueTool("[tool " + status + "] " + preview([]byte(detail)))
-	case port.CommittedEvent:
-		m.commit(e.Message)
-	case port.HistoryEvent:
-		m.replay(e.Message) // 启动历史回放（D40/§7.4）：按节点角色定稿渲染
-	case port.ErrorEvent:
-		m.add(blockError, "error: "+sanitizeControl(e.Err.Error())) // 服务端错误片段可携带注入序列
-	case port.NoticeEvent:
-		m.add(blockNotice, "[notice] "+sanitizeControl(e.Text))
-	case port.ClearEvent:
-		m.clear() // 转写重开（D75：/switch、/new）
-	case port.TextViewEvent:
-		// 上下文全文只投给有次窗的前端（§7.1）。行式界面没有次窗，而这份内容
-		// 已经写进导出目录了，读文件即可——这里刻意什么都不做。
-		return
-	case port.OpenViewEvent:
-		m.showPluginView(e)
-		return
-	default:
-		m.add(blockPlain, sanitizeControl(fmt.Sprintf("%v", ev)))
-	}
+	m.Dispatch(ev, &m.sink)
 }
 
-// clear 清屏（D75：/switch、/new）：丢弃转写块、未完成草稿与进行中的思维链，
-// 用量归零（前端累计值，/usage 走节点汇总不受影响）、滚回跟随。
+// clear 清屏（D75：/switch、/new）：转写块与滚动归零；草稿、思维链、待调和段与
+// 用量由共用状态机的 Reset 归零（前端累计值，/usage 走节点汇总不受影响）。
 func (m *model) clear() {
 	m.blocks = nil
-	m.resetDraft()
-	m.think.Reset()
-	m.flushedDrafts = nil
-	m.usage = conversation.Usage{}
 	m.scroll = 0
 }
 
-// queueTool 落一行工具输出（D95 Turn 粒度）：首个工具事件先把流式草稿落为正文块
-// （重构前观感），工具行随后直接入块。
-func (m *model) queueTool(text string) {
-	m.flushDraftSegment()
-	m.add(blockTool, text)
+// flushDraftSegment 工具边界把流式草稿落为正文块（D95 Turn 粒度）。
+func (m *model) flushDraftSegment() {
+	m.addDraftSegment(m.TakeDraftSegment())
 }
 
-// flushDraftSegment 工具边界把流式草稿落为正文块：块先不定稿样式，提交调和时
-// 回填权威渲染文本；草稿清空后第 2 轮文本重新流式。
-func (m *model) flushDraftSegment() {
-	if !m.drafting && m.draft.Len() == 0 {
+// addDraftSegment 落一块正文草稿段并记入待调和清单（共用状态机的 FlushSegment 出口）：
+// 块先不定稿样式，提交调和时回填权威渲染文本；raw = "" 时不落块。
+func (m *model) addDraftSegment(raw string) {
+	if raw == "" {
 		return
 	}
-	text := m.draft.String()
-	m.resetDraft()
-	if strings.TrimSpace(text) == "" {
-		return
-	}
-	m.flushedDrafts = append(m.flushedDrafts, len(m.blocks))
-	m.blocks = append(m.blocks, block{kind: blockAssistant, text: m.style(blockAssistant, text)})
+	m.Flushed = append(m.Flushed, len(m.blocks))
+	m.blocks = append(m.blocks, block{kind: blockAssistant, text: m.style(blockAssistant, raw)})
 	m.scroll = 0
 }
 
@@ -426,13 +411,13 @@ func (m *model) flushDraftSegment() {
 // 入块；用量累计。assistant 节点做调和而非重渲——flushed 草稿段就地回填权威渲染文本，
 // 工具行保留实时位置，收场轮的正文段从 parts 追加。
 func (m *model) commit(msg conversation.Message) {
-	m.usage = addUsage(m.usage, msg.Usage)
+	m.Usage = m.Usage.Add(msg.Usage)
 	text := partsText(msg.Content)
 	switch msg.Role {
 	case conversation.RoleAssistant:
-		m.resetDraft()
-		segs := textSegments(msg.Content)
-		if len(segs) == 0 && len(m.flushedDrafts) == 0 {
+		m.ResetDraft()
+		handles, backfill, extra := m.ReconcileDrafts(msg.Content, uicommon.SegOpts{Mode: uicommon.ImageNamed})
+		if len(handles) == 0 && len(backfill) == 0 && len(extra) == 0 {
 			// 空内容的取消/错误也要有反馈（审查修复：首个 token 前 Ctrl+C 是最常见
 			// 场景，旧实现什么都不显示；repl 会打 [cancelled]）。
 			if msg.Outcome != conversation.OutcomeDone {
@@ -441,32 +426,27 @@ func (m *model) commit(msg conversation.Message) {
 			return
 		}
 		// flushed 草稿段就地回填（FIFO；权威渲染文本以节点为准）。
-		for _, idx := range m.flushedDrafts {
-			if len(segs) == 0 {
-				break
-			}
-			m.blocks[idx].text = m.style(blockAssistant, m.renderMD(segs[0]))
-			segs = segs[1:]
+		for i, seg := range backfill {
+			m.blocks[handles[i]].text = m.style(blockAssistant, m.renderMD(seg.Text))
 		}
-		m.flushedDrafts = m.flushedDrafts[:0]
 		// 余段（收场轮的正文）追加渲染；非 done 终态标记并入最后一个正文块。
-		for i, seg := range segs {
-			if msg.Outcome != conversation.OutcomeDone && i == len(segs)-1 {
+		for i, seg := range extra {
+			if msg.Outcome != conversation.OutcomeDone && i == len(extra)-1 {
 				m.add(blockAssistant, lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Render(
-					fmt.Sprintf("[%s]", msg.Outcome))+"\n"+seg)
+					fmt.Sprintf("[%s]", msg.Outcome))+"\n"+seg.Text)
 				continue
 			}
-			m.add(blockAssistant, m.renderMD(seg))
+			m.add(blockAssistant, m.renderMD(seg.Text))
 		}
 		m.scroll = 0
 	case conversation.RoleSystem:
-		m.resetDraft()
+		m.ResetDraft()
 		if strings.TrimSpace(text) != "" {
 			m.add(blockSystem, text)
 		}
 	case conversation.RoleInject:
 		// 注入节点（D166）：独立成档（头部 = 来源 + 触发状态），不落 user 提示符。
-		m.resetDraft()
+		m.ResetDraft()
 		if strings.TrimSpace(text) != "" {
 			m.add(blockInject, injectHeader(msg.Source, msg.Trigger)+"\n"+text)
 		}
@@ -481,32 +461,9 @@ func (m *model) commit(msg conversation.Message) {
 				m.add(blockUser, text)
 			}
 		}
-		m.resetDraft()
+		m.ResetDraft()
 	}
 	m.scroll = 0
-}
-
-// textSegments 按工具分片把节点正文切段（D95 Turn 粒度）：段 = tool 分片之间的连续
-// text/image/audio/doc 分片，渲染规则与 partsText 一致（§4.2 占位、§9 出口消毒）。
-// thinking 分片不进正文（回放单独成块，D42）。
-func textSegments(parts []conversation.Part) []string {
-	var segs []string
-	var b strings.Builder
-	flush := func() {
-		if s := sanitizeControl(b.String()); strings.TrimSpace(s) != "" {
-			segs = append(segs, s)
-		}
-		b.Reset()
-	}
-	for _, p := range parts {
-		if p.Kind == conversation.PartTool {
-			flush()
-			continue
-		}
-		appendPartText(&b, p)
-	}
-	flush()
-	return segs
 }
 
 // replay 历史节点回放（D40/§7.4）：已提交节点按角色一次性定稿渲染，与实时
@@ -605,18 +562,9 @@ func partsText(parts []conversation.Part) string {
 	return uicommon.PartsText(parts, uicommon.ImageNamed)
 }
 
-// appendPartText 把一个分片的呈现文本写入 b（partsText/textSegments 共用规则）。
+// appendPartText 把一个分片的呈现文本写入 b（partsText/切段共用规则）。
 func appendPartText(b *strings.Builder, p conversation.Part) {
 	uicommon.AppendPartText(b, p, uicommon.ImageNamed)
-}
-
-// addUsage 用量累加（分项一起加，见 conversation.Usage.Add）。
-func addUsage(a, b conversation.Usage) conversation.Usage { return a.Add(b) }
-
-// resetDraft 清流式草稿。
-func (m *model) resetDraft() {
-	m.draft.Reset()
-	m.drafting = false
 }
 
 // add 追加定稿块（跟随尾部）。
@@ -631,11 +579,9 @@ func (m *model) add(kind blockKind, text string) {
 // flushThink 把进行中的思维链落为暗块（D34 展示规则）：不进正文草稿；
 // 节点侧已由 PartThinking 入树并按 config 回传（D42），此处只管呈现。
 func (m *model) flushThink() {
-	if m.think.Len() == 0 {
-		return
+	if text := m.TakeThink(); text != "" {
+		m.add(blockThinking, "[thinking] "+text)
 	}
-	m.add(blockThinking, "[thinking] "+m.think.String())
-	m.think.Reset()
 }
 
 // style 按块种类着色（glamour 输出原样；用户行加提示符）。
@@ -679,12 +625,12 @@ func (m *model) View() string {
 	for _, b := range m.blocks {
 		lines = append(lines, strings.Split(b.text, "\n")...)
 	}
-	if m.think.Len() > 0 {
+	if m.Think.Len() > 0 {
 		// 进行中的思维链实时可见（落块后由 blocks 承载）。
-		lines = append(lines, strings.Split(m.style(blockThinking, "[thinking] "+m.think.String()), "\n")...)
+		lines = append(lines, strings.Split(m.style(blockThinking, "[thinking] "+m.Think.String()), "\n")...)
 	}
-	if m.drafting || m.draft.Len() > 0 {
-		lines = append(lines, strings.Split(strings.TrimRight(m.draft.String(), "\n"), "\n")...)
+	if m.Drafting || m.Draft.Len() > 0 {
+		lines = append(lines, strings.Split(strings.TrimRight(m.Draft.String(), "\n"), "\n")...)
 	}
 
 	bottom := 2 // 状态行 + 输入/确认行
@@ -744,7 +690,7 @@ func (m *model) statusLine() string {
 	if n := m.u.pendingCount(); n > 0 {
 		parts = append(parts, i18n.Tf("tui.status.pending", "n", strconv.Itoa(n)))
 	}
-	if u := m.usage; u.InputTokens > 0 || u.OutputTokens > 0 {
+	if u := m.Usage; u.InputTokens > 0 || u.OutputTokens > 0 {
 		line := fmt.Sprintf("↑%d ↓%d", u.InputTokens, u.OutputTokens)
 		// D308：命中缓存的占比只在端点报过命中时补——没报时这半个括号只是噪音。
 		if u.CacheRead > 0 {

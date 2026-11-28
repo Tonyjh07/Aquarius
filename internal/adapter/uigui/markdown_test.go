@@ -201,8 +201,8 @@ func TestFrameItemsMarkdown(t *testing.T) {
 	u := newFrameUI()
 	u.m.add(blockUser, "给我列个清单")
 	u.m.add(blockAssistant, "好的：\n\n- 一项\n- 二项\n\n```go\ndone\n```")
-	u.m.drafting = true
-	u.m.draft.WriteString("**草稿**不解析")
+	u.m.Drafting = true
+	u.m.Draft.WriteString("**草稿**不解析")
 
 	items := u.frameItems()
 	if len(items) != 3 {

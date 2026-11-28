@@ -73,8 +73,8 @@ func TestEmitAndSayApplied(t *testing.T) {
 	u.Say("启动提示")
 	drainSync(t, u)
 
-	if u.m.draft.Len() != 0 || u.m.drafting {
-		t.Fatalf("committed 后草稿应清: %q", u.m.draft.String())
+	if u.m.Draft.Len() != 0 || u.m.Drafting {
+		t.Fatalf("committed 后草稿应清: %q", u.m.Draft.String())
 	}
 	if len(u.m.blocks) != 2 {
 		t.Fatalf("blocks = %+v, want 定稿 + plain", u.m.blocks)
@@ -328,11 +328,11 @@ func TestStatusTextPhase(t *testing.T) {
 		t.Fatalf("非生成态 statusText = %q, want 空", got)
 	}
 	u.SetInterrupt(func() {})
-	u.m.think.WriteString("想")
+	u.m.Think.WriteString("想")
 	if got := u.statusText(); got != i18n.T("ui.state.thinking")+" · m · strict" {
 		t.Fatalf("思考阶段 statusText = %q", got)
 	}
-	u.m.think.Reset()
+	u.m.Think.Reset()
 	if got := u.statusText(); got != i18n.T("ui.state.generating")+" · m · strict" {
 		t.Fatalf("生成阶段 statusText = %q", got)
 	}
