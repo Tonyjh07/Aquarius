@@ -383,13 +383,14 @@ func paperTextWidth(gtx layout.Context, th *material.Theme, text string) int {
 	return d.Size.X
 }
 
-// paperBtnKind 次窗按钮的三档语义（Paper 里只有这三种，不设第四档灰按钮）。
+// paperBtnKind 次窗按钮的语义档（默认三档 + 实底危险档；不设第四档灰按钮）。
 type paperBtnKind int
 
 const (
-	paperBtnSecondary paperBtnKind = iota // 次要：下沉面 + 主文字（默认形态）
-	paperBtnPrimary                       // 主操作：深一档强调底 + 白字（AA 达标）
-	paperBtnDanger                        // 破坏性：白面 + 危险色文字
+	paperBtnSecondary   paperBtnKind = iota // 次要：下沉面 + 主文字（默认形态）
+	paperBtnPrimary                         // 主操作：深一档强调底 + 白字（AA 达标）
+	paperBtnDanger                          // 破坏性：白面 + 危险色文字
+	paperBtnDangerSolid                     // 破坏性主操作：危险色实底 + 强调前景（删除数据目录这类不可恢复动作）
 )
 
 // paperButton 次窗通用按钮：统一圆角、内衬与三档配色。
@@ -409,6 +410,10 @@ func paperButton(th *material.Theme, c *widget.Clickable, label string, kind pap
 			b.Background, b.Color = pp.accent, pp.accentFg
 		case paperBtnDanger:
 			b.Background, b.Color = pp.card, pp.danger
+		case paperBtnDangerSolid:
+			// 前景借 accentFg：两套主题里它都是「强底上的对比字」（浅色 = 白、深色 = 近黑），
+			// 危险色实底在两套下都过得了 AA。
+			b.Background, b.Color = pp.danger, pp.accentFg
 		default:
 			b.Background, b.Color = pp.sunken, pp.text
 		}
