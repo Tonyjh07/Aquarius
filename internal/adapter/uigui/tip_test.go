@@ -12,7 +12,7 @@ import (
 )
 
 // TestFactsCardLines 事实卡内容（D82/S1-1g，§15.1）：五段规则——profile · 会话（标题 +
-// ID 前缀 + 模型/档位）· 上下文占用（pct + 计数方式）· 累计用量 · 上轮实测（有实测才显）。
+// ID 前缀 + 模型/档位）· 上下文占用（pct + 计数方式）· 累计用量 · 最近实测（有实测才显）。
 func TestFactsCardLines(t *testing.T) {
 	t.Parallel()
 	u := newFrameUI()
@@ -34,7 +34,7 @@ func TestFactsCardLines(t *testing.T) {
 		{lines[0], "default"}, {lines[0], "你好世界"}, {lines[0], "abcdefgh"}, {lines[0], "gpt-x（standard，high）"},
 		{lines[1], "32000/64000"}, {lines[1], "50.0%"}, {lines[1], "估算"},
 		{lines[2], "in 100 / out 20"},
-		{lines[3], "上轮"}, {lines[3], "in 90 / out 15"},
+		{lines[3], "最近"}, {lines[3], "in 90 / out 15"},
 	} {
 		if !strings.Contains(want.ln, want.sub) {
 			t.Fatalf("行 %q 缺 %q", want.ln, want.sub)
@@ -58,7 +58,7 @@ func TestFactsCardVariants(t *testing.T) {
 	}
 	lines := u.factsCard()
 	if len(lines) != 3 {
-		t.Fatalf("lines = %d, want 3（无模型/无上轮实测）:\n%s", len(lines), strings.Join(lines, "\n"))
+		t.Fatalf("lines = %d, want 3（无模型/无最近实测）:\n%s", len(lines), strings.Join(lines, "\n"))
 	}
 	if !strings.Contains(lines[0], "default · 分支（short）") {
 		t.Fatalf("line0 = %q", lines[0])
@@ -66,9 +66,9 @@ func TestFactsCardVariants(t *testing.T) {
 	if !strings.Contains(lines[1], i18n.T("ui.chat.ctx_mode_exact")) {
 		t.Fatalf("line1 = %q（应标精确）", lines[1])
 	}
-	// 无实测：末行就是累计行，不该再追加「上轮」那行（tokens_last）。
+	// 无实测：末行就是累计行，不该再追加「最近」那行（tokens_last）。
 	if got, want := lines[len(lines)-1], i18n.Tf("ui.chat.tokens_total", "in", 0, "out", 0); got != want {
-		t.Fatalf("末行 = %q, want %q（无实测不应显示上轮行）", got, want)
+		t.Fatalf("末行 = %q, want %q（无实测不应显示最近行）", got, want)
 	}
 }
 
