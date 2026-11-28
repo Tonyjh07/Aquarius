@@ -255,6 +255,11 @@ type wiring struct {
 	ingRoute *ingestRoute     // SessionDeps.Ingestors 尾位：插件摄取器集合
 	asrRoute *transcribeRoute // 识别槽位（w.asr 的真身或替身）
 	ttsRoute *synthesizeRoute // 合成槽位（w.ttsSynth 的真身或替身）
+	// 启停挂载的记账（pluginports_wire.go）：输出器按名、独占面记接管者、挂过面记还原日志。
+	pluginOuts          map[string]port.OutputAdapter
+	pluginTTSOut        bool   // 播报输出路是接管时现挂的（内置 TTS 没配过）
+	secretExtraOwner    string // 密钥兜底档的接管者（独占，第一个赢）
+	pluginPortsAttached map[string]bool
 	// wipePending 设置窗「删除数据目录」标记（datadiradmin.go）：退出链最后一步消费。
 	wipePending atomic.Bool
 	sandboxDir  string

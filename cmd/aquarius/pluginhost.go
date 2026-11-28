@@ -350,8 +350,12 @@ func (w *wiring) setTierOne(ctx context.Context, name string, on, persist bool) 
 			w.takeMemory(name)
 			w.syncMemorySurfaces()
 		}
+		// 六个供给面的消费挂载（D356）：逐面独立，单面失败只 warn。
+		w.attachPluginPorts(ctx, name)
 	} else {
 		w.detachToolSet(name)
+		// 先摘消费面再停实例：适配器还会调实例方法，停了之后再摘等于对着已停实例发调用。
+		w.detachPluginPorts(name)
 		if err := w.plugins1.SetEnabled(ctx, name, false); err != nil {
 			return err
 		}
