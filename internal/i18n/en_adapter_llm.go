@@ -75,6 +75,8 @@ var enAdapterLLMTexts = map[string]string{
 	"llm.tokenizer.err_pretok_step":    "tokenizer: unsupported pre-tokenizer step \"{type}\"",
 	"llm.tokenizer.err_merges":         "tokenizer: parsing merges",
 	"llm.tokenizer.err_merge_item":     "tokenizer: cannot parse merges[{index}]: {line}",
+	"llm.tokenizer.err_timeout":        "tokenizer: split regex timed out (likely catastrophic backtracking)",
+	"llm.tokenizer.err_cancel":         "tokenizer: counting canceled",
 
 	// ---- asr 识别端公共（配置校验、HTTP、读音频；四个适配器共用）----
 	"asr.err.nil_context":      "asr: nil context",

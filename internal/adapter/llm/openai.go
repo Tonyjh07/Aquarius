@@ -207,11 +207,11 @@ func New(cfg Config) (*Client, error) {
 
 // CountTokens port.TokenCounter（三级计数链②，D26）：本地 tokenizer 精确计数。
 // 未配置时报错——app 据此回落通用估算③。
-func (c *Client) CountTokens(_ context.Context, text string) (int, error) {
+func (c *Client) CountTokens(ctx context.Context, text string) (int, error) {
 	if c.tok == nil {
 		return 0, errors.New(i18n.T("llm.err.tokenizer_unset"))
 	}
-	return c.tok.Count(text), nil
+	return c.tok.CountContext(ctx, text)
 }
 
 // Generate 发起流式生成，返回 SSE 生成流。端口语义与协议无关，形状差异按 c.proto 分派

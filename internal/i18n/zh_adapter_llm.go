@@ -75,6 +75,8 @@ var zhAdapterLLMTexts = map[string]string{
 	"llm.tokenizer.err_pretok_step":    "tokenizer: 不支持的预切分步骤「{type}」",
 	"llm.tokenizer.err_merges":         "tokenizer: 解析 merges",
 	"llm.tokenizer.err_merge_item":     "tokenizer: 无法解析 merges[{index}]：{line}",
+	"llm.tokenizer.err_timeout":        "tokenizer: 预切分正则超时（疑似回溯爆炸）",
+	"llm.tokenizer.err_cancel":         "tokenizer: 计数被取消",
 
 	// ---- asr 识别端公共（配置校验、HTTP、读音频；四个适配器共用）----
 	"asr.err.nil_context":      "asr: nil context",

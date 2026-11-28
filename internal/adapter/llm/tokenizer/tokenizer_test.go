@@ -1,12 +1,16 @@
 package tokenizer
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/dlclark/regexp2"
 )
 
 // fixture 文件（结构与 DeepSeek 一致的极小 BPE，期望值由官方 tokenizers 计算）。
@@ -247,4 +251,41 @@ func truncate(s string) string {
 		return string(r[:24]) + "…"
 	}
 	return s
+}
+
+// TestCountContextCancel 取消传播：已取消的 ctx 报错，不再计入（est 回落通用估算）。
+func TestCountContextCancel(t *testing.T) {
+	tok, err := Load(fixturePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := tok.CountContext(ctx, "hello world"); err == nil {
+		t.Fatal("已取消的 ctx 应报错")
+	}
+	// 未取消时走通：结果与旧 Count 包装一致。
+	n1, err := tok.CountContext(context.Background(), "hello world")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n1 != tok.Count("hello world") {
+		t.Fatalf("CountContext = %d, Count = %d", n1, tok.Count("hello world"))
+	}
+}
+
+// TestSplitPieceTimeout 预切分正则的回溯爆炸防护：MatchTimeout 触发时报错上抛
+// （不再整段透传——透传会把超时静默成错计数）。
+func TestSplitPieceTimeout(t *testing.T) {
+	re, err := regexp2.Compile(`^(a+)+$`, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	re.MatchTimeout = 50 * time.Millisecond
+	if _, err := splitPiece(re, strings.Repeat("a", 40)+"!"); err == nil {
+		t.Fatal("回溯爆炸应在超时内报错")
+	}
+	if out, err := splitPiece(re, "aaa"); err != nil || len(out) != 1 {
+		t.Fatalf("正常输入应可匹配: %v %v", out, err)
+	}
 }

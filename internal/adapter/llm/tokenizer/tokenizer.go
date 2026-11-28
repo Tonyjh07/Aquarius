@@ -14,6 +14,7 @@
 package tokenizer
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,12 +22,18 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/dlclark/regexp2"
 
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 )
+
+// splitMatchTimeout 预切分正则的单次匹配超时。正则来自 tokenizer.json（文件内容
+// 不受模型控制，但格式兼容性放得宽）——模型可控输入要在这上面跑回溯敏感的匹配，
+// 给一道硬上限兜底，超时按错误回落通用估算而不是把对话卡死。
+const splitMatchTimeout = 2 * time.Second
 
 // Tokenizer 已加载的 BPE 分词器（加载后只读；顺序调用 Count，非并发安全）。
 type Tokenizer struct {
@@ -141,6 +148,9 @@ func Load(path string) (*Tokenizer, error) {
 		switch st.Type {
 		case "Split":
 			re, cerr := regexp2.Compile(st.Pattern.Regex, 0)
+			if cerr == nil {
+				re.MatchTimeout = splitMatchTimeout
+			}
 			if cerr != nil {
 				return nil, fmt.Errorf("%s: %w", i18n.Tf("llm.tokenizer.err_regex", "pattern", st.Pattern.Regex), cerr)
 			}
@@ -189,9 +199,20 @@ func Load(path string) (*Tokenizer, error) {
 }
 
 // Count 统计文本 token 数（等价 add_special_tokens=false 的 encode 长度）。
+// 兼容旧调用的包装：不带取消的计数只在测试里用；生产路径走 CountContext。
 func (t *Tokenizer) Count(text string) int {
+	n, _ := t.CountContext(context.Background(), text)
+	return n
+}
+
+// CountContext 同 Count，但全程响应取消：ctx 取消或预切分正则超时报错，
+// 调用方（est）据报错回落通用估算，计数失败不阻断对话。
+func (t *Tokenizer) CountContext(ctx context.Context, text string) (int, error) {
 	if text == "" {
-		return 0
+		return 0, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return 0, fmt.Errorf("%s: %w", i18n.T("llm.tokenizer.err_cancel"), err)
 	}
 	n := 0
 	for _, seg := range t.splitAdded(text) {
@@ -199,9 +220,13 @@ func (t *Tokenizer) Count(text string) int {
 			n++ // added token 原子计 1
 			continue
 		}
-		n += t.countText(seg.text)
+		c, err := t.countText(ctx, seg.text)
+		if err != nil {
+			return 0, err
+		}
+		n += c
 	}
-	return n
+	return n, nil
 }
 
 // segment 切段：added token 原子 / 普通文本。
@@ -243,19 +268,31 @@ func (t *Tokenizer) splitAdded(s string) []segment {
 }
 
 // countText 普通文本：逐级 Split 切分 → 字节级映射 → BPE → 数 token。
-func (t *Tokenizer) countText(s string) int {
+// 逐级与逐段检查取消；正则超时按错误上抛（整段透传会把超时静默成错计数）。
+func (t *Tokenizer) countText(ctx context.Context, s string) (int, error) {
 	pieces := []string{s}
 	for _, re := range t.splits {
 		next := make([]string, 0, len(pieces))
 		for _, p := range pieces {
-			next = append(next, splitPiece(re, p)...)
+			split, err := splitPiece(re, p)
+			if err != nil {
+				return 0, err
+			}
+			next = append(next, split...)
+		}
+		if err := ctx.Err(); err != nil {
+			return 0, fmt.Errorf("%s: %w", i18n.T("llm.tokenizer.err_cancel"), err)
 		}
 		pieces = next
 	}
 	n := 0
 	for _, p := range pieces {
 		mapped := t.byteLevel(p)
-		for _, sym := range t.bpe(mapped) {
+		syms, err := t.bpe(ctx, mapped)
+		if err != nil {
+			return 0, err
+		}
+		for _, sym := range syms {
 			if _, ok := t.vocab[sym]; ok {
 				n++
 				continue
@@ -263,23 +300,27 @@ func (t *Tokenizer) countText(s string) int {
 			// 理论不可达（字节级单字 + 合并结果恒在词表）；按符号数兜底。
 			n += utf8.RuneCountInString(sym)
 		}
+		if err := ctx.Err(); err != nil {
+			return 0, fmt.Errorf("%s: %w", i18n.T("llm.tokenizer.err_cancel"), err)
+		}
 	}
-	return n
+	return n, nil
 }
 
 // splitPiece 按正则切分（Isolated：匹配段与非匹配段都保留；空段丢弃）。
 // regexp2 为最左优先（.NET）语义，与 Python/Rust 分词器一致；
 // Match.Index/Length 以 rune 计（即使输入是 string），故在 rune 切片上开段。
-func splitPiece(re *regexp2.Regexp, s string) []string {
+// MatchTimeout 在编译后已设（splitMatchTimeout）——超时是运行期错误，上抛不透传。
+func splitPiece(re *regexp2.Regexp, s string) ([]string, error) {
 	if s == "" {
-		return nil
+		return nil, nil
 	}
 	rs := []rune(s)
 	var out []string
 	prev := 0 // rune 偏移
 	m, err := re.FindStringMatch(s)
-	if err != nil { // 运行期正则错误（理论不可达）：整段透传
-		return []string{s}
+	if err != nil { // 运行期正则错误（含超时）：上抛，调用方回落通用估算
+		return nil, fmt.Errorf("%s: %w", i18n.T("llm.tokenizer.err_timeout"), err)
 	}
 	for m != nil {
 		if m.Index > prev {
@@ -287,8 +328,9 @@ func splitPiece(re *regexp2.Regexp, s string) []string {
 		}
 		out = append(out, m.String())
 		prev = m.Index + m.Length
-		if m, err = re.FindNextMatch(m); err != nil {
-			break
+		var nerr error
+		if m, nerr = re.FindNextMatch(m); nerr != nil {
+			return nil, fmt.Errorf("%s: %w", i18n.T("llm.tokenizer.err_timeout"), nerr)
 		}
 	}
 	if prev < len(rs) {
@@ -300,7 +342,7 @@ func splitPiece(re *regexp2.Regexp, s string) []string {
 			res = append(res, p)
 		}
 	}
-	return res
+	return res, nil
 }
 
 // byteLevel GPT-2 字节级映射：UTF-8 字节 → 映射字符（ByteLevel 预切分末位）。
@@ -313,16 +355,20 @@ func (t *Tokenizer) byteLevel(s string) string {
 }
 
 // bpe 对已映射的符号串执行 BPE：反复合并秩最小的相邻对（一次选定的对
-// 全量左→右合并，与 HF tokenizers 语义一致），直至无可合并。
-func (t *Tokenizer) bpe(word string) []string {
+// 全量左→右合并，与 HF tokenizers 语义一致），直至无可合并。合并轮数随符号数
+// 线性增长，每轮响应一次取消——这是计数路径里唯一的 O(n²) 环节。
+func (t *Tokenizer) bpe(ctx context.Context, word string) ([]string, error) {
 	if word == "" {
-		return nil
+		return nil, nil
 	}
 	syms := make([]string, 0, len(word))
 	for _, r := range word {
 		syms = append(syms, string(r))
 	}
 	for len(syms) > 1 {
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("%s: %w", i18n.T("llm.tokenizer.err_cancel"), err)
+		}
 		bestRank, bestA, bestB := -1, "", ""
 		for i := 0; i+1 < len(syms); i++ {
 			rank, ok := t.merges[syms[i]+" "+syms[i+1]]
@@ -345,7 +391,7 @@ func (t *Tokenizer) bpe(word string) []string {
 		}
 		syms = merged
 	}
-	return syms
+	return syms, nil
 }
 
 // byteChars GPT-2 bytes_to_unicode 表：可打印 ASCII/Latin-1 保持原字，
