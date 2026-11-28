@@ -1,5 +1,5 @@
 # 进程内 Go 插件：内核侧实现规格
-<!-- docs-sync: 2026-11-28 @ d106c4f -->
+<!-- docs-sync: 2026-11-28 @ 318d38f -->
 
 > **本文写给改宿主的人与 AI 编码代理。** 插件作者要看的写法、接口语义、宿主能力与打包
 > 步骤在 [plugin-guide.md](plugin-guide.md)——作者面的事实以那一篇为准，本文不复述。
@@ -20,6 +20,10 @@ module path；「v1」由包文档与 `APIVersion` 常量承载，将来的破�
 独立模块并存。根 go.mod 以 `require` + `replace`（指向 `./pluginapi`）引入——同仓多模块，
 不设 go.work；外部插件仓库按 tag 依赖同一路径（tag 还没打，过渡期用 `replace` 指到
 本地仓库）。
+
+**冻结状态**：本版（v1.0.0）P3 收尾起，本模块按「只增不改」冻结——不改已有字段的语义与
+类型、新字段只加末尾并注释零值语义、新方法只加新接口、签名冻结；破坏性变更开 v2 并存。
+冻结前的两个缺口（D345 的工具面信号、D355 的迁移快照带名）已补齐，见 decisions.md。
 
 方向规则只有一条：接口里的每个类型都是 v1 自己定义的。v1 不 import `internal/port`，
 `internal/port` 也不 import v1。内核侧的依赖规则由 arch 测试守着（`layerPluginAPI`
@@ -66,6 +70,11 @@ v1 最重要的资产是一层语义等价、字段冻结的稳定词汇。`inte
 | `port.ProbeResult` / `ProbeVerdict` | `v1.ProbeResult` / `v1.ProbeVerdict` | 三态判定（无结论 / 支持 / 不支持）；`Reason` 是给用户看的一句话，可能夹带服务端原文片段——那是数据不是文案 |
 | `port.Log` | `v1.Logger` | 五段式日志的插件命名空间：级别由插件给，上下文段由宿主填成 `plugin:<name>`，事件 / 行动两句由插件自写（插件文案不进内核文案表），kv 是「名, 值」且名固定英文；插件不自开日志文件（D276 一处写出） |
 | `port.AttachmentStore` | `v1.BlobStore` | 内容寻址三方法（Put / Get / Stat）。**GC 不进 v1**：keep 集来自会话树，插件交上来的 keep 会把别人引用的字节删掉 |
+| `port.UINode` / `UIField` / `UIAction` 等中性组件树（`internal/port/uiview.go`） | `v1.Node` / `TableSpec` / `FormField` / `Action` / `ViewSpec`（D346） | 面板是插件交组件树、宿主两个渲染器（GUI 组件树 / TUI 只读文本）；`Kind` 词表冻结（D346「零 Kind = 纯容器」）；嵌套 `*TableSpec` 由转换器摊平 |
+| 插件窗口（D351） | `v1.WindowSpec` | 窗口仍是宿主的：插件只声明想要的尺寸与标题，宿主批准后才开 |
+| 插件设置分区（D347/D350） | `v1.SettingsSection` / `SettingsRow` / `SettingsPatch` / `SettingsPlacement` | 值走既有「保存并应用」链；`Placement` 词表冻结（inline / page） |
+| 宿主 UI 环境只读面（D352） | `v1.UIEnvironment` / `ThemeTokens` / `FrontendGUI` / `FrontendTUI` / `FrontendREPL` / `UIEnviron` | 只读快照：前端形态、主题令牌、布局尺寸。插件看得见、管不着；常量词表冻结 |
+| 宿主通知 | `v1.NoticePoster`（Host 可选扩展） | 通知是「贴给宿主发」，插件不自开通知通道 |
 
 新增 v1 类型时先在表里补一行再写代码；port 类型新增字段时按本表逐点过（核对清单在
 [development.md](development.md)）。
