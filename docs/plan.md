@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-28 @ e3c8b45 -->
+<!-- docs-sync: 2026-11-28 @ 368e2c4 -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -18,80 +18,11 @@
 
 ---
 
-## v1.0.0（在排）：正式版收口
-
-> 下版发 `v1.0.0`。判断依据（2026-11-22 会话）：内核完成度与质量基建已够格，缺口在三笔
-> 承诺——插件契约没冻结、隐含契约没显式化、稳定声明没写。后两笔已由 P1 立干净；剩插件
-> 契约冻结，落在 P2 骨架 + P3 收尾，这也是本版唯一的关键路径。
-
-- **P1 · 契约显式化**（S~M）· 已完成：四条全部落地——共享可变状态的并发模型（contracts
-  §5.2 / §7.1.1 / §5.9）、稳定声明（[stability.md](stability.md)）、MCP 提示来源标记
-  （`/mcp:<server>:<prompt>` 渲染结果首行注明来源，走 `withPromptSource`）、风险按来源
-  取默认（D328，`Decl.ToolRisk()` + `TestToolRiskBySource`）。
-- **P2 · pluginapi/v1 契约**（M）· **已完成（已冻结）**：独立 go.mod 模块（`pluginapi/`，
-  零依赖、只许标准库，`independence_test.go` 守独立性）、manifest 与稳定值类型层（value.go，
-  每个导出类型带兼容承诺句）、防腐映射点列表（plugin-design.md §1.2，UI/uienv 家族已补行）。
-  接口面（供给面 + 可选扩展 + Host + 生命周期 + UI 声明面）随 P3 落盘，`interfaces_test.go`
-  用一次性实现锁住形状。v1.0.0 收尾复核后冻结：D345（`MemoryRequest.ToolsAvailable`）与
-  D355（迁移快照带文档名）两个缺口补齐、承诺句补齐、`Stream`/`UIEnviron` 编译期断言落位；
-  之后只增不改，破坏性变更开 v2。
-- **P3 · plugingo 装载器 + 首个 Tier-1 插件**（M~L，关键路径）· **已完成**：按 plugin-design.md §4/§5/§6
-  与 plugin-guide.md §4–§7 实现全部四步。第 1 步（接口面）与第 2 步（`adapter/plugingo` 转换层 +
-  Host 包装 + 供给面适配器、`plugin/tierone` 状态机与清单校验 + 独占记忆 + Draining）已落，第 3 步：
-  注册表构造与 Host 接线（私有目录、当前语言、名字占用判定）、`/plugin` 并入 Tier-1
-  （list/enable/disable、启动恢复、写回 `plugins.<name>.enabled`）、启用时挂插件工具源、
-  内核侧记忆装配（D342：`port.MemorySource` 单挂载点 + 装配根路由器；接管期间 `memory_*`
-  四工具与 `/memory` 退出、MCP resources 不再投影、失败还原、`Host` 迁移快照）。
-  启停顺序按 D342 的修正版走：**撤内置记忆面 → 启用插件 → 挂插件工具源 → 接管注入**，
-  停用反向。
-
-  外部插件怎么进二进制已经定了（D343）：上游只留 `cmd/aquarius/pluginext.go` 一个中性
-  接入口，构建期用 `-overlay` 换文件 + `-modfile` 换依赖视图注入，上游产物零痕迹。
-  第 4 步的施工顺序：① `cmd/aqbuild` 构建器（已完成：参数见 plugin-guide.md §10.1，
-  testdata 微型宿主/插件跑通端到端——含相对 replace 改写、宿主零改动两条断言）；② 样例插件的
-  `store/` 与单测（独立仓库 `aq-memory-plugin` 的 `store` 包，落盘形状与四条实现口径
-  记在其 design.md §9）；③ 工具面 + `Recall`（`memplug` 包，窗口/命名/同轮稳定三条口径；
-  D345 落地后主路径只回引导、降级才注标题，偏离已收口记在其 design.md §10.4）；④ 命令面 + 面板 + 迁移（命令面与迁移已完成：
-  插件侧 `/mem` 六个子命令与首次启用的内置记忆搬迁，宿主侧 Tier-1 命令并入会话动态命令表、
-  与 MCP prompts 合流，口径见 plugin-guide.md §4.4 与插件 design.md §11；面板已完成：
-  `/plugin view` 打开次窗（GUI 组件树渲染、TUI 渲染成只读文本），四条落地口径与「零 Kind =
-  纯容器」的契约语义见 plugin-guide.md §6.2 与 D346）。
-  验收：四层验收已落成真二进制端到端测试 `cmd/aquarius/plugin_e2e_test.go`（aqbuild 构建
-  宿主+真 memplug，假 LLM 驱动 /plugin 管理面、工具声明与内置 memory_* 撤下、mem_write
-  落盘、/mem 读回、重启恢复；`testing.Short` 与样例仓库缺席时跳过）；冻结复核与边界确认
-  见 D355 与 `pluginboot_test.go`。
-
-  **样例插件定为间隔重复记忆插件**（独立仓库，设计稿见该仓库
-  design.md；`Memory`（含首次启用的内置记忆迁移）+ `ToolProvider` + 面板形态），验收标准
-  （覆盖供给面、Host 消费面、管理面、生命周期四层）不变，另加两条记忆契约义务（接管期间
-  `memory_*` 与 `/memory` 退出、内置记忆只读；两个 `provides: memory` 同时启用被拒）。
-- **P4 · 杂项收口**（S）· 已完成：tokenizer 预切分正则加 `MatchTimeout` 且计数路径
-  全程响应取消（报错回落通用估算）；`think` 空白参数运行时报失败；压缩/摘要生成流在
-  转写里标注「正在生成摘要」（`DeltaEvent.Summary`）；`/usage` 与事实卡措辞改「最近实测」；
-  DeepSeek anthropic 端点的真后端兼容回归用例（`anthropic_live_test.go`，环境变量给 key
-  才跑）。
-- **收口**：稳定声明复核 → 全门禁 → 发布说明（引 stability.md，写 1.0 的承诺与不承诺）→
-  winres 1.0.0.0。
-
----
-
-## 插件供给面消费接线（已排，v1.0.0 之后）
-
-> `llm` / `ingest` / `output` / `transcribe` / `synthesize` / `secrets` 六个供给面目前只有
-> 契约、防腐适配器与清单校验，装配根没有消费点（D356 定语义）。契约已冻结，本项只做
-> 消费侧：按面分批接线，批间可独立回退。
->
-> - **批 1 · 容器与槽位**：五个路由容器（llmRoute 按模型名路由、ingestRoute 尾位、
->   语音两槽位、密钥链兜底档）+ 输出扇出按名增删；装配点插入。
-> - **批 2 · 启停挂载**：`setTierOne` 启用分支逐面挂载（type assertion 失败只 warn），
->   停用反序还原；语音独占（第二个同类 warn 不挂）；启动恢复自动走同一入口。
-> - **批 3 · 测试**：容器单测 + 启停集成（pluginboot 模式）。
-
-## 装配根抽包（已排，v1.0.0 发版收口之后）
+## 装配根抽包（已排）
 
 > 把 `cmd/aquarius` 的装配根抽成可 import 的包。独立立项：它与多 Agent（下节）无关也迟早
-> 要做，且是多 Agent 的唯一硬前置；同为装配根大改，按既有口径不进发版窗口，排 v1.0.0
-> 发版收口之后（可与插件供给面接线同期或其后）。
+> 要做，且是多 Agent 的唯一硬前置；同为装配根大改，按既有口径不进发版窗口，排在
+> v1.0.0 收口之后，也就是现在。
 
 - **抽包范围**（L）：`cmd/aquarius` 全是 `package main`（wiring 结构体、bootstrap 与
   profile、assemble_* 装配函数族、UI/命令/设置管理面、插件宿主接线，约 5-8k 行非测试
@@ -164,7 +95,7 @@
 （独立 cmd 还是 `-mode=multi`）；③ MA3a 设计稿里的主窗形态与「单 agent 时退回哪个形态」；
 ④ 命令面要不要跨 agent 寻址（第一版建议不做——每 agent 的命令只打自己的树，跨控走 MA4）。
 
-## Tier-3 WASM 插件（在排，v1.0.0 之后）
+## Tier-3 WASM 插件（在排）
 
 > 规格见 [wasm-plugin-design.md](wasm-plugin-design.md)，动机与否决见 D344。只做工具面；
 > 沙箱边界（`/data` + 无网络 + 无密钥）已写死，施工时不再讨论。

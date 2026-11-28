@@ -3,7 +3,7 @@
 </p>
 
 # Aquarius
-<!-- docs-sync: 2026-11-28 @ 97702f8 -->
+<!-- docs-sync: 2026-11-28 @ 368e2c4 -->
 
 面向个人的 AI 助手。对话优先，支持图片、文档与语音输入，长期记忆以 markdown 文档存放，模型与工具均可替换。Go 编写，交付单个二进制。
 
@@ -29,10 +29,10 @@
 - **权限分级**：`read-only` / `strict`（默认）/ `permissive` / `full-access` 四档，越界调用逐次确认；单个工具可在设置窗改成「询问」或「允许」，确认框里也能当场改档、点「以后都允许」不再询问；无人值守时改为当场拒绝并说明。
 - **模型辅助决策**（实验）：挂一个判定模型，把「明显该批」的确认替你挡掉；默认关，可先跑影子模式只记不改。阈值与端点都在配置里。
 - **MCP 扩展**：stdio 与 streamable HTTP 两种传输，接入现成 server 即得新工具，与内置工具同权。
+- **Go 插件**：进程内编译的插件。插件可提供模型、记忆、语音、摄取、输出与密钥兜底，也能带自己的设置页与管理面板。插件与内核各编各的二进制，插件契约已冻结。装到 `profiles/<name>/plugins/<插件>/` 后，在设置窗「插件」页或 `/plugin` 启停、授权。
 - **本地优先**：数据全在 `~/.aquarius/`，profile 整目录隔离；卸载即删程序与该目录。
 - **平台支持**：Windows 为完整形态。Linux 与 macOS 可构建运行，界面功能较少。
 - **三种界面**：桌面悬浮球为默认，也可切终端界面或行式命令行。
-- **规划中**：Go 级进程内插件；现阶段扩展能力走 MCP 与技能。
 
 ## 构建
 
@@ -52,6 +52,7 @@ go build ./cmd/aquarius     # Windows 上产物为 aquarius.exe
 2. 密钥可写成 `secret:<名字>`，真实值存本机加密密钥库或同名环境变量，配置文件里只留引用。设置窗里直接填明文也行——保存时明文会转入密钥库、config 只留引用；直接手工写进 config 的明文仍可用，但启动时会打印警告。
 3. `/help` 列出全部命令。日常用法见[用户手册](docs/guide.md)，命令与参数逐条见[参考手册](docs/usage.md)。
 4. 想加技能：设置窗「技能」页导入，或 `/skill install <路径或链接>`；`/skill list` 看已装清单。
+5. 想加插件：把编译好的插件目录放到 `profiles/<name>/plugins/<插件>/`，重启后启用。启停与授权在设置窗「插件」页或 `/plugin`，写插件的入门见[插件指南](docs/plugin-guide.md)。
 
 数据在 `~/.aquarius/`（`-data` 可改位置）。根目录只存当前 profile 指针，主配置、会话、记忆与附件都在 `profiles/<name>/` 下。`--profile` 临时切换，或在设置窗改后重启生效。
 
@@ -63,14 +64,16 @@ go build ./cmd/aquarius     # Windows 上产物为 aquarius.exe
 | [docs/usage.md](docs/usage.md) | 参考手册：命令与参数、内置工具、压缩、权限等级 |
 | [docs/configuration.md](docs/configuration.md) | 配置参考：`config.json` 逐字段、覆盖顺序、密钥规则 |
 | [docs/storage.md](docs/storage.md) | 数据布局与备份：目录树、会话文件、`.bak` 恢复 |
+| [docs/plugin-guide.md](docs/plugin-guide.md) | 插件作者指南：形态选型、最小骨架、清单、供给面、界面贡献、打包分发 |
 
 设计、决策、进度与开发指南等在 [docs/README.md](docs/README.md) 里按读者分列（文档地图）。
 有冲突时以[文档地图](docs/README.md) 指出的那一篇与[决策记录](docs/decisions.md)为准。
 
 ## 状态
 
-开发进行中，已完成的里程碑见 [docs/roadmap.md](docs/roadmap.md)，下一步计划见
-[docs/plan.md](docs/plan.md)。
+`v1.0.0` 已于 2026-11-28 发布，插件契约在 v1 系列内只增不改（承诺见
+[稳定声明](docs/stability.md)）。已完成的里程碑见 [docs/roadmap.md](docs/roadmap.md)，
+接下来做什么见 [docs/plan.md](docs/plan.md)。
 
 ## 许可证
 
