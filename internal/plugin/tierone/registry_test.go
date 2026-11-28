@@ -35,6 +35,7 @@ type fakePlugin struct {
 	tools     []v1.ToolSpec
 	startErr  error
 	shutErr   error
+	shutDelay time.Duration // Shutdown 故意拖这么久（Draining 窗口观测用）
 	started   int
 	shutdowns int
 }
@@ -89,7 +90,13 @@ func (i *fakeInstance) Start() error {
 	return nil
 }
 
-func (i *fakeInstance) Shutdown(context.Context) error {
+func (i *fakeInstance) Shutdown(ctx context.Context) error {
+	if i.p.shutDelay > 0 {
+		select {
+		case <-time.After(i.p.shutDelay):
+		case <-ctx.Done():
+		}
+	}
 	i.p.shutdowns++
 	return i.p.shutErr
 }
@@ -401,5 +408,63 @@ func TestPluginNameMustBeUsableAsDir(t *testing.T) {
 		if rec.State != StateStopped {
 			t.Fatalf("名字 %q 被拒后应停在 Stopped，实际 %v", name, rec.State)
 		}
+	}
+}
+
+// TestEnableWhileDrainingQueuesUntilStopped 停用期间的启用排队生效（D355 复核结论）：
+// disable 全程持注册表锁，enable 看不到 Draining 中间态，排队到停完之后照常 Create/Start。
+func TestEnableWhileDrainingQueuesUntilStopped(t *testing.T) {
+	p := &fakePlugin{name: "slow", provides: []string{PortMemory}, shutDelay: 150 * time.Millisecond}
+	r := newRegistry(t, p)
+	if err := r.SetEnabled(context.Background(), "slow", true); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- r.SetEnabled(context.Background(), "slow", false) }()
+
+	// 等 Draining 的观测点是守卫本身：Registry 的锁在停用全程被持有，Record 会阻塞到
+	// 停完，探不出中间态；入口被关（Enter 失败）= 已进 Draining。
+	var closed bool
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if _, g, ok := r.Active("slow"); ok && g.Enter() {
+			g.Leave()
+			time.Sleep(time.Millisecond)
+			continue
+		}
+		closed = true
+		break
+	}
+	if !closed {
+		t.Fatal("没等到 Draining 态")
+	}
+	// 停用全程持锁：此刻发出的 enable 排队到停完之后执行，不与收尾赛跑。
+	// 终态 Active，且实例是停用后新建的（shutdowns=1、started=2）。
+	go func() { time.Sleep(10 * time.Millisecond); _ = r.SetEnabled(context.Background(), "slow", true) }()
+	if err := <-done; err != nil {
+		t.Fatalf("停用应成功：%v", err)
+	}
+	wait := time.Now().Add(2 * time.Second)
+	var rec Record
+	for time.Now().Before(wait) {
+		rec, _ = r.Record("slow")
+		if rec.State == StateActive {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if rec.State != StateActive {
+		t.Fatalf("停用期间的启用应排队生效：state=%v", rec.State)
+	}
+	if p.started != 2 || p.shutdowns != 1 {
+		t.Fatalf("生命周期=%d/%d， want start 2 次（原启 + 排队重启）、shutdown 1 次", p.started, p.shutdowns)
+	}
+}
+
+// TestSetEnabledUnknownName 未知名报因可读，不 panic。
+func TestSetEnabledUnknownName(t *testing.T) {
+	r := newRegistry(t)
+	if err := r.SetEnabled(context.Background(), "nope", true); err == nil {
+		t.Fatal("未知名应报因")
 	}
 }
