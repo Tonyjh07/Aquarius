@@ -517,7 +517,7 @@ func (w *wiring) buildASR(ctx context.Context) (port.Transcriber, string) {
 		if err != nil {
 			return nil, err.Error()
 		}
-		return c, ""
+		return decorate.NewTranscriberRetry(c), ""
 	case kindASRFunASR:
 		c, err := asrfunasr.New(asrfunasr.Config{
 			BaseURL: ep.BaseURL, APIKey: key, Blobs: w.blobs,
@@ -525,7 +525,7 @@ func (w *wiring) buildASR(ctx context.Context) (port.Transcriber, string) {
 		if err != nil {
 			return nil, err.Error()
 		}
-		return c, ""
+		return decorate.NewTranscriberRetry(c), ""
 	case kindDeepSeek: // D316：multipart 只带 file，无语种参数
 		c, err := asrdeepseek.New(asrdeepseek.Config{
 			BaseURL: ep.BaseURL, APIKey: key, Blobs: w.blobs,
@@ -533,7 +533,7 @@ func (w *wiring) buildASR(ctx context.Context) (port.Transcriber, string) {
 		if err != nil {
 			return nil, err.Error()
 		}
-		return c, ""
+		return decorate.NewTranscriberRetry(c), ""
 	default: // kindChatAudio
 		c, err := asrchat.New(asrchat.Config{
 			BaseURL: ep.BaseURL, APIKey: key, Model: ch.Model, Blobs: w.blobs,
@@ -541,7 +541,7 @@ func (w *wiring) buildASR(ctx context.Context) (port.Transcriber, string) {
 		if err != nil {
 			return nil, err.Error()
 		}
-		return c, ""
+		return decorate.NewTranscriberRetry(c), ""
 	}
 }
 
@@ -566,7 +566,7 @@ func (w *wiring) buildTTS(ctx context.Context) (port.Synthesizer, string) {
 		if err != nil {
 			return nil, err.Error()
 		}
-		return c, ""
+		return decorate.NewSynthesizerRetry(c), ""
 	case kindTTSGPTSovits:
 		c, err := gptsovitstts.New(gptsovitstts.Config{
 			BaseURL: ep.BaseURL, RefAudio: ch.Voice, PromptText: ch.Design, Blobs: w.blobs,
@@ -574,7 +574,7 @@ func (w *wiring) buildTTS(ctx context.Context) (port.Synthesizer, string) {
 		if err != nil {
 			return nil, err.Error()
 		}
-		return c, ""
+		return decorate.NewSynthesizerRetry(c), ""
 	case kindDeepSeek: // D316：音色只认 stella/tide（归一化已拦），JSON 裸字节响应
 		c, err := ttsdeepseek.New(ttsdeepseek.Config{
 			BaseURL: ep.BaseURL, APIKey: key, Blobs: w.blobs,
@@ -582,7 +582,7 @@ func (w *wiring) buildTTS(ctx context.Context) (port.Synthesizer, string) {
 		if err != nil {
 			return nil, err.Error()
 		}
-		return c, ""
+		return decorate.NewSynthesizerRetry(c), ""
 	default: // kindChatAudio
 		c, err := mimotts.New(mimotts.Config{
 			BaseURL: ep.BaseURL, APIKey: key, Model: ch.Model, Blobs: w.blobs,
@@ -590,7 +590,7 @@ func (w *wiring) buildTTS(ctx context.Context) (port.Synthesizer, string) {
 		if err != nil {
 			return nil, err.Error()
 		}
-		return c, ""
+		return decorate.NewSynthesizerRetry(c), ""
 	}
 }
 

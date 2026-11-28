@@ -19,10 +19,10 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/audiohttp"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -33,10 +33,18 @@ const transcribePath = "/tools/asr"
 // maxAudioBytes 识别单段的字节上限（服务端口径：8 MiB，120 秒 PCM WAV 即触顶）。
 const maxAudioBytes = 8 << 20
 
-const (
-	maxErrorBody = 4 << 10
-	maxRespBody  = 1 << 20
-)
+const maxRespBody = 1 << 20
+
+// errKeys 本适配器的报因词表（key 与既有口径一致）。
+var errKeys = audiohttp.ErrKeys{
+	BaseURLEmpty:   "asr.err.base_url_empty",
+	BaseURLInvalid: "asr.err.base_url_invalid",
+	ServerStatus:   "asr.err.server_status",
+	RequestFailed:  "asr.err.request_failed",
+	ReadAudio:      "asr.err.read_audio",
+	AudioEmpty:     "asr.err.audio_empty",
+	AudioTooLarge:  "asr.err.audio_too_large",
+}
 
 var _ port.Transcriber = (*Client)(nil)
 
@@ -60,23 +68,18 @@ type Client struct {
 
 // New 创建客户端并校验配置（fail-fast，装配期报因）。
 func New(cfg Config) (*Client, error) {
-	raw := strings.TrimSpace(cfg.BaseURL)
-	if raw == "" {
-		return nil, errors.New(i18n.T("asr.err.base_url_empty"))
+	base, hc, err := audiohttp.ValidateBaseURL(cfg.BaseURL, 2*time.Minute, errKeys)
+	if err != nil {
+		return nil, err
 	}
-	u, err := url.Parse(raw)
-	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
-		return nil, errors.New(i18n.Tf("asr.err.base_url_invalid", "url", cfg.BaseURL))
+	if cfg.HTTP != nil {
+		hc = cfg.HTTP
 	}
 	if cfg.Blobs == nil {
 		return nil, errors.New(i18n.T("asr.err.no_blobs"))
 	}
-	hc := cfg.HTTP
-	if hc == nil {
-		hc = &http.Client{Timeout: 2 * time.Minute}
-	}
 	return &Client{
-		base:  strings.TrimRight(raw, "/"),
+		base:  base,
 		key:   strings.TrimSpace(cfg.APIKey),
 		blobs: cfg.Blobs,
 		hc:    hc,
@@ -91,20 +94,9 @@ func (c *Client) Transcribe(ctx context.Context, audio conversation.BlobRef, _ s
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	rc, err := c.blobs.Get(ctx, audio)
+	data, err := audiohttp.ReadBlob(ctx, c.blobs, audio, maxAudioBytes, errKeys)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", i18n.T("asr.err.read_audio"), err)
-	}
-	defer rc.Close()
-	data, err := io.ReadAll(io.LimitReader(rc, maxAudioBytes+1))
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", i18n.T("asr.err.read_audio"), err)
-	}
-	if len(data) == 0 {
-		return "", errors.New(i18n.T("asr.err.audio_empty"))
-	}
-	if len(data) > maxAudioBytes {
-		return "", errors.New(i18n.Tf("asr.err.audio_too_large", "mb", maxAudioBytes>>20))
+		return "", err
 	}
 	name := audio.Name
 	if strings.TrimSpace(name) == "" {
@@ -122,13 +114,13 @@ func (c *Client) Transcribe(ctx context.Context, audio conversation.BlobRef, _ s
 	if c.key != "" {
 		req.Header.Set("Authorization", "Bearer "+c.key)
 	}
-	resp, err := c.hc.Do(req)
+	resp, err := audiohttp.Do(ctx, c.hc, req, errKeys)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", i18n.T("asr.err.request_failed"), err)
+		return "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return "", errors.New(i18n.Tf("asr.err.server_status", "code", resp.StatusCode, "body", snippet(resp.Body)))
+		return "", audiohttp.StatusError(resp.StatusCode, resp.Body, errKeys)
 	}
 	var out response
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxRespBody)).Decode(&out); err != nil {
@@ -156,18 +148,6 @@ func buildMultipart(audio []byte, name string) (io.Reader, string, error) {
 		return nil, "", fmt.Errorf("%s: %w", i18n.T("asr.err.encode_request"), err)
 	}
 	return &buf, mw.FormDataContentType(), nil
-}
-
-func snippet(r io.Reader) string {
-	b, err := io.ReadAll(io.LimitReader(r, maxErrorBody))
-	if err != nil {
-		return ""
-	}
-	s := strings.TrimSpace(string(b))
-	if s == "" {
-		return i18n.T("audio.detail.empty_body")
-	}
-	return s
 }
 
 type response struct {

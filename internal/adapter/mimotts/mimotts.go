@@ -21,12 +21,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/audiohttp"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -39,12 +39,23 @@ const (
 	maxResponseBytes = 32 << 20
 	// maxSampleBytes 音色克隆样本上限（几秒到几十秒的 mp3/wav）。
 	maxSampleBytes = 10 << 20
-	maxErrorBody   = 4 << 10
 
 	modePreset = "preset"
 	modeDesign = "design"
 	modeClone  = "clone"
 )
+
+// errKeys 本适配器的报因词表（key 与既有口径一致）。
+var errKeys = audiohttp.ErrKeys{
+	BaseURLEmpty:   "tts.err.base_url_empty",
+	BaseURLInvalid: "tts.err.base_url_invalid",
+	ServerStatus:   "tts.err.server_status",
+	RequestFailed:  "tts.err.request_failed",
+	ReadAudio:      "tts.err.read_audio",
+	AudioEmpty:     "tts.err.empty_audio",
+	AudioTooLarge:  "tts.err.audio_too_large",
+	SaveAudio:      "tts.err.save_audio",
+}
 
 var _ port.Synthesizer = (*Client)(nil)
 
@@ -70,13 +81,12 @@ type Client struct {
 
 // New 创建客户端并校验配置（fail-fast，装配期报因）。
 func New(cfg Config) (*Client, error) {
-	raw := strings.TrimSpace(cfg.BaseURL)
-	if raw == "" {
-		return nil, errors.New(i18n.T("tts.err.base_url_empty"))
+	base, hc, err := audiohttp.ValidateBaseURL(cfg.BaseURL, 3*time.Minute, errKeys)
+	if err != nil {
+		return nil, err
 	}
-	u, err := url.Parse(raw)
-	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
-		return nil, errors.New(i18n.Tf("tts.err.base_url_invalid", "url", cfg.BaseURL))
+	if cfg.HTTP != nil {
+		hc = cfg.HTTP
 	}
 	model := strings.TrimSpace(cfg.Model)
 	if model == "" {
@@ -85,12 +95,8 @@ func New(cfg Config) (*Client, error) {
 	if cfg.Blobs == nil {
 		return nil, errors.New(i18n.T("tts.err.no_blobs"))
 	}
-	hc := cfg.HTTP
-	if hc == nil {
-		hc = &http.Client{Timeout: 3 * time.Minute}
-	}
 	return &Client{
-		base:  strings.TrimRight(raw, "/"),
+		base:  base,
 		key:   strings.TrimSpace(cfg.APIKey),
 		model: model,
 		blobs: cfg.Blobs,
@@ -167,13 +173,13 @@ func (c *Client) Synthesize(ctx context.Context, req port.SpeechRequest) (conver
 	if c.key != "" {
 		hreq.Header.Set("Authorization", "Bearer "+c.key)
 	}
-	resp, err := c.hc.Do(hreq)
+	resp, err := audiohttp.Do(ctx, c.hc, hreq, errKeys)
 	if err != nil {
-		return conversation.BlobRef{}, fmt.Errorf("%s: %w", i18n.T("tts.err.request_failed"), err)
+		return conversation.BlobRef{}, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return conversation.BlobRef{}, errors.New(i18n.Tf("tts.err.server_status", "code", resp.StatusCode, "body", snippet(resp.Body)))
+		return conversation.BlobRef{}, audiohttp.StatusError(resp.StatusCode, resp.Body, errKeys)
 	}
 	var out response
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&out); err != nil {
@@ -189,12 +195,7 @@ func (c *Client) Synthesize(ctx context.Context, req port.SpeechRequest) (conver
 	if len(raw) == 0 {
 		return conversation.BlobRef{}, errors.New(i18n.T("tts.err.empty_audio"))
 	}
-	name := fmt.Sprintf("speech-%d.wav", time.Now().UnixMilli())
-	ref, err := c.blobs.Put(ctx, bytes.NewReader(raw), "audio/wav", name)
-	if err != nil {
-		return conversation.BlobRef{}, fmt.Errorf("%s: %w", i18n.T("tts.err.save_audio"), err)
-	}
-	return ref, nil
+	return audiohttp.SaveWAV(ctx, c.blobs, raw, errKeys)
 }
 
 // modeOf 按模型名后缀判断形态（D179）：其余（含未来同族预置音色模型）按预置音色。
@@ -233,18 +234,6 @@ func readSample(path string) ([]byte, error) {
 		return nil, errors.New(i18n.Tf("tts.mimo.err_sample_too_large", "mb", maxSampleBytes>>20))
 	}
 	return data, nil
-}
-
-func snippet(r io.Reader) string {
-	b, err := io.ReadAll(io.LimitReader(r, maxErrorBody))
-	if err != nil {
-		return ""
-	}
-	s := strings.TrimSpace(string(b))
-	if s == "" {
-		return i18n.T("audio.detail.empty_body")
-	}
-	return s
 }
 
 type request struct {

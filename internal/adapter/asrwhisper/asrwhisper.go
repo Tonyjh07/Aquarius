@@ -10,18 +10,17 @@
 package asrwhisper
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 	"sync"
 
 	whisper "github.com/mpyw/whisper.go"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/audiohttp"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -186,23 +185,19 @@ func needsSpace(prev, next string) bool {
 	return last < 0x80 && first < 0x80
 }
 
+// blobKeys 本地引擎只用到共享层的音频读取三件套（词表与网络型 ASR 相同）。
+var blobKeys = audiohttp.ErrKeys{
+	ReadAudio:     "asr.err.read_audio",
+	AudioEmpty:    "asr.err.audio_empty",
+	AudioTooLarge: "asr.err.audio_too_large",
+}
+
 // readPCM 从附件库取音频并解成 16kHz 单声道 float32 样本。
 // 只认 WAV：本地录音就是 WAV，其余格式不在这里转码（whisper.go 也不解码）。
 func (c *Client) readPCM(ctx context.Context, audio conversation.BlobRef) ([]float32, error) {
-	rc, err := c.blobs.Get(ctx, audio)
+	data, err := audiohttp.ReadBlob(ctx, c.blobs, audio, maxAudioBytes, blobKeys)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", i18n.T("asr.err.read_audio"), err)
-	}
-	defer rc.Close()
-	data, err := io.ReadAll(io.LimitReader(rc, maxAudioBytes+1))
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", i18n.T("asr.err.read_audio"), err)
-	}
-	if len(data) == 0 {
-		return nil, errors.New(i18n.T("asr.err.audio_empty"))
-	}
-	if len(data) > maxAudioBytes {
-		return nil, errors.New(i18n.Tf("asr.err.audio_too_large", "mb", maxAudioBytes>>20))
+		return nil, err
 	}
 	return decodeWAV(data)
 }
@@ -210,7 +205,7 @@ func (c *Client) readPCM(ctx context.Context, audio conversation.BlobRef) ([]flo
 // decodeWAV 读 16bit PCM、单声道、16kHz 的 WAV，返回 [-1,1] 的样本。
 // 别的采样率/声道数直接报错——whisper.cpp 不做重采样，喂错只会得到乱码文本。
 func decodeWAV(b []byte) ([]float32, error) {
-	if len(b) < 12 || !bytes.Equal(b[0:4], []byte("RIFF")) || !bytes.Equal(b[8:12], []byte("WAVE")) {
+	if len(b) < 12 || !audiohttp.IsWAV(b) {
 		return nil, errors.New(i18n.T("asr.whisper.err_wav_only"))
 	}
 	var seenFmt bool

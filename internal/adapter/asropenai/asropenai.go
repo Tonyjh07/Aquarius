@@ -20,10 +20,10 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/audiohttp"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -33,9 +33,19 @@ const (
 	transcribePath = "/audio/transcriptions"
 	// maxAudioBytes 单次转写的音频上限：多数服务端收 25MB 以内。
 	maxAudioBytes = 24 << 20
-	maxErrorBody  = 4 << 10
 	maxRespBody   = 1 << 20
 )
+
+// errKeys 本适配器的报因词表（key 与既有口径一致）。
+var errKeys = audiohttp.ErrKeys{
+	BaseURLEmpty:   "asr.err.base_url_empty",
+	BaseURLInvalid: "asr.err.base_url_invalid",
+	ServerStatus:   "asr.err.server_status",
+	RequestFailed:  "asr.err.request_failed",
+	ReadAudio:      "asr.err.read_audio",
+	AudioEmpty:     "asr.err.audio_empty",
+	AudioTooLarge:  "asr.err.audio_too_large",
+}
 
 var _ port.Transcriber = (*Client)(nil)
 
@@ -61,13 +71,12 @@ type Client struct {
 
 // New 创建客户端并校验配置（fail-fast，装配期报因）。
 func New(cfg Config) (*Client, error) {
-	raw := strings.TrimSpace(cfg.BaseURL)
-	if raw == "" {
-		return nil, errors.New(i18n.T("asr.err.base_url_empty"))
+	base, hc, err := audiohttp.ValidateBaseURL(cfg.BaseURL, 2*time.Minute, errKeys)
+	if err != nil {
+		return nil, err
 	}
-	u, err := url.Parse(raw)
-	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
-		return nil, errors.New(i18n.Tf("asr.err.base_url_invalid", "url", cfg.BaseURL))
+	if cfg.HTTP != nil {
+		hc = cfg.HTTP
 	}
 	model := strings.TrimSpace(cfg.Model)
 	if model == "" {
@@ -76,12 +85,8 @@ func New(cfg Config) (*Client, error) {
 	if cfg.Blobs == nil {
 		return nil, errors.New(i18n.T("asr.err.no_blobs"))
 	}
-	hc := cfg.HTTP
-	if hc == nil {
-		hc = &http.Client{Timeout: 2 * time.Minute}
-	}
 	return &Client{
-		base:  strings.TrimRight(raw, "/"),
+		base:  base,
 		key:   strings.TrimSpace(cfg.APIKey),
 		model: model,
 		blobs: cfg.Blobs,
@@ -97,9 +102,13 @@ func (c *Client) Transcribe(ctx context.Context, audio conversation.BlobRef, lan
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	data, name, err := readAudio(ctx, c.blobs, audio)
+	data, err := audiohttp.ReadBlob(ctx, c.blobs, audio, maxAudioBytes, errKeys)
 	if err != nil {
 		return "", err
+	}
+	name := audio.Name
+	if strings.TrimSpace(name) == "" {
+		name = "audio" + extension(audio.MIME)
 	}
 	body, contentType, err := buildMultipart(c.model, lang, data, name)
 	if err != nil {
@@ -113,13 +122,13 @@ func (c *Client) Transcribe(ctx context.Context, audio conversation.BlobRef, lan
 	if c.key != "" {
 		req.Header.Set("Authorization", "Bearer "+c.key)
 	}
-	resp, err := c.hc.Do(req)
+	resp, err := audiohttp.Do(ctx, c.hc, req, errKeys)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", i18n.T("asr.err.request_failed"), err)
+		return "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return "", errors.New(i18n.Tf("asr.err.server_status", "code", resp.StatusCode, "body", snippet(resp.Body)))
+		return "", audiohttp.StatusError(resp.StatusCode, resp.Body, errKeys)
 	}
 	var out response
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxRespBody)).Decode(&out); err != nil {
@@ -168,31 +177,6 @@ func languageField(lang string) string {
 	}
 }
 
-// readAudio 从附件库取音频，返回字节与上传用的文件名（服务端常按扩展名
-// 判断容器，所以名字要带对）。
-func readAudio(ctx context.Context, blobs port.AttachmentStore, audio conversation.BlobRef) ([]byte, string, error) {
-	rc, err := blobs.Get(ctx, audio)
-	if err != nil {
-		return nil, "", fmt.Errorf("%s: %w", i18n.T("asr.err.read_audio"), err)
-	}
-	defer rc.Close()
-	data, err := io.ReadAll(io.LimitReader(rc, maxAudioBytes+1))
-	if err != nil {
-		return nil, "", fmt.Errorf("%s: %w", i18n.T("asr.err.read_audio"), err)
-	}
-	if len(data) == 0 {
-		return nil, "", errors.New(i18n.T("asr.err.audio_empty"))
-	}
-	if len(data) > maxAudioBytes {
-		return nil, "", errors.New(i18n.Tf("asr.err.audio_too_large", "mb", maxAudioBytes>>20))
-	}
-	name := audio.Name
-	if strings.TrimSpace(name) == "" {
-		name = "audio" + extension(audio.MIME)
-	}
-	return data, name, nil
-}
-
 // extension 按 MIME 给上传文件配扩展名（空 = 按 wav，本地录音就是 WAV）。
 func extension(mime string) string {
 	m := strings.ToLower(strings.TrimSpace(mime))
@@ -211,18 +195,6 @@ func extension(mime string) string {
 	default:
 		return ".wav"
 	}
-}
-
-func snippet(r io.Reader) string {
-	b, err := io.ReadAll(io.LimitReader(r, maxErrorBody))
-	if err != nil {
-		return ""
-	}
-	s := strings.TrimSpace(string(b))
-	if s == "" {
-		return i18n.T("audio.detail.empty_body")
-	}
-	return s
 }
 
 type response struct {

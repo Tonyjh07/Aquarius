@@ -211,6 +211,7 @@ func TestAdapterPeersAreSharedInfra(t *testing.T) {
 
 	// sharedPeers 允许被别的适配器引用的共用件，逐个写明身份。
 	sharedPeers := map[string]string{
+		"audiohttp":  "语音 HTTP 共享层（base_url 校验/状态码报因/音频读取/WAV 判定/落库），8 个语音适配器共用",
 		"atomicfile": "原子写原语（同目录临时文件 + rename 重试），存储类适配器的公共地基",
 		"storejson":  "会话 JSON 存储门面（含 .bak 轮换），exchange 借该门面做导入导出的落盘",
 		"pathres":    "路径真实落点解析，toolrun 与 acpgate 共用的权限判据单一事实源",

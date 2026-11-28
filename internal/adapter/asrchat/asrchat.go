@@ -19,10 +19,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/audiohttp"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -33,8 +33,20 @@ const (
 	// maxAudioBytes 单次转写音频上限：MiMo 的 Base64 体积上限 10MB，原字节还要
 	// 再乘 3/4（§12 的硬顶规则）。16kHz 单声道 16bit ≈ 4 分钟。
 	maxAudioBytes = 10 << 20
-	maxErrorBody  = 4 << 10
+	// maxRespBody 响应体上限：正文只是几段文本，1MB 远够。
+	maxRespBody = 1 << 20
 )
+
+// errKeys 本适配器的报因词表（key 与既有口径一致）。
+var errKeys = audiohttp.ErrKeys{
+	BaseURLEmpty:   "asr.err.base_url_empty",
+	BaseURLInvalid: "asr.err.base_url_invalid",
+	ServerStatus:   "asr.err.server_status",
+	RequestFailed:  "asr.err.request_failed",
+	ReadAudio:      "asr.err.read_audio",
+	AudioEmpty:     "asr.err.audio_empty",
+	AudioTooLarge:  "asr.err.audio_too_large",
+}
 
 var _ port.Transcriber = (*Client)(nil)
 
@@ -61,13 +73,12 @@ type Client struct {
 
 // New 创建客户端并校验配置（fail-fast，装配期报因）。
 func New(cfg Config) (*Client, error) {
-	raw := strings.TrimSpace(cfg.BaseURL)
-	if raw == "" {
-		return nil, errors.New(i18n.T("asr.err.base_url_empty"))
+	base, hc, err := audiohttp.ValidateBaseURL(cfg.BaseURL, 2*time.Minute, errKeys)
+	if err != nil {
+		return nil, err
 	}
-	u, err := url.Parse(raw)
-	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
-		return nil, errors.New(i18n.Tf("asr.err.base_url_invalid", "url", cfg.BaseURL))
+	if cfg.HTTP != nil {
+		hc = cfg.HTTP
 	}
 	model := strings.TrimSpace(cfg.Model)
 	if model == "" {
@@ -76,12 +87,8 @@ func New(cfg Config) (*Client, error) {
 	if cfg.Blobs == nil {
 		return nil, errors.New(i18n.T("asr.err.no_blobs"))
 	}
-	hc := cfg.HTTP
-	if hc == nil {
-		hc = &http.Client{Timeout: 2 * time.Minute}
-	}
 	return &Client{
-		base:  strings.TrimRight(raw, "/"),
+		base:  base,
 		key:   strings.TrimSpace(cfg.APIKey),
 		model: model,
 		blobs: cfg.Blobs,
@@ -101,20 +108,9 @@ func (c *Client) Transcribe(ctx context.Context, audio conversation.BlobRef, lan
 	if mime == "" {
 		return "", errors.New(i18n.Tf("asr.chat.err_unsupported_format", "mime", audio.MIME))
 	}
-	rc, err := c.blobs.Get(ctx, audio)
+	data, err := audiohttp.ReadBlob(ctx, c.blobs, audio, maxAudioBytes, errKeys)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", i18n.T("asr.err.read_audio"), err)
-	}
-	defer rc.Close()
-	data, err := io.ReadAll(io.LimitReader(rc, maxAudioBytes+1))
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", i18n.T("asr.err.read_audio"), err)
-	}
-	if len(data) == 0 {
-		return "", errors.New(i18n.T("asr.err.audio_empty"))
-	}
-	if len(data) > maxAudioBytes {
-		return "", errors.New(i18n.Tf("asr.err.audio_too_large", "mb", maxAudioBytes>>20))
+		return "", err
 	}
 
 	lang = strings.TrimSpace(lang)
@@ -146,16 +142,16 @@ func (c *Client) Transcribe(ctx context.Context, audio conversation.BlobRef, lan
 	if c.key != "" {
 		req.Header.Set("Authorization", "Bearer "+c.key)
 	}
-	resp, err := c.hc.Do(req)
+	resp, err := audiohttp.Do(ctx, c.hc, req, errKeys)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", i18n.T("asr.err.request_failed"), err)
+		return "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return "", errors.New(i18n.Tf("asr.err.server_status", "code", resp.StatusCode, "body", snippet(resp.Body)))
+		return "", audiohttp.StatusError(resp.StatusCode, resp.Body, errKeys)
 	}
 	var out response
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxRespBody)).Decode(&out); err != nil {
 		return "", fmt.Errorf("%s: %w", i18n.T("asr.err.parse_response"), err)
 	}
 	if len(out.Choices) == 0 {
@@ -183,18 +179,6 @@ func audioMIME(mime string) string {
 	default:
 		return ""
 	}
-}
-
-func snippet(r io.Reader) string {
-	b, err := io.ReadAll(io.LimitReader(r, maxErrorBody))
-	if err != nil {
-		return ""
-	}
-	s := strings.TrimSpace(string(b))
-	if s == "" {
-		return i18n.T("audio.detail.empty_body")
-	}
-	return s
 }
 
 type request struct {

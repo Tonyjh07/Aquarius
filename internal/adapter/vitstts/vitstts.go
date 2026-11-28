@@ -12,17 +12,15 @@
 package vitstts
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/Tonyjh07/Aquarius/internal/adapter/audiohttp"
 	"github.com/Tonyjh07/Aquarius/internal/domain/conversation"
 	"github.com/Tonyjh07/Aquarius/internal/i18n"
 	"github.com/Tonyjh07/Aquarius/internal/port"
@@ -33,10 +31,21 @@ const (
 	// maxAudioBytes 单次合成的音频上限（4 分钟 22kHz WAV ≈ 21MB，留到 32MB
 	// 覆盖长段播报）。
 	maxAudioBytes = 32 << 20
-	maxErrorBody  = 4 << 10
 	// maxTextBytes 单次合成的文本上限：GET 的查询串有长度限制，长文要分批。
 	maxTextBytes = 2000
 )
+
+// errKeys 本适配器的报因词表（key 与既有口径一致）。
+var errKeys = audiohttp.ErrKeys{
+	BaseURLEmpty:   "tts.err.base_url_empty",
+	BaseURLInvalid: "tts.err.base_url_invalid",
+	ServerStatus:   "tts.err.server_status",
+	RequestFailed:  "tts.err.request_failed",
+	ReadAudio:      "tts.err.read_audio",
+	AudioEmpty:     "tts.err.empty_audio",
+	AudioTooLarge:  "tts.err.audio_too_large",
+	SaveAudio:      "tts.err.save_audio",
+}
 
 var _ port.Synthesizer = (*Client)(nil)
 
@@ -67,27 +76,22 @@ type Client struct {
 
 // New 创建客户端并校验配置（fail-fast，装配期报因）。
 func New(cfg Config) (*Client, error) {
-	raw := strings.TrimSpace(cfg.BaseURL)
-	if raw == "" {
-		return nil, errors.New(i18n.T("tts.err.base_url_empty"))
+	base, hc, err := audiohttp.ValidateBaseURL(cfg.BaseURL, 3*time.Minute, errKeys)
+	if err != nil {
+		return nil, err
 	}
-	u, err := url.Parse(raw)
-	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
-		return nil, errors.New(i18n.Tf("tts.err.base_url_invalid", "url", cfg.BaseURL))
+	if cfg.HTTP != nil {
+		hc = cfg.HTTP
 	}
 	if cfg.Blobs == nil {
 		return nil, errors.New(i18n.T("tts.err.no_blobs"))
-	}
-	hc := cfg.HTTP
-	if hc == nil {
-		hc = &http.Client{Timeout: 3 * time.Minute}
 	}
 	lang := strings.ToLower(strings.TrimSpace(cfg.Language))
 	if lang == "" {
 		lang = "auto"
 	}
 	return &Client{
-		base:    strings.TrimRight(raw, "/"),
+		base:    base,
 		key:     strings.TrimSpace(cfg.APIKey),
 		speaker: strings.TrimSpace(cfg.Speaker),
 		lang:    lang,
@@ -120,12 +124,7 @@ func (c *Client) Synthesize(ctx context.Context, req port.SpeechRequest) (conver
 	if err != nil {
 		return conversation.BlobRef{}, err
 	}
-	name := fmt.Sprintf("speech-%d.wav", time.Now().UnixMilli())
-	ref, err := c.blobs.Put(ctx, bytes.NewReader(raw), "audio/wav", name)
-	if err != nil {
-		return conversation.BlobRef{}, fmt.Errorf("%s: %w", i18n.T("tts.err.save_audio"), err)
-	}
-	return ref, nil
+	return audiohttp.SaveWAV(ctx, c.blobs, raw, errKeys)
 }
 
 // fetch 发一次合成请求，返回音频字节。
@@ -145,28 +144,22 @@ func (c *Client) fetch(ctx context.Context, text, speaker string) ([]byte, error
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", i18n.T("tts.err.build_request"), err)
 	}
-	resp, err := c.hc.Do(req)
+	resp, err := audiohttp.Do(ctx, c.hc, req, errKeys)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", i18n.T("tts.err.request_failed"), err)
+		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, errors.New(i18n.Tf("tts.err.server_status", "code", resp.StatusCode, "body", snippet(resp.Body)))
+		return nil, audiohttp.StatusError(resp.StatusCode, resp.Body, errKeys)
 	}
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxAudioBytes+1))
+	raw, err := audiohttp.ReadAudio(resp.Body, maxAudioBytes, errKeys)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", i18n.T("tts.err.read_audio"), err)
+		return nil, err
 	}
-	if len(raw) == 0 {
-		return nil, errors.New(i18n.T("tts.err.empty_audio"))
-	}
-	if len(raw) > maxAudioBytes {
-		return nil, errors.New(i18n.Tf("tts.err.audio_too_large", "mb", maxAudioBytes>>20))
-	}
-	if !looksLikeWAV(raw) {
+	if !audiohttp.IsWAV(raw) {
 		// 服务端出错时也可能回 200 + 一段 JSON/HTML，直接当音频存下去会让
 		// 播放器莫名其妙地没声音。
-		return nil, errors.New(i18n.Tf("tts.err.not_wav", "sniff", sniff(raw)))
+		return nil, errors.New(i18n.Tf("tts.err.not_wav", "sniff", audiohttp.Sniff(raw)))
 	}
 	return raw, nil
 }
@@ -178,31 +171,4 @@ func speakerOf(voice, fallback string) string {
 		return v
 	}
 	return fallback
-}
-
-// looksLikeWAV 粗判 WAV 头（RIFF....WAVE）。
-func looksLikeWAV(b []byte) bool {
-	return len(b) >= 12 && string(b[0:4]) == "RIFF" && string(b[8:12]) == "WAVE"
-}
-
-// sniff 报因里带上响应体的开头，便于判断服务端到底回了什么。
-func sniff(b []byte) string {
-	n := min(len(b), 80)
-	s := strings.TrimSpace(string(b[:n]))
-	if s == "" {
-		return i18n.T("tts.err.sniff_empty")
-	}
-	return i18n.Tf("tts.err.sniff_head", "text", strconv.Quote(s))
-}
-
-func snippet(r io.Reader) string {
-	b, err := io.ReadAll(io.LimitReader(r, maxErrorBody))
-	if err != nil {
-		return ""
-	}
-	s := strings.TrimSpace(string(b))
-	if s == "" {
-		return i18n.T("audio.detail.empty_body")
-	}
-	return s
 }
