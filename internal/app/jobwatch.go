@@ -11,11 +11,9 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// 任务完成报告参数（D189）：终态取最后 50 行日志，注入队列满时最多重试 3 次。
+// 任务完成报告参数（D189）：终态取最后 50 行日志，注入重试参数见 injectretry.go。
 const (
-	jobReportLogTail   = 50
-	jobInjectAttempts  = 3
-	jobInjectRetryStep = time.Second
+	jobReportLogTail = 50
 )
 
 // JobWatcher 后台任务收尾观察者（D150/D189）：把「任务结束」变成一条 job: 注入，
@@ -305,13 +303,6 @@ func (p *JobWatcher) settle(id port.JobID) {
 	}
 }
 
-// lander 带送达回执的注入（D264）：返回 nil 表示已写成节点并写入磁盘，不只是入队。
-// 单独一个接口而不是加进 port.Injector：注入端口是所有插件/工具共用的，
-// 只有跨轮生产者需要回执，不该逼所有人实现该接口。
-type lander interface {
-	InjectAndWait(ctx context.Context, in port.Injection) error
-}
-
 // deliver 投递报告；队列满时做有限重试（任务已结束，丢一条就没人再报）。
 func (p *JobWatcher) deliver(ctx context.Context, id port.JobID, in port.Injection) bool {
 	if p.inject == nil {
@@ -323,30 +314,20 @@ func (p *JobWatcher) deliver(ctx context.Context, id port.JobID, in port.Injecti
 		p.logf(port.LogInfo, "log.job.report_closed", "log.act.dropped", "id", id)
 		return false
 	}
-	var err error
-	for attempt := 0; attempt < jobInjectAttempts; attempt++ {
-		if ctx.Err() != nil {
-			return false
-		}
-		// 有回执能力的实现就等送达，否则退回「入队即算送走」——测试替身与旧装配
-		// 都没有回执，行为与改动前一致。
-		if l, ok := inj.(lander); ok {
-			err = l.InjectAndWait(ctx, in)
-		} else {
-			err = inj.Inject(ctx, in)
-		}
-		if err == nil {
-			return true
-		}
-		if ctx.Err() != nil {
-			return false
-		}
-		if attempt+1 < jobInjectAttempts && !p.sleep(ctx, time.Duration(attempt+1)*jobInjectRetryStep) {
-			return false
-		}
+	// 有回执能力的实现就等送达（D264），否则退回「入队即算送走」——测试替身与旧装配
+	// 都没有回执，行为与改动前一致。
+	r := injectRetry{
+		getInj:   func() port.Injector { return inj },
+		lander:   true,
+		attempts: injectAttempts,
+		step:     injectRetryStep,
+		sleep:    p.sleep,
 	}
-	p.logf(port.LogWarn, "log.job.report_failed", "log.act.dropped", "id", id, "err", err)
-	return false
+	ok, err := r.deliver(ctx, in)
+	if !ok && err != nil {
+		p.logf(port.LogWarn, "log.job.report_failed", "log.act.dropped", "id", id, "err", err)
+	}
+	return ok
 }
 
 // logf 一条运行日志：上下文固定 job（任务观察者只管任务收尾）。

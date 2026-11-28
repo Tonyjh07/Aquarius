@@ -472,7 +472,7 @@ func TestWatchingJobsWaitReleasesOnTimeout(t *testing.T) {
 func TestJobWatcherDeliverRetries(t *testing.T) {
 	jobs := newWaitJobs()
 	target := newCaptureInjector()
-	flaky := &waitingInjector{fail: jobInjectAttempts + 1, target: target}
+	flaky := &waitingInjector{fail: injectAttempts + 1, target: target}
 	var logged []string
 	w := NewJobWatcher(JobWatcherOptions{
 		Jobs:     jobs,
@@ -485,8 +485,8 @@ func TestJobWatcherDeliverRetries(t *testing.T) {
 	if w.deliver(context.Background(), "j1", in) {
 		t.Fatal("一直满应最终失败")
 	}
-	if flaky.calls != jobInjectAttempts {
-		t.Fatalf("calls = %d, want %d", flaky.calls, jobInjectAttempts)
+	if flaky.calls != injectAttempts {
+		t.Fatalf("calls = %d, want %d", flaky.calls, injectAttempts)
 	}
 	if len(logged) == 0 {
 		t.Fatal("最终失败应记日志")

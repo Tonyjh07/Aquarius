@@ -11,11 +11,7 @@ import (
 	"github.com/Tonyjh07/Aquarius/internal/port"
 )
 
-// 转交报告的注入重试（与 jobInjectAttempts 同一套规则：队列满时最多再来 3 次）。
-const (
-	delegateInjectAttempts  = 3
-	delegateInjectRetryStep = time.Second
-)
+// 转交报告的注入重试与任务收尾共用同一套参数（见 injectretry.go）。
 
 // DelegateWatcher 转交收尾观察者（D261/§5.18）：阻塞在 DelegateRunner.Wait 上，
 // 终态到达就把「报告 + 一行摘要」注入回**发起会话**，并在界面空闲时敲醒会话。
@@ -306,29 +302,20 @@ func (w *DelegateWatcher) forget(id port.DelegateID, e *delegateEntry) {
 }
 
 // deliver 投递注入，队列满时重试（与 JobWatcher 同一套规则）。返回是否送达。
+// 注入器每次尝试前现取：退出过程中会变 nil，取到即视为正在退出，静默放弃。
 func (w *DelegateWatcher) deliver(ctx context.Context, id port.DelegateID, in port.Injection) bool {
-	for attempt := 0; attempt < delegateInjectAttempts; attempt++ {
-		if ctx.Err() != nil {
-			return false
-		}
-		inj := w.inject()
-		if inj == nil {
-			return false // 正在退出
-		}
-		err := inj.Inject(ctx, in)
-		if err == nil {
-			return true
-		}
-		if attempt == delegateInjectAttempts-1 {
-			w.logf(port.LogWarn, "log.delegate.report_failed", "log.act.dropped",
-				"id", id, "err", err)
-			return false
-		}
-		if !w.sleep(ctx, delegateInjectRetryStep*(time.Duration(attempt+1))) {
-			return false
-		}
+	r := injectRetry{
+		getInj:   w.inject,
+		attempts: injectAttempts,
+		step:     injectRetryStep,
+		sleep:    w.sleep,
 	}
-	return false
+	ok, err := r.deliver(ctx, in)
+	if !ok && err != nil {
+		w.logf(port.LogWarn, "log.delegate.report_failed", "log.act.dropped",
+			"id", id, "err", err)
+	}
+	return ok
 }
 
 // delegateFailureText 转交失败的报告正文（英文：进模型上下文）。该报告必须实现——否则

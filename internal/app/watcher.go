@@ -27,8 +27,6 @@ const (
 	watchProbeTimeout = 30 * time.Second
 	// watchReportChars 报告里探针正文的上限：判据之外的内容对模型没用。
 	watchReportChars = 4000
-	watchInjectTries = 3
-	watchRetryStep   = time.Second
 )
 
 // Watcher 观察器（D190）：模型声明探针、判据、节奏与期限，宿主按节奏取样，
@@ -440,22 +438,17 @@ func (w *Watcher) deliver(ctx context.Context, e *watchEntry, text string, trigg
 		Trigger: trigger,
 		Session: e.session,
 	}
-	var err error
-	for attempt := 0; attempt < watchInjectTries; attempt++ {
-		if ctx.Err() != nil {
-			return
-		}
-		if err = inj.Inject(ctx, in); err == nil {
-			if w.wake != nil {
-				w.wake()
-			}
-			return
-		}
-		if attempt+1 < watchInjectTries && !w.sleep(ctx, time.Duration(attempt+1)*watchRetryStep) {
-			return
-		}
+	r := injectRetry{
+		getInj:   func() port.Injector { return inj },
+		onDone:   w.wake, // 送达后敲醒空闲会话；deliver 内部已容 nil
+		attempts: injectAttempts,
+		step:     injectRetryStep,
+		sleep:    w.sleep,
 	}
-	w.logf(port.LogWarn, "log.job.watch_report_failed", "log.act.dropped", "id", e.id, "err", err)
+	ok, err := r.deliver(ctx, in)
+	if !ok && err != nil {
+		w.logf(port.LogWarn, "log.job.watch_report_failed", "log.act.dropped", "id", e.id, "err", err)
+	}
 }
 
 // logf 一条运行日志：上下文固定 job（观察器与任务收尾是同一类流水）。
