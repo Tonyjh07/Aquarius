@@ -31,58 +31,76 @@ type DataDirAdmin interface {
 	RequestWipe() error
 }
 
-// dataWipeRow 存储区末行的删除入口：初始态一行按钮 + 说明；点「删除」展开输入框
-// 与确认/取消。未接线（dataDir == nil）时按钮禁用、说明照常展示。
+// dataWipeRow 存储区末行的删除入口：初始态一行按钮 + 说明；点「删除」展开确认区
+// （夹宽输入框单独一行 + 确认/取消与说明一行）。未接线（dataDir == nil）时按钮禁用、
+// 说明照常展示。
+//
+// 输入框**不能**与按钮同排塞进 Rigid：editorBox 会把 Min.X 抬到 Max.X 吃满剩余行宽
+// （settings_row_body.go 的铺满规则），按钮被挤出窗外（实机截图踩中）。展开态因此
+// 拆两行：输入框按确认词宽度夹宽独占一行，按钮与说明并排其下。
 func (f *settingsForm) dataWipeRow(gtx layout.Context, th *material.Theme) layout.Dimensions {
-	return fieldRow(gtx, th, i18n.T("ui.page.general.data_wipe_label"), func(gtx layout.Context) layout.Dimensions {
-		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+	hint := func(gtx layout.Context) layout.Dimensions {
+		l := material.Body2(th, i18n.Tf("ui.page.general.data_wipe_hint",
+			"word", wipeConfirmWord, "path", f.dataDirPath()))
+		l.Color = paperOf().text3
+		return l.Layout(gtx)
+	}
+	if !f.wipeArmed {
+		return fieldRow(gtx, th, i18n.T("ui.page.general.data_wipe_label"), func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return paperButton(th, &f.wipeArm, i18n.T("ui.page.general.data_wipe_btn"),
+						paperBtnDanger, f.dataDir != nil)(gtx)
+				}),
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, hint)
+				}),
+			)
+		})
+	}
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return fieldRow(gtx, th, i18n.T("ui.page.general.data_wipe_label"),
+				func(gtx layout.Context) layout.Dimensions {
+					// 夹宽：确认词只有几个字符，框太宽读起来像「这里该填很多字」；
+					// editorBox 满宽铺底衬，宽度由这里的 Max.X 决定。
+					gtx.Constraints.Max.X = min(gtx.Constraints.Max.X, gtx.Dp(wipeInputDp))
+					return editorBox(th, &f.wipeInput,
+						i18n.Tf("ui.page.general.data_wipe_input_hint", "word", wipeConfirmWord))(gtx)
+				})
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						if !f.wipeArmed {
-							return paperButton(th, &f.wipeArm, i18n.T("ui.page.general.data_wipe_btn"),
-								paperBtnDanger, f.dataDir != nil)(gtx)
-						}
-						return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								return layout.Inset{Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-									return editorBox(th, &f.wipeInput,
-										i18n.Tf("ui.page.general.data_wipe_input_hint", "word", wipeConfirmWord))(gtx)
-								})
-							}),
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								return layout.Inset{Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-									return paperButton(th, &f.wipeGo, i18n.T("ui.settings.dlg.remove_confirm"),
-										paperBtnDanger, true)(gtx)
-								})
-							}),
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								return paperButton(th, &f.wipeCancel, i18n.T("ui.common.cancel"),
-									paperBtnSecondary, true)(gtx)
-							}),
-						)
-					}),
-					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							l := material.Body2(th, i18n.Tf("ui.page.general.data_wipe_hint",
-								"word", wipeConfirmWord, "path", f.dataDirPath()))
-							l.Color = paperOf().text3
-							return l.Layout(gtx)
+						return layout.Inset{Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return paperButton(th, &f.wipeGo, i18n.T("ui.settings.dlg.remove_confirm"),
+								paperBtnDanger, true)(gtx)
 						})
 					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return paperButton(th, &f.wipeCancel, i18n.T("ui.common.cancel"),
+								paperBtnSecondary, true)(gtx)
+						})
+					}),
+					layout.Flexed(1, hint),
 				)
-			}),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				if f.wipeStatus == "" {
-					return layout.Dimensions{}
-				}
-				return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return f.secretStatusRowOf(gtx, th, f.wipeStatus, f.wipeErr)
-				})
-			}),
-		)
-	})
+			})
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if f.wipeStatus == "" {
+				return layout.Dimensions{}
+			}
+			return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return f.secretStatusRowOf(gtx, th, f.wipeStatus, f.wipeErr)
+			})
+		}),
+	)
 }
+
+// wipeInputDp 确认词输入框的夹宽（dp）：只装得下确认词 + 提示，不跟行宽走。
+const wipeInputDp = 220
 
 // dataDirPath 展示用的数据根位置（未接线 = 空，提示里少一段路径）。
 func (f *settingsForm) dataDirPath() string {

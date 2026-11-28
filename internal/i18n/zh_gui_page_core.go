@@ -47,7 +47,7 @@ var zhGuiPageCoreTexts = map[string]string{
 	"ui.page.general.tts_check":            "语音播报（回答完成后自动播放）",
 	"ui.page.general.backup_keep_label":    "备份代数",
 	"ui.page.general.backup_keep_hint":     "会话树保留的备份份数 {min}–{max}（空 = 默认 3）",
-	"ui.page.general.data_wipe_label":      "删除数据目录",
+	"ui.page.general.data_wipe_label":      "删除数据",
 	"ui.page.general.data_wipe_btn":        "删除…",
 	"ui.page.general.data_wipe_hint":       "删除整个数据目录 {path}（全部 profile、会话、记忆与密钥库），不可恢复；输入 {word} 确认，应用退出时执行删除",
 	"ui.page.general.data_wipe_input_hint": "输入 {word}",

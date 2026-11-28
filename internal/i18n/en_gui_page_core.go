@@ -42,7 +42,7 @@ var enGuiPageCoreTexts = map[string]string{
 	"ui.page.general.tts_check":            "speak the answer (plays automatically when done)",
 	"ui.page.general.backup_keep_label":    "Backup generations",
 	"ui.page.general.backup_keep_hint":     "backups kept for the session tree: {min}–{max} (empty = default 3)",
-	"ui.page.general.data_wipe_label":      "Delete data directory",
+	"ui.page.general.data_wipe_label":      "Delete data",
 	"ui.page.general.data_wipe_btn":        "Delete…",
 	"ui.page.general.data_wipe_hint":       "deletes the whole data directory {path} (all profiles, conversations, memory and the secret store), unrecoverable; type {word} to confirm, the app exits and deletes it afterwards",
 	"ui.page.general.data_wipe_input_hint": "type {word}",
