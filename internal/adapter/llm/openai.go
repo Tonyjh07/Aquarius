@@ -318,7 +318,10 @@ func (c *Client) generateChat(ctx context.Context, req port.GenerateRequest) (po
 //     比「退避等同一把」更快也更符合用户意图。
 //   - 408/5xx（§10）：标注瞬时错误，供装配根的重试装饰器限次退避。
 func (c *Client) statusError(path string, code int, sn string, after time.Duration) error {
-	msg := i18n.Tf("llm.err.status", "base", c.base, "path", path, "code", code, "body", sn)
+	// base 可能带 `?key=` 形状的查询串（部分兼容端点用查询串传密钥）；留档侧已用
+	// redactedURL 防守，错误文本同一条规则——报因进了 stderr 与运行日志，密钥
+	// 不能跟着端点一起进去。
+	msg := i18n.Tf("llm.err.status", "base", redactedURL(c.base), "path", path, "code", code, "body", sn)
 	switch {
 	case code == http.StatusTooManyRequests:
 		return fmt.Errorf("%s: %w", msg, &port.Quota{After: after, Cause: port.ErrTransient})

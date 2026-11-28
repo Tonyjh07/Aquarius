@@ -28,7 +28,11 @@ const (
 	layerI18n      layer = "i18n"    // 界面文案表：叶子层，只进不出（D275）
 	layerLogging   layer = "logging" // 运行日志：叶子层，只 import i18n（D276）
 	layerLegal     layer = "legal"   // 法律正文：叶子层，只 import i18n（D278）
-	layerOther     layer = "other"   // assets 等非分层包
+	// 输入历史共用件：GUI 与 TUI 共享的磁盘输入历史。只允许 adapter 与 cmd 引用——
+	// app 若拿它当存储用，历史文件就从「前端自己的记事本」变成了内核事实，两条前端
+	// 各自的退化行为（文件不可读写即退化为内存）会反过来影响领域状态。
+	layerInHistory layer = "inhistory"
+	layerOther     layer = "other" // assets 等非分层包
 )
 
 // allowedTargets 每一层允许 import 的**内部**层。
@@ -47,7 +51,7 @@ var allowedTargets = map[layer][]layer{
 	layerDomain:    {layerDomain, layerI18n},
 	layerPort:      {layerDomain, layerI18n},
 	layerApp:       {layerDomain, layerPort, layerI18n},
-	layerAdapter:   {layerDomain, layerPort, layerAdapter, layerPlugin, layerPluginAPI, layerI18n, layerLegal},
+	layerAdapter:   {layerDomain, layerPort, layerAdapter, layerPlugin, layerPluginAPI, layerI18n, layerLegal, layerInHistory},
 	layerPlugin:    {layerDomain, layerPort, layerPluginAPI, layerI18n},
 	layerPluginAPI: {layerPluginAPI},
 	layerI18n:      {}, // 文案包谁都不 import：i18n 是叶子
@@ -57,6 +61,8 @@ var allowedTargets = map[layer][]layer{
 	// 法务正文包同理：四份 md 由 go:embed 打进二进制，读取方是界面适配器；
 	// 法务正文包自己只认 i18n.Lang（D278 决策 5）。
 	layerLegal: {layerI18n},
+	// 输入历史共用件是叶子：只认标准库，连 i18n 都不取词（历史条目不进界面文案）。
+	layerInHistory: {},
 }
 
 // skippedDirNames 不参与扫描的目录：本地脚手架（不入库）、工具目录、独立子模块。
@@ -173,6 +179,10 @@ func TestGuardCatchesViolation(t *testing.T) {
 		{layerLegal, layerI18n, true},
 		{layerLegal, layerAdapter, false},
 		{layerAdapter, layerLegal, true},
+		{layerAdapter, layerInHistory, true},
+		{layerApp, layerInHistory, false},
+		{layerInHistory, layerAdapter, false},
+		{layerInHistory, layerI18n, false},
 	}
 	for _, c := range cases {
 		if got := allows(c.src, c.dst); got != c.want {
@@ -261,6 +271,7 @@ func classify(modPath, importPath string) layer {
 		{modPath + "/internal/i18n", layerI18n},
 		{modPath + "/internal/logging", layerLogging},
 		{modPath + "/internal/legal", layerLegal},
+		{modPath + "/internal/inhistory", layerInHistory},
 		{modPath + "/cmd", layerCmd},
 		{modPath + "/pluginapi", layerPluginAPI},
 	}
