@@ -49,7 +49,7 @@ var zhSessionTexts = map[string]string{
 	"session.usage.mode_exact":    "精确（本地 tokenizer 计数）",
 	"session.usage.context":       "当前上下文:≈{est} / {max} tokens（{pct}%，自动压缩阈值 {at} = {atpct}%）",
 	"session.usage.counter":       "计数方式: {mode}",
-	"session.usage.last":          "上轮实测: in={in} out={out} tokens（服务端返回）",
+	"session.usage.last":          "最近实测: in={in} out={out} tokens（服务端返回）",
 	"session.usage.total":         "本会话累计(Path): in={in} out={out} tokens（{gen} 次生成）",
 	"session.usage.cost":          "，约 ${usd}",
 	"session.usage.cache":         "缓存: 命中 {read} · 写入 {write} tokens（输入命中率 {pct}%）",

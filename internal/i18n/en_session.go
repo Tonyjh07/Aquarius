@@ -45,7 +45,7 @@ var enSessionTexts = map[string]string{
 	"session.usage.mode_exact":    "exact (local tokenizer count)",
 	"session.usage.context":       "Context now: ≈{est} / {max} tokens ({pct}%, auto-compaction threshold {at} = {atpct}%)",
 	"session.usage.counter":       "Counting: {mode}",
-	"session.usage.last":          "Last turn measured: in={in} out={out} tokens (reported by the server)",
+	"session.usage.last":          "Latest measured: in={in} out={out} tokens (reported by the server)",
 	"session.usage.total":         "Conversation total (Path): in={in} out={out} tokens ({gen} generations)",
 	"session.usage.cost":          ", about ${usd}",
 	"session.usage.cache":         "Cache: read {read} · write {write} tokens ({pct}% of input hit)",

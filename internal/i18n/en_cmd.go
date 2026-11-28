@@ -204,7 +204,7 @@ var enCmdTexts = map[string]string{
 	"cmd.memory.p1.desc": "open the per-conversation memory; omitted = global memories.md",
 
 	// /usage
-	"cmd.usage.desc": "Show token usage (context occupancy / last turn measured / conversation total)",
+	"cmd.usage.desc": "Show token usage (context occupancy / latest measured / conversation total)",
 	"cmd.lore.desc":  "Show which lorebook entries this round activates (read-only, never written to the tree)",
 
 	// /context

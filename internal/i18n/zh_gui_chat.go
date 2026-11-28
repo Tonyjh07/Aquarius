@@ -67,7 +67,7 @@ var zhGuiChatTexts = map[string]string{
 	"ui.chat.ctx_mode_exact":    "精确",
 	"ui.chat.ctx_usage":         "上下文 {used}/{max} tokens（{pct}%，{mode}）",
 	"ui.chat.tokens_total":      "累计 in {in} / out {out} tokens",
-	"ui.chat.tokens_last":       "上轮 in {in} / out {out} tokens",
+	"ui.chat.tokens_last":       "最近 in {in} / out {out} tokens",
 
 	// ── 输入区（input.go / voice.go）
 	"ui.input.startup_hint":       "Aquarius — 输入 /help 查看命令，/quit 退出；停止生成点右侧方块",

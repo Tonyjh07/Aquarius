@@ -65,7 +65,7 @@ var enGuiChatTexts = map[string]string{
 	"ui.chat.ctx_mode_exact":    "exact",
 	"ui.chat.ctx_usage":         "Context {used}/{max} tokens ({pct}%, {mode})",
 	"ui.chat.tokens_total":      "Total in {in} / out {out} tokens",
-	"ui.chat.tokens_last":       "Last turn in {in} / out {out} tokens",
+	"ui.chat.tokens_last":       "Latest in {in} / out {out} tokens",
 
 	// ── 输入区
 	"ui.input.startup_hint":       "Aquarius — type /help for commands, /quit to exit; click the square on the right to stop generating",

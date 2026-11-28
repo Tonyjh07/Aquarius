@@ -206,7 +206,7 @@ var zhCmdTexts = map[string]string{
 	"cmd.memory.p1.desc": "开会话记忆；省略 = 全局 memories.md",
 
 	// /usage
-	"cmd.usage.desc": "查看 token 用量（上下文占用 / 上轮实测 / 会话累计）",
+	"cmd.usage.desc": "查看 token 用量（上下文占用 / 最近实测 / 会话累计）",
 	"cmd.lore.desc":  "查看本轮世界书激活了哪些条目（只读，不写进会话）",
 
 	// /context
