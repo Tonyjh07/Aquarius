@@ -50,7 +50,7 @@ func (f *settingsForm) dataWipeRow(gtx layout.Context, th *material.Theme) layou
 			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return paperButton(th, &f.wipeArm, i18n.T("ui.page.general.data_wipe_btn"),
-						paperBtnDangerSolid, f.dataDir != nil)(gtx)
+						paperBtnDanger, f.dataDir != nil)(gtx)
 				}),
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Left: unit.Dp(10)}.Layout(gtx, hint)
@@ -75,7 +75,7 @@ func (f *settingsForm) dataWipeRow(gtx layout.Context, th *material.Theme) layou
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return paperButton(th, &f.wipeGo, i18n.T("ui.settings.dlg.remove_confirm"),
-								paperBtnDangerSolid, true)(gtx)
+								paperBtnDanger, true)(gtx)
 						})
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
