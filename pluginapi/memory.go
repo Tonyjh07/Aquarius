@@ -38,6 +38,10 @@ type MemoryRequest struct {
 	// 0 = 宿主不给建议。超出由宿主硬截断并记日志——插件应按这个数自己裁剪，别指望截断
 	// 截得好看。
 	BudgetTokens int
+	// ToolsAvailable 当轮模型面是否带工具声明（D345）。true = 模型能调工具，主路径插件
+	// 可以只回一句引导、让模型用工具细看；false = 模型看不见任何工具（无工具源、能力
+	// 关闭或本轮不挂），引导句没有意义，直接注入正文。零值 = 未知，按不可用保守处理。
+	ToolsAvailable bool
 }
 
 // MemoryContext 注入结果。Text 原样进上下文；宿主只负责把它放进记忆段的位置，
@@ -66,14 +70,31 @@ type LegacyMemoryHost interface {
 //
 // 兼容承诺：改字段会破坏做迁移的插件。
 type LegacyMemorySnapshot struct {
-	Global   string
+	// Global 全局记忆（memories.md）。零值 = 没有全局记忆。
+	Global LegacyGlobalMemory
+	// Sessions 各会话的记忆，按会话 ID 排序。
 	Sessions []LegacySessionMemory
+}
+
+// LegacyGlobalMemory 一篇全局内置记忆。
+//
+// 兼容承诺：改字段会破坏做迁移的插件。
+type LegacyGlobalMemory struct {
+	// Name 来源文档名（memories.md）。迁移产物用它命名，别用占位名——迁移是一次性的，
+	// 占位名入库后改不了（D355）。
+	Name string
+	// Content 文档正文（markdown 原文）。
+	Content string
 }
 
 // LegacySessionMemory 一个会话的内置记忆。Session 是会话 ID，与 SessionFrom(ctx) 同源。
 //
 // 兼容承诺：改字段会破坏做迁移的插件。
 type LegacySessionMemory struct {
+	// Name 来源文档名（<会话ID>.memory.md）。语义同 Global.Name（D355）。
+	Name string
+	// Session 会话 ID。
 	Session string
+	// Content 文档正文（markdown 原文）。
 	Content string
 }

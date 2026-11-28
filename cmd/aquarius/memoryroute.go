@@ -40,7 +40,7 @@ var _ port.MemorySource = (*memoryRoute)(nil)
 
 // Recall 问当前回答者要本轮的记忆。插件失败只记一行并返回空块——记忆坏了不该挡住对话，
 // 与内置实现读取失败的姿态一致。
-func (m *memoryRoute) Recall(ctx context.Context, id conversation.ID, budget int) (port.MemoryBlock, error) {
+func (m *memoryRoute) Recall(ctx context.Context, id conversation.ID, q port.MemoryQuery) (port.MemoryBlock, error) {
 	m.mu.RLock()
 	src, owner, builtin := m.src, m.owner, m.builtin
 	m.mu.RUnlock()
@@ -48,9 +48,9 @@ func (m *memoryRoute) Recall(ctx context.Context, id conversation.ID, budget int
 		if builtin == nil {
 			return port.MemoryBlock{}, nil
 		}
-		return builtin.Recall(ctx, id, budget)
+		return builtin.Recall(ctx, id, q)
 	}
-	blk, err := src.Recall(ctx, id, budget)
+	blk, err := src.Recall(ctx, id, q)
 	if err != nil {
 		if m.log != nil {
 			m.log(port.LogWarn, "plugin", "log.plugin.t1_memory_failed",

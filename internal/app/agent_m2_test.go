@@ -83,8 +83,8 @@ func TestRunMemoryInjection(t *testing.T) {
 		t.Fatalf("挂载点收到的会话 = %q, want %q", src.gotID, c.ID)
 	}
 	// 预算按窗口的四分之一封顶（默认窗口 256k → 64000），插件据此自己裁剪。
-	if want := DefaultMaxContextTokens / 4; src.gotBudget != want {
-		t.Fatalf("预算 = %d, want %d", src.gotBudget, want)
+	if want := DefaultMaxContextTokens / 4; src.gotQuery.BudgetTokens != want {
+		t.Fatalf("预算 = %d, want %d", src.gotQuery.BudgetTokens, want)
 	}
 	// 树内 persona/节点未被改写（注入只发生在装配副本）。
 	if err := c.Validate(); err != nil {
@@ -105,8 +105,8 @@ func TestRunMemoryBudgetTruncates(t *testing.T) {
 	if err := a.Run(context.Background(), c); err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	if src.gotBudget <= 0 || src.gotBudget > 2000/4 {
-		t.Fatalf("预算 = %d，应在 (0, 500]", src.gotBudget)
+	if src.gotQuery.BudgetTokens <= 0 || src.gotQuery.BudgetTokens > 2000/4 {
+		t.Fatalf("预算 = %d，应在 (0, 500]", src.gotQuery.BudgetTokens)
 	}
 	rep, ok := a.LastContextReport(context.Background())
 	if !ok {
@@ -124,8 +124,8 @@ func TestRunMemoryBudgetTruncates(t *testing.T) {
 	if !strings.Contains(memSec.Detail, "truncated") {
 		t.Fatalf("截断没记在段细目上：%q", memSec.Detail)
 	}
-	if n := estimateTokens(strings.TrimPrefix(memSec.Text, memoryHeading)); n > src.gotBudget {
-		t.Fatalf("截断后仍 %d tokens > 预算 %d", n, src.gotBudget)
+	if n := estimateTokens(strings.TrimPrefix(memSec.Text, memoryHeading)); n > src.gotQuery.BudgetTokens {
+		t.Fatalf("截断后仍 %d tokens > 预算 %d", n, src.gotQuery.BudgetTokens)
 	}
 }
 
@@ -145,7 +145,7 @@ func TestRunMemoryFailureSilent(t *testing.T) {
 
 type brokenSource struct{}
 
-func (brokenSource) Recall(context.Context, conversation.ID, int) (port.MemoryBlock, error) {
+func (brokenSource) Recall(context.Context, conversation.ID, port.MemoryQuery) (port.MemoryBlock, error) {
 	return port.MemoryBlock{}, errors.New("disk broken")
 }
 

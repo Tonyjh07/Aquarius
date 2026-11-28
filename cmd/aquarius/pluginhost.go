@@ -109,7 +109,7 @@ func (w *wiring) legacyMemorySnapshot(ctx context.Context) (v1.LegacyMemorySnaps
 		return snap, nil
 	}
 	if doc, err := w.mem.Read(ctx, port.GlobalMemoryDoc); err == nil {
-		snap.Global = doc.Content
+		snap.Global = v1.LegacyGlobalMemory{Name: port.GlobalMemoryDoc, Content: doc.Content}
 	} else if !errors.Is(err, port.ErrMemoryNotFound) {
 		return snap, err
 	}
@@ -126,7 +126,7 @@ func (w *wiring) legacyMemorySnapshot(ctx context.Context) (v1.LegacyMemorySnaps
 		if err != nil || strings.TrimSpace(doc.Content) == "" {
 			continue
 		}
-		snap.Sessions = append(snap.Sessions, v1.LegacySessionMemory{Session: sid, Content: doc.Content})
+		snap.Sessions = append(snap.Sessions, v1.LegacySessionMemory{Name: e.Name, Session: sid, Content: doc.Content})
 	}
 	sort.Slice(snap.Sessions, func(i, j int) bool { return snap.Sessions[i].Session < snap.Sessions[j].Session })
 	return snap, nil

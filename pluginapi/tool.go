@@ -31,11 +31,13 @@ type ToolProvider interface {
 }
 
 // ToolNameMaxLen 工具名长度上限（与主流模型端点的限制一致；超长会在协议层被拒）。
+// 兼容承诺：改值会破坏按 64 做名字规划的工具插件（窗口 slug 预算等）。
 const ToolNameMaxLen = 64
 
 // ValidToolName 工具名是否满足文法（`[A-Za-z0-9_-]{1,64}`）。宿主在装配时逐条校验，
 // 不合格的清单整份拒掉并报因——模型端点不认识的名字会让整个请求失败，早点失败比在
 // 协议层拿到 400 好读。
+// 兼容承诺：改文法会破坏已按旧文法命名的工具插件与宿主侧逐条校验。
 func ValidToolName(name string) bool {
 	if name == "" || len(name) > ToolNameMaxLen {
 		return false

@@ -99,6 +99,7 @@ type ViewSpec struct {
 // 只是请求：宿主把宽高夹进 [320,4096]、最小尺寸不超过声明尺寸，并且只在有 OS 窗口的
 // 前端生效。没有「置顶 / 无边框 / 位置 / 父子窗」这些字段——窗口形态由宿主统一，插件
 // 一旦能定制形态，用户就会遇到每个插件一张脸的窗口。
+// 兼容承诺：改字段会破坏申请窗口的插件与宿主窗管理器。
 type WindowSpec struct {
 	// Width/Height 初始尺寸；0 = 宿主缺省。
 	Width, Height int
@@ -147,6 +148,7 @@ type SettingsSectionProvider interface {
 //
 // 为什么不按行数自动判定：多少行算「多」是插件自己的语义（有些行一个数字就够，有些
 // 一行背后要读三段说明），宿主数不出这件事。宿主只给缺省，插件有权覆盖。
+// 兼容承诺：改两个取值词会破坏声明设置分区的插件与设置窗路由。
 type SettingsPlacement string
 
 const (

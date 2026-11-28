@@ -19,15 +19,21 @@ type UIEnviron interface {
 
 // 前端种类。只有 GUI 能自建窗口与自绘；其余两者没有 OS 窗口可开。
 const (
-	FrontendGUI  = "gui"
-	FrontendTUI  = "tui"
+	// FrontendGUI Gio 悬浮球 GUI。
+	FrontendGUI = "gui"
+	// FrontendTUI bubbletea 终端界面。
+	FrontendTUI = "tui"
+	// FrontendREPL 纯文本行。
 	FrontendREPL = "repl"
 )
+
+// 前端形态词表冻结：新增前端追加常量，不改已有值——改值会破坏按形态分派的插件。
 
 // UIEnvironment 一次环境快照。
 //
 // 零值是合法的「什么都不知道」：Frontend 空、Scale 0、Tokens 全空。插件必须能在这份
 // 空快照下退化（按自己的缺省画，或干脆不开窗）。
+// 兼容承诺：改字段会破坏读宿主环境的插件与环境面的实现方。
 type UIEnvironment struct {
 	Frontend string // FrontendGUI / FrontendTUI / FrontendREPL；空 = 未知
 	Dark     bool   // 当前主题是否深色；只有 Frontend == FrontendGUI 时可信
@@ -47,6 +53,7 @@ type UIEnvironment struct {
 // ThemeTokens 宿主语义色，格式 RRGGBB（六位十六进制，无 #、无 alpha）。
 //
 // 只给六个：其他颜色是宿主内部卡片版式的一部分，插件拿不到也不该假装拿得到。
+// 兼容承诺：改字段集或取值格式会破坏按令牌配色的插件。
 type ThemeTokens struct {
 	BG     string // 窗口底
 	FG     string // 正文

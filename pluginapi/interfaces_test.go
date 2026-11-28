@@ -40,9 +40,11 @@ func (fakePlugin) Create(h Host) (Instance, error) { return fakePlugin{host: h},
 func (fakePlugin) Start() error                    { return nil }
 func (fakePlugin) Shutdown(context.Context) error  { return nil }
 
-func (fakePlugin) Generate(context.Context, GenerateRequest) (Stream, error) { return nil, nil }
-func (fakePlugin) Models(context.Context) ([]ModelInfo, error)               { return nil, nil }
-func (fakePlugin) CountTokens(context.Context, string) (int, error)          { return 0, nil }
+func (fakePlugin) Generate(context.Context, GenerateRequest) (Stream, error) {
+	return fakeStream{}, nil
+}
+func (fakePlugin) Models(context.Context) ([]ModelInfo, error)      { return nil, nil }
+func (fakePlugin) CountTokens(context.Context, string) (int, error) { return 0, nil }
 func (fakePlugin) Probe(context.Context, string, string) (ProbeResult, error) {
 	return ProbeResult{Verdict: ProbeInconclusive}, nil
 }
@@ -97,7 +99,16 @@ var (
 	_ Host             = fakeHost{}
 	_ NoticePoster     = fakeHost{}
 	_ LegacyMemoryHost = fakeHost{}
+	_ UIEnviron        = fakeHost{}
 )
+
+// fakeStream Stream 的一次性实现：接口形状的编译期锁（漏锁过的面在实现出现前不红）。
+type fakeStream struct{}
+
+var _ Stream = fakeStream{}
+
+func (fakeStream) Recv() (Delta, error) { return Delta{}, io.EOF }
+func (fakeStream) Close() error         { return nil }
 
 func (fakeHost) Logger() Logger          { return fakeLogger{} }
 func (fakeHost) Secrets() SecretResolver { return fakeSecrets{} }
@@ -172,7 +183,7 @@ func TestLegacyMemoryIsOptional(t *testing.T) {
 	}
 	// 零值快照 = 没有可迁移的内容：全局空、会话空，调用方按正常路径继续。
 	var snap LegacyMemorySnapshot
-	if snap.Global != "" || len(snap.Sessions) != 0 {
+	if snap.Global.Name != "" || snap.Global.Content != "" || len(snap.Sessions) != 0 {
 		t.Fatalf("零值快照不是空快照：%+v", snap)
 	}
 }
@@ -185,3 +196,5 @@ func TestMemoryContextZeroValue(t *testing.T) {
 		t.Fatalf("MemoryContext 零值应表示不注入，得到 %q", got.Text)
 	}
 }
+
+func (fakeHost) Environ() UIEnvironment { return UIEnvironment{} }

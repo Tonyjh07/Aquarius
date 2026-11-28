@@ -25,7 +25,7 @@ func TestSourceWhitelist(t *testing.T) {
 		}
 	}
 
-	blk, err := NewSource(s).Recall(ctx, conversation.ID("conv"), 0)
+	blk, err := NewSource(s).Recall(ctx, conversation.ID("conv"), port.MemoryQuery{})
 	if err != nil {
 		t.Fatalf("recall: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestSourceWhitelist(t *testing.T) {
 
 // TestSourceEmpty 什么都没有时给空块（不是错误）：调用方据此不注入这一段。
 func TestSourceEmpty(t *testing.T) {
-	blk, err := NewSource(newStore(t)).Recall(context.Background(), conversation.ID("conv"), 0)
+	blk, err := NewSource(newStore(t)).Recall(context.Background(), conversation.ID("conv"), port.MemoryQuery{})
 	if err != nil {
 		t.Fatalf("recall: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestSourceEmpty(t *testing.T) {
 		t.Fatalf("空库应给空块：%+v", blk)
 	}
 	// nil 存储（装配失败时的降级）同样给空块，不 panic。
-	if blk, err := (Source{}).Recall(context.Background(), conversation.ID("conv"), 0); err != nil || blk.Text != "" {
+	if blk, err := (Source{}).Recall(context.Background(), conversation.ID("conv"), port.MemoryQuery{}); err != nil || blk.Text != "" {
 		t.Fatalf("nil 存储：%+v / %v", blk, err)
 	}
 }

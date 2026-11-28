@@ -324,15 +324,15 @@ type fakeSource struct {
 	text   string
 	detail string
 	err    error
-	// 记录最近一次调用收到的参数，供断言预算与会话身份。
-	gotID     conversation.ID
-	gotBudget int
+	// 记录最近一次调用收到的参数，供断言预算、工具信号与会话身份。
+	gotID    conversation.ID
+	gotQuery port.MemoryQuery
 }
 
 var _ port.MemorySource = (*fakeSource)(nil)
 
-func (f *fakeSource) Recall(_ context.Context, id conversation.ID, budget int) (port.MemoryBlock, error) {
-	f.gotID, f.gotBudget = id, budget
+func (f *fakeSource) Recall(_ context.Context, id conversation.ID, q port.MemoryQuery) (port.MemoryBlock, error) {
+	f.gotID, f.gotQuery = id, q
 	if f.err != nil {
 		return port.MemoryBlock{}, f.err
 	}

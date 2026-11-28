@@ -665,7 +665,10 @@ func (a *Agent) memoryBlock(ctx context.Context, msgs []port.PromptMessage, id c
 		return "", ""
 	}
 	budget := a.memoryBudget(ctx, msgs)
-	blk, err := a.memory.Recall(ctx, id, budget)
+	// 工具面信号（D345）：与本轮是否给模型挂工具同一判据（ServerTools 场景在 tools 为
+	// nil 时同样不成立），预算与信号出自同一次装配。
+	query := port.MemoryQuery{BudgetTokens: budget, ToolsAvailable: a.tools != nil && a.cfg.Caps.Tools}
+	blk, err := a.memory.Recall(ctx, id, query)
 	if err != nil || strings.TrimSpace(blk.Text) == "" {
 		return "", ""
 	}

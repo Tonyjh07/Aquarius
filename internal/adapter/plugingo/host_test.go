@@ -46,7 +46,7 @@ func TestOptionalExtensionsAreDiscoverable(t *testing.T) {
 		Plugin: "p",
 		Notice: func(string, string, ...any) {},
 		LegacyMemory: func(context.Context) (v1.LegacyMemorySnapshot, error) {
-			return v1.LegacyMemorySnapshot{Global: "g"}, nil
+			return v1.LegacyMemorySnapshot{Global: v1.LegacyGlobalMemory{Name: "memories.md", Content: "g"}}, nil
 		},
 	})
 	if _, ok := rich.(v1.NoticePoster); !ok {
@@ -57,7 +57,7 @@ func TestOptionalExtensionsAreDiscoverable(t *testing.T) {
 		t.Fatal("给了 LegacyMemory 就该命中 LegacyMemoryHost")
 	}
 	snap, err := lm.LegacyMemory(context.Background())
-	if err != nil || snap.Global != "g" {
+	if err != nil || snap.Global.Content != "g" {
 		t.Fatalf("快照没转发：%+v %v", snap, err)
 	}
 }

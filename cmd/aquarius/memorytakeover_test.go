@@ -67,7 +67,7 @@ func (t fixedTool) Execute(context.Context, tool.Call) (tool.Result, error) {
 // fakeBuiltin 内置记忆面的替身：接管前必须问得到，接管后必须问不到。
 type fakeBuiltin struct{}
 
-func (fakeBuiltin) Recall(context.Context, conversation.ID, int) (port.MemoryBlock, error) {
+func (fakeBuiltin) Recall(context.Context, conversation.ID, port.MemoryQuery) (port.MemoryBlock, error) {
 	return port.MemoryBlock{Text: "builtin-memory", Detail: "index"}, nil
 }
 
@@ -113,7 +113,7 @@ func TestMemoryTakeoverRemovesBuiltinTools(t *testing.T) {
 	if got := w.memRoute.Owner(); got != "memplug" {
 		t.Fatalf("接管者 = %q, want memplug", got)
 	}
-	blk, err := w.memRoute.Recall(ctx, "conv", 0)
+	blk, err := w.memRoute.Recall(ctx, "conv", port.MemoryQuery{})
 	if err != nil || !strings.Contains(blk.Text, "sit for 20 minutes") {
 		t.Fatalf("接管后应问插件：%+v / %v", blk, err)
 	}
@@ -142,7 +142,7 @@ func TestMemoryTakeoverRemovesBuiltinTools(t *testing.T) {
 	if got := w.memRoute.Owner(); got != "" {
 		t.Fatalf("停用后应交还内置，实际接管者 %q", got)
 	}
-	if blk, _ := w.memRoute.Recall(ctx, "conv", 0); !strings.Contains(blk.Text, "builtin-memory") {
+	if blk, _ := w.memRoute.Recall(ctx, "conv", port.MemoryQuery{}); !strings.Contains(blk.Text, "builtin-memory") {
 		t.Fatalf("交还后应问内置：%+v", blk)
 	}
 	specs, err = w.runner.Specs(ctx)
@@ -170,7 +170,7 @@ func TestMemoryTakeoverRefusesSecondOwner(t *testing.T) {
 	if got := w.memRoute.Owner(); got != "mem1" {
 		t.Fatalf("被拒的那次不该动接管者：%q", got)
 	}
-	if blk, _ := w.memRoute.Recall(ctx, "conv", 0); !strings.Contains(blk.Text, "sit for 20 minutes") {
+	if blk, _ := w.memRoute.Recall(ctx, "conv", port.MemoryQuery{}); !strings.Contains(blk.Text, "sit for 20 minutes") {
 		t.Fatalf("接管应仍在第一份手里：%+v", blk)
 	}
 }

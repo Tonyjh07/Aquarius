@@ -27,7 +27,7 @@ const sessionHeading = "\n\n## Session memory (this conversation's notepad)\n"
 
 // Recall 索引（只含全局 + 当前会话两份，D23 名字白名单）+ 当前会话全文（水位无关：
 // 压缩/回溯后仍在）。两段任一读取失败都跳过该段：记忆坏了不该挡住对话。
-func (s Source) Recall(ctx context.Context, id conversation.ID, _ int) (port.MemoryBlock, error) {
+func (s Source) Recall(ctx context.Context, id conversation.ID, q port.MemoryQuery) (port.MemoryBlock, error) {
 	if s.store == nil {
 		return port.MemoryBlock{}, nil
 	}

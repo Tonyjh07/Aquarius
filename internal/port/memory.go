@@ -49,13 +49,23 @@ type MemoryBlock struct {
 	Detail string
 }
 
+// MemoryQuery 一次注入请求（D345）：软预算与「当轮模型面有没有工具」。两个事实出自
+// 同一次装配，打包成请求而不是让实现方各自猜——预算决定裁剪，工具信号决定插件回引导
+// 还是回正文。
+type MemoryQuery struct {
+	// BudgetTokens 本轮记忆段的软预算（0 = 不给建议）；实现方应自己裁剪，超出由宿主硬截断。
+	BudgetTokens int
+	// ToolsAvailable 当轮模型面是否带工具声明。false = 模型看不见任何工具，注入引导句
+	// 没有意义，实现方应直接给正文。
+	ToolsAvailable bool
+}
+
 // MemorySource 记忆的唯一挂载点（D337）：每轮装配时问一次「这次要注入什么」。
 //
 // 回答者由装配根决定：内置文档记忆，或接管记忆的插件。宿主只认这个方法，
 // 因而不需要知道记忆存在哪、怎么组织——那是回答者自己的事。
-// budgetTokens 是本轮的软预算（0 = 不给建议）；实现方应自己裁剪，超出由宿主硬截断。
 type MemorySource interface {
-	Recall(ctx context.Context, id conversation.ID, budgetTokens int) (MemoryBlock, error)
+	Recall(ctx context.Context, id conversation.ID, query MemoryQuery) (MemoryBlock, error)
 }
 
 // MemoryStore 记忆文档端口：markdown 即记忆、检索 = 关键词（D11）；后端可插拔。

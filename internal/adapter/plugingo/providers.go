@@ -184,11 +184,12 @@ func NewMemory(m v1.Memory) port.MemorySource { return memoryAdapter{m: m} }
 
 type memoryAdapter struct{ m v1.Memory }
 
-func (a memoryAdapter) Recall(ctx context.Context, id conversation.ID, budget int) (port.MemoryBlock, error) {
+func (a memoryAdapter) Recall(ctx context.Context, id conversation.ID, q port.MemoryQuery) (port.MemoryBlock, error) {
 	if id != "" {
 		ctx = port.WithSessionID(ctx, id)
 	}
-	mc, err := a.m.Recall(toV1Session(ctx), v1.MemoryRequest{BudgetTokens: budget})
+	req := v1.MemoryRequest{BudgetTokens: q.BudgetTokens, ToolsAvailable: q.ToolsAvailable}
+	mc, err := a.m.Recall(toV1Session(ctx), req)
 	if err != nil {
 		return port.MemoryBlock{}, err
 	}

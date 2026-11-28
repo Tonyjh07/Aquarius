@@ -5,14 +5,14 @@
 // 字段的语义与类型；新字段只加在结构体末尾并注释零值语义；新方法只加新的独立接口；
 // 签名冻结，破坏性变更开 v2 并存。插件编译到本包上，永不编译到内核类型上。
 //
-// 状态（v1.0.0 的 P3）：Manifest、稳定值类型层（value.go）与接口面（plugin / host /
-// llm / tool / command / memory / ingest / modality / secrets / uiext）已落盘；
-// plugingo 转换器与装载器随后，契约在本版收尾时完整冻结。作者面说明见
-// docs/plugin-guide.md，内核侧规格见 docs/plugin-design.md。
+// 状态：v1.0.0 起契约已冻结——供给面九接口与扩展面（见 plugin-design.md §1）随 P3 落盘，
+// 本版收尾复核过兼容承诺句与映射表（D345/D355 两个缺口补齐后冻结）。
 package pluginapi
 
 // APIVersion 当前契约的 API 版本：宿主启动时断言 Manifest.API == APIVersion，
-// 不匹配拒载并报因（plugin-guide.md §7 校验条）。版本随破坏性变更递增（届时开 v2 包）。
+// 不匹配拒载并报因（plugin-guide.md §3 清单校验条）。版本随破坏性变更递增（届时开 v2 包）。
+//
+// 兼容承诺：改这个常量的语义等于重定义「插件是给哪版宿主编译的」，会破坏全部已编译插件。
 const APIVersion = 1
 
 // Manifest 插件清单：编译进插件的自我声明，宿主启动时逐项校验。
