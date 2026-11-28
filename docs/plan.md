@@ -1,5 +1,5 @@
 # Aquarius 未来规划（docs/plan.md）
-<!-- docs-sync: 2026-11-28 @ bc1a383 -->
+<!-- docs-sync: 2026-11-28 @ 294e856 -->
 
 > 定位：**只写还没做、将要做的事**——范围、顺序、节奏、验收。**做过的、怎么演进的，一律不写**
 > （那是 [roadmap.md](roadmap.md) 的档案与 [decisions.md](decisions.md) 的决策记录）。逐条决策看
@@ -86,6 +86,34 @@ P4 可穿插；关键路径在 P3。
 > - **批 2 · 启停挂载**：`setTierOne` 启用分支逐面挂载（type assertion 失败只 warn），
 >   停用反序还原；语音独占（第二个同类 warn 不挂）；启动恢复自动走同一入口。
 > - **批 3 · 测试**：容器单测 + 启停集成（pluginboot 模式）。
+
+## 多 Agent 协作装配根（2.0 方向，backlog，未排期）
+
+> 2026-11-28 可行性调研的结论与任务拆分。目标：保持 `cmd/aquarius` 行为不变，新建装配根，
+> 每个 Agent 独立消息树、独立 goroutine，经注入通道互相沟通。
+>
+> 调研结论（2026-11-28）：**领域内核已经支持，外壳有三层要动**。`app.Agent` 把会话树当参数
+> 传（`Run(ctx, c)`），prompt/压缩/est 全部 per-Run 无状态；storejson / memoryfs / blobfs
+> 按会话 ID 或内容哈希寻址，多树并存零改动；`Session.injectCh` 是现成的会话注入通道，
+> Agent 间沟通可在它上面扩。要动的只有：装配根抽包、Session 的「单一活动会话」外壳、
+> 输出扇出与 UI 的会话寻址。
+
+- **MA0 · 装配根抽包**（L，独立大笔）：`cmd/aquarius` 全是 `package main`（wiring、
+  assemble_*、pluginhost、配置与管理面，约 5-8k 行非测试代码），抽成 `internal/boot`
+  可 import 的包，`cmd/aquarius` 改薄壳调 `boot.Run(...)`，行为不变、全门禁绿即验收。
+  这笔与多 Agent 无关也迟早要做，且是后续一切的前置。
+- **MA1 · 多实例外壳**（L）：per-agent 一个 profile 子目录（借现成 profile 机制当配置单元，
+  几乎不改 config schema）+ wiring 多份 + `Agent.setPending` 收进实例（agent.go 现注释
+  「一个进程只有一个在跑的 Session」）+ presenter 按来源路由（事件补会话寻址，每 agent
+  一份 presenter，聚合层按焦点切换）。
+- **MA2 · UI 多 agent**（M）：GUI 只经 `uiFrontend` + 三个 atomic 反向端口对接，core 端口
+  不动；做 agent 切换器 + 聚合 TreeView 路由（uigui 内数百行）。
+- **MA3 · 协作层**（M~L）：跨会话注入端口（基于 `injectCh` 扩展）+ 任务委托/结果回传。
+  深度待拍板：第一版只互发消息，还是带委托/等待结果的工具面。
+- **边界与已拍板口径**：插件宿主共享一套（一个 Host、一套插件面，归主控实例管）——
+  否则同一插件拉两份 MCP 进程，secrets/语音槽「第一个赢」类独占面互相打架；附件不跨 agent
+  共享（GC 按本 store 引用清扫，共库会误删，第一版绕开）；数据目录共用 `~/.aquarius`。
+  入口形态推荐独立 `cmd/xxx`（不动现有回归面）；jobproc / audit / mic / TTS 每实例一套。
 
 ## Tier-3 WASM 插件（在排，v1.0.0 之后）
 
