@@ -125,15 +125,16 @@ func TestEditionFollowsVersionChain(t *testing.T) {
 	}
 }
 
-// TestTailMatchesSubtreeNewestLeaf VersionEnd 的返回值必须就是该子树里 CreatedAt 最新的叶子
+// TestTailMatchesSubtreeNewestLeaf View.Tails 的值必须就是该子树里 CreatedAt 最新的叶子
 // （平局取 ID 序最大）——展示面的「切到这个版本」靠这个叶子落点。
 func TestTailMatchesSubtreeNewestLeaf(t *testing.T) {
 	c := buildTree(t)
 	root := MessageID(c.ID)
 	leaf := newestLeafForTest(t, c, root)
-	got, ok := c.VersionEnd(root)
+	view := c.View()
+	got, ok := view.Tails[root]
 	if !ok || got != leaf {
-		t.Fatalf("VersionEnd(根) = (%q, %v), want (%q, true)", got, ok, leaf)
+		t.Fatalf("View.Tails[%s] = (%q, %v), want (%q, true)", root, got, ok, leaf)
 	}
 	if err := c.Validate(); err != nil {
 		t.Fatalf("树不合法: %v", err)
@@ -189,12 +190,9 @@ func TestViewMatchesTailAndBranches(t *testing.T) {
 		}
 	}
 	for _, m := range view.Nodes {
-		want, ok := c.VersionEnd(m.ID)
-		if !ok {
-			t.Fatalf("VersionEnd(%s) 不存在，但 View 列了它", m.ID)
-		}
+		want := newestLeafForTest(t, c, m.ID)
 		if got := view.Tails[m.ID]; got != want {
-			t.Fatalf("View.Tails[%s] = %s, want %s（与版本末端同一套规则）", m.ID, got, want)
+			t.Fatalf("View.Tails[%s] = %s, want %s（版本子树最新叶子，同一套规则）", m.ID, got, want)
 		}
 	}
 	// 版本组 = 每个节点归到「最近的非衬垫祖先」名下，组内按 (CreatedAt, ID) 升序；

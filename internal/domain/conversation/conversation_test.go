@@ -502,9 +502,10 @@ func TestCheckoutRootRealNode(t *testing.T) {
 	}
 }
 
-// TestVersionEnd D94 版本末端：叶子即自身；版本子树末端 = CreatedAt 最新的叶子（平局取 ID 序
-// 最大）；id 不在树中 ok=false。
-func TestVersionEnd(t *testing.T) {
+// TestViewTailsVersionEndRules D94 版本末端规则（经 View.Tails 消费）：叶子即自身；
+// 版本子树末端 = CreatedAt 最新的叶子（平局取 ID 序最大）。树上没有查询方法：展示面
+// 走 port.TreeView.Tail，其数据来自 View.Tails 的增量构建（view.go），这里只锁规则。
+func TestViewTailsVersionEndRules(t *testing.T) {
 	useFixedClock(t)
 	c := New(NewID(), "t")
 	u1 := mustAppend(t, c, RoleUser, "问题")
@@ -512,30 +513,32 @@ func TestVersionEnd(t *testing.T) {
 	u2 := mustAppend(t, c, RoleUser, "追问")
 	a2 := mustAppend(t, c, RoleAssistant, "答二")
 
+	tails := func() map[MessageID]MessageID { return c.View().Tails }
+
 	// 叶子即自身。
-	if got, ok := c.VersionEnd(a2.ID); !ok || got != a2.ID {
-		t.Fatalf("VersionEnd(叶子) = %q %v, want 自身", got, ok)
+	if got := tails()[a2.ID]; got != a2.ID {
+		t.Fatalf("Tails(叶子) = %q, want 自身", got)
 	}
 	// 线性链的唯一叶子。
-	if got, ok := c.VersionEnd(u1.ID); !ok || got != a2.ID {
-		t.Fatalf("VersionEnd(u1) = %q %v, want a2", got, ok)
+	if got := tails()[u1.ID]; got != a2.ID {
+		t.Fatalf("Tails(u1) = %q, want a2", got)
 	}
 
-	// 分叉：编辑 u2 → 新版本 + 新回答；VersionEnd(u1) 应取 CreatedAt 最新的叶子（新分支末端）。
+	// 分叉：编辑 u2 → 新版本 + 新回答；Tails(u1) 应取 CreatedAt 最新的叶子（新分支末端）。
 	if _, err := c.Revise(u2.ID, textParts("追问（改）"), Fresh); err != nil {
 		t.Fatalf("revise: %v", err)
 	}
 	a2n := mustAppend(t, c, RoleAssistant, "答二（新）")
-	if got, ok := c.VersionEnd(u1.ID); !ok || got != a2n.ID {
-		t.Fatalf("VersionEnd(u1) = %q %v, want 新分支末端 a2'", got, ok)
+	if got := tails()[u1.ID]; got != a2n.ID {
+		t.Fatalf("Tails(u1) = %q, want 新分支末端 a2'", got)
 	}
 
 	// 旧叶子时钟推后 → 旧叶子成为末端（CreatedAt 优先于 ID 序）。
 	old := c.nodes[a2.ID]
 	old.CreatedAt = old.CreatedAt.Add(time.Hour)
 	c.nodes[a2.ID] = old
-	if got, _ := c.VersionEnd(u1.ID); got != a2.ID {
-		t.Fatalf("VersionEnd(u1) = %q, want 被推后的旧叶子 a2", got)
+	if got := tails()[u1.ID]; got != a2.ID {
+		t.Fatalf("Tails(u1) = %q, want 被推后的旧叶子 a2", got)
 	}
 
 	// 时钟全部相同 → 按 ID 序最大（确定性）。
@@ -548,14 +551,10 @@ func TestVersionEnd(t *testing.T) {
 	if a2n.ID > want {
 		want = a2n.ID
 	}
-	if got, _ := c.VersionEnd(u1.ID); got != want {
-		t.Fatalf("VersionEnd(u1) = %q, want 平局 ID 序最大 %q", got, want)
+	if got := tails()[u1.ID]; got != want {
+		t.Fatalf("Tails(u1) = %q, want 平局 ID 序最大 %q", got, want)
 	}
 
-	// 不在树中。
-	if got, ok := c.VersionEnd("nope"); ok || got != "" {
-		t.Fatalf("VersionEnd(缺失) = %q %v, want ok=false", got, ok)
-	}
 	if err := c.Validate(); err != nil {
 		t.Fatalf("validate: %v", err)
 	}
